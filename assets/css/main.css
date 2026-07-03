@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Design tokens — single source of truth for colours. Each is an RGB triplet so
+   Tailwind can apply opacity via `rgb(var(--x) / <alpha>)`. Light is the default
+   on :root; `.dark` (toggled on <html>) swaps the whole palette. Flat /
+   Soft-minimal in both modes.
+   ========================================================================== */
+/* Token blocks live OUTSIDE @layer base on purpose: rules placed in @layer are
+   tree-shaken against scanned content, and `.dark` / `.theme-transition` are
+   class selectors only ever added at runtime via JS — so inside a layer the
+   production build would purge them. Plain top-level CSS is always emitted. */
+:root {
+    --background: 245 246 249; /* soft off-white canvas */
+    --foreground: 30 41 59; /* slate-800 — primary text & headings */
+
+    --card: 255 255 255;
+    --card-foreground: 30 41 59;
+    --popover: 255 255 255;
+    --popover-foreground: 30 41 59;
+
+    --primary: 78 95 168; /* muted indigo */
+    --primary-foreground: 255 255 255;
+
+    --secondary: 238 241 246;
+    --secondary-foreground: 51 65 85;
+
+    --muted: 241 243 247; /* subtle surfaces: table head, sub-panels, hovers */
+    --muted-foreground: 100 116 139; /* slate-500 — secondary text */
+
+    --accent: 234 238 250; /* selected nav / active rows */
+    --accent-foreground: 65 78 138;
+
+    --border: 226 232 240; /* hairline */
+    --input: 226 232 240;
+    --ring: 125 143 205;
+
+    --destructive: 239 68 68;
+    --destructive-foreground: 255 255 255;
+    --success: 16 185 129;
+    --success-foreground: 255 255 255;
+    --warning: 245 158 11;
+    --warning-foreground: 255 255 255;
+    --info: 14 165 233;
+    --info-foreground: 255 255 255;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --background: 15 18 25; /* deep slate, not pure black */
+    --foreground: 226 232 240; /* slate-200 — soft light text */
+
+    --card: 23 27 35; /* lifted surface */
+    --card-foreground: 226 232 240;
+    --popover: 26 31 40;
+    --popover-foreground: 226 232 240;
+
+    --primary: 154 168 224; /* lighter indigo so it pops on dark */
+    --primary-foreground: 17 20 27; /* dark text on light-indigo */
+
+    --secondary: 32 38 48;
+    --secondary-foreground: 226 232 240;
+
+    --muted: 30 36 46;
+    --muted-foreground: 148 163 184; /* slate-400 — readable secondary */
+
+    --accent: 33 41 61;
+    --accent-foreground: 185 196 236;
+
+    --border: 39 45 57;
+    --input: 45 52 64;
+    --ring: 124 140 205;
+
+    --destructive: 248 113 113;
+    --destructive-foreground: 17 20 27;
+    --success: 52 211 153;
+    --success-foreground: 17 20 27;
+    --warning: 251 191 36;
+    --warning-foreground: 17 20 27;
+    --info: 56 189 248;
+    --info-foreground: 17 20 27;
+
+    color-scheme: dark;
+  }
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Global safety net: the off-canvas drawer lives at translateX(-100%) when
+   closed; `clip` prevents any horizontal scrollbar without creating a scroll
+   container (so inner overflow-x-auto regions like tables still scroll). */
+html,
+body {
+  overflow-x: clip;
+}
+
+/* Smooth, jank-free theme switch: transitions are enabled only while the
+   `.theme-transition` class is present on <html> (added briefly by the toggle),
+   so first paint / no-flash boot stays instant. */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    color 0.2s ease, fill 0.2s ease, stroke 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+@layer components {
+  /* Flat / Soft-minimal surfaces — token-driven, theme-aware. */
+  .card {
+    @apply rounded-2xl border border-border bg-card text-card-foreground;
+  }
+  .input {
+    /* 16px on mobile avoids iOS auto-zoom on focus; 14px from sm up. */
+    @apply block w-full rounded-lg border border-input bg-card px-3 py-2 text-base sm:text-sm
+      text-foreground placeholder-muted-foreground transition-colors
+      focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30
+      disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-muted-foreground;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm
+      font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1
+      focus:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-ring/40;
+  }
+  .btn-secondary {
+    @apply btn border border-border bg-card text-foreground hover:bg-muted focus:ring-ring/30;
+  }
+  .btn-danger {
+    @apply btn bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:ring-destructive/40;
+  }
+  .btn-success {
+    @apply btn bg-success text-success-foreground hover:bg-success/90 focus:ring-success/40;
+  }
+  .table-th {
+    @apply whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+  .table-td {
+    @apply whitespace-nowrap px-3 py-2.5 text-sm text-foreground;
+  }
+}

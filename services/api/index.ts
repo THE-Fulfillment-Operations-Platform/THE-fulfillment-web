@@ -1,0 +1,16 @@
+// Barrel export for the API service layer. Components/stores import from here,
+// never calling $fetch directly.
+export * from './auth'
+export * from './orders'
+export * from './items'
+export * from './design'
+export * from './batches'
+export * from './qc'
+export * from './packing'
+export * from './handoffs'
+export * from './notes'
+export * from './seller'
+export * from './imports'
+export * from './masters'
+export * from './masterData'
+export * from './users'
