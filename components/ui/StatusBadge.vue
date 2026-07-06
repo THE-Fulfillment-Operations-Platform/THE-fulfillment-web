@@ -6,11 +6,21 @@ import {
   PRIORITY,
   NOTE_SEVERITY,
   NOTE_STATUS,
+  REVIEW_STATUS,
+  CANCELLATION_STATUS,
   badgeFrom,
   type BadgeMeta,
 } from '~/utils/enums'
 
-type Kind = 'internal' | 'seller' | 'design' | 'priority' | 'severity' | 'noteStatus'
+type Kind =
+  | 'internal'
+  | 'seller'
+  | 'design'
+  | 'priority'
+  | 'severity'
+  | 'noteStatus'
+  | 'review'
+  | 'cancellation'
 
 const props = defineProps<{ kind: Kind; value?: string | null }>()
 
@@ -21,6 +31,8 @@ const MAPS: Record<Kind, Record<string, BadgeMeta>> = {
   priority: PRIORITY,
   severity: NOTE_SEVERITY,
   noteStatus: NOTE_STATUS,
+  review: REVIEW_STATUS,
+  cancellation: CANCELLATION_STATUS,
 }
 
 const meta = computed(() => badgeFrom(MAPS[props.kind], props.value ?? undefined))

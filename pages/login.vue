@@ -50,7 +50,7 @@ async function submit() {
       <div class="mb-4 flex justify-center">
         <AppLogo variant="mark" />
       </div>
-      <h1 class="sr-only">THE Fulfillment</h1>
+      <h1 class="sr-only">BGDecor Fulfillment</h1>
       <p class="text-sm text-muted-foreground">Đăng nhập hệ thống vận hành xưởng</p>
     </div>
 

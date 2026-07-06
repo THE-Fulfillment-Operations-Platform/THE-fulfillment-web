@@ -18,6 +18,11 @@ export interface DesignPatch {
   mockup_url?: string
   design_url?: string
   set_ready?: boolean
+  // Production-ready fields (legacy production-template columns).
+  image_code?: string
+  qc_description?: string
+  production_sequence?: number
+  production_file_name?: string
 }
 
 export const itemsApi = {

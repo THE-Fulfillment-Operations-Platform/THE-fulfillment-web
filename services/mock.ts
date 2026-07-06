@@ -99,6 +99,10 @@ const SELLER_ORDERS: SellerOrder[] = ORDERS.map((o) => ({
   store_order_id: o.store_order_id,
   store_name: o.store_name,
   status: o.seller_status,
+  review_status: o.review_status ?? 'APPROVED',
+  cancellation_status: o.cancellation_status ?? 'NONE',
+  can_cancel: false,
+  can_request_cancellation: false,
   item_count: o.items?.length ?? 0,
   created_at: o.created_at,
 }))

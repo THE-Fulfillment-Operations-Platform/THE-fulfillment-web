@@ -22,6 +22,15 @@ const toast = useToastStore()
 
 const filters = reactive({ status: '', severity: '', required: false, page: 1 })
 
+const statusFilterOptions = computed(() => [
+  { value: '', label: 'Tất cả' },
+  ...NOTE_STATUS_OPTIONS.map((s) => ({ value: s, label: NOTE_STATUS[s].label })),
+])
+const severityFilterOptions = computed(() => [
+  { value: '', label: 'Tất cả' },
+  ...NOTE_SEVERITY_OPTIONS.map((s) => ({ value: s, label: NOTE_SEVERITY[s].label })),
+])
+
 const { data, meta, loading, error, reload } = useApiResource<Note[]>(() =>
   notesApi.list({
     status: filters.status || undefined,
@@ -58,6 +67,18 @@ const form = reactive<NoteInput>({
   owner_role: undefined,
   due_date: '',
 })
+
+// Select option lists for the form (mirror the enum maps / arrays used above).
+const ownerRoleOptions = [
+  { value: '', label: '— Không gán —' },
+  ...Object.entries(ROLE_LABEL).map(([role, label]) => ({ value: role, label })),
+]
+const severityOptions = NOTE_SEVERITY_OPTIONS.map((s) => ({ value: s, label: NOTE_SEVERITY[s].label }))
+const statusOptions = NOTE_STATUS_OPTIONS.map((s) => ({ value: s, label: NOTE_STATUS[s].label }))
+const entityTypeOptions = [
+  { value: '', label: '— Không gắn —' },
+  ...ENTITY_TYPE_OPTIONS.map((t) => ({ value: t, label: t })),
+]
 
 function resetForm() {
   form.title = ''
@@ -164,17 +185,11 @@ async function remove(n: Note) {
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div>
           <label class="label">Trạng thái</label>
-          <select v-model="filters.status" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="s in NOTE_STATUS_OPTIONS" :key="s" :value="s">{{ NOTE_STATUS[s].label }}</option>
-          </select>
+          <UiSelect v-model="filters.status" :options="statusFilterOptions" aria-label="Trạng thái" @change="applyFilters" />
         </div>
         <div>
           <label class="label">Mức độ</label>
-          <select v-model="filters.severity" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="s in NOTE_SEVERITY_OPTIONS" :key="s" :value="s">{{ NOTE_SEVERITY[s].label }}</option>
-          </select>
+          <UiSelect v-model="filters.severity" :options="severityFilterOptions" aria-label="Mức độ" @change="applyFilters" />
         </div>
         <div class="flex items-end">
           <label class="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2">
@@ -268,33 +283,23 @@ async function remove(n: Note) {
           </div>
           <div>
             <label class="label">Phụ trách (role)</label>
-            <select v-model="form.owner_role" class="input">
-              <option :value="undefined">— Không gán —</option>
-              <option v-for="(label, role) in ROLE_LABEL" :key="role" :value="role">{{ label }}</option>
-            </select>
+            <UiSelect v-model="form.owner_role" :options="ownerRoleOptions" aria-label="Phụ trách (role)" placeholder="— Không gán —" />
           </div>
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Mức độ</label>
-            <select v-model="form.severity" class="input">
-              <option v-for="s in NOTE_SEVERITY_OPTIONS" :key="s" :value="s">{{ NOTE_SEVERITY[s].label }}</option>
-            </select>
+            <UiSelect v-model="form.severity" :options="severityOptions" aria-label="Mức độ" />
           </div>
           <div>
             <label class="label">Trạng thái</label>
-            <select v-model="form.status" class="input">
-              <option v-for="s in NOTE_STATUS_OPTIONS" :key="s" :value="s">{{ NOTE_STATUS[s].label }}</option>
-            </select>
+            <UiSelect v-model="form.status" :options="statusOptions" aria-label="Trạng thái" />
           </div>
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Loại đối tượng</label>
-            <select v-model="form.entity_type" class="input">
-              <option :value="undefined">— Không gắn —</option>
-              <option v-for="t in ENTITY_TYPE_OPTIONS" :key="t" :value="t">{{ t }}</option>
-            </select>
+            <UiSelect v-model="form.entity_type" :options="entityTypeOptions" aria-label="Loại đối tượng" placeholder="— Không gắn —" />
           </div>
           <div>
             <label class="label">ID đối tượng</label>

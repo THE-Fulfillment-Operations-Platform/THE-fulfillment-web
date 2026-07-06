@@ -1,5 +1,5 @@
 // ============================================================================
-// Domain types — derived from the THE Fulfillment Backend Handoff Report.
+// Domain types — derived from the BGDecor Fulfillment Backend Handoff Report.
 // Enum values are the exact strings the API returns/accepts.
 // ============================================================================
 
@@ -21,6 +21,22 @@ export type InternalStatus = 'PENDING' | 'PRINTED' | 'CUT' | 'QC_PASSED'
 
 /** Seller-facing order status. */
 export type SellerStatus = 'PRODUCTION' | 'PACKED' | 'HANDED_OFF' | 'SHIPPED'
+
+/** Operational intake (review) status — orthogonal to production status. */
+export type ReviewStatus =
+  | 'PENDING_REVIEW'
+  | 'NEEDS_CORRECTION'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'CANCELLED'
+
+/** Cancellation lifecycle on an order. */
+export type CancellationStatus =
+  | 'NONE'
+  | 'SELLER_CANCELLED'
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'REJECTED'
 
 export type DesignStatus = 'PENDING' | 'IN_PROGRESS' | 'READY' | 'MISSING'
 
@@ -157,6 +173,11 @@ export interface OrderItem {
   print_file_url?: string
   cut_file_url?: string
   design_url?: string
+  // Production-ready fields (legacy production-template columns).
+  image_code?: string
+  qc_description?: string
+  production_sequence?: number
+  production_file_name?: string
   material_code?: string
   material_name?: string
   // Flat order references some list endpoints include alongside the item.
@@ -176,7 +197,18 @@ export interface Order {
   store_order_id: string
   seller_id: number
   store_name?: string
+  account?: string
+  shipping_method?: string
   seller_status: SellerStatus
+  review_status?: ReviewStatus
+  reviewed_by_id?: number | null
+  reviewed_at?: string | null
+  review_note?: string
+  cancellation_status?: CancellationStatus
+  cancellation_requested_at?: string | null
+  cancellation_reason?: string
+  cancellation_resolved_at?: string | null
+  cancellation_resolution_note?: string
   shipping_name?: string
   shipping_address1?: string
   shipping_address2?: string
@@ -197,12 +229,14 @@ export interface Order {
 
 export interface ImportRow {
   StoreOrderID: string
+  Account?: string
   StoreName?: string
   ShippingMethod?: string
   Quantity?: number | string
   ProductName?: string
   VariantCode?: string
   SKU?: string
+  'Mã ảnh'?: string
   Design?: string
   Mockup?: string
   EngraveText?: string
@@ -361,6 +395,10 @@ export interface BatchItem {
   print_file_url?: string
   cut_file_url?: string
   status: InternalStatus
+  material_id?: number
+  material?: Material
+  // The full order item is preloaded by the batch-detail endpoint and carries
+  // the production-ready fields shown in the production table / CSV export.
   order_item?: OrderItem
 }
 
@@ -403,8 +441,15 @@ export interface QcScanResult {
   store_order_id: string
   sku_code: string
   product_name: string
+  quantity?: number
+  material_name?: string
+  qc_description?: string
+  image_code?: string
   engrave_text?: string
+  design_url?: string
   mockup_url: string
+  print_file_url?: string
+  cut_file_url?: string
   internal_status: InternalStatus
   batches: QcScanBatch[]
 }
@@ -480,9 +525,31 @@ export interface SellerOrder {
   store_order_id: string
   store_name?: string
   status: SellerStatus
+  review_status: ReviewStatus
+  cancellation_status: CancellationStatus
+  review_note?: string
+  can_cancel: boolean
+  can_request_cancellation: boolean
   item_count: number
   created_at: string
   items?: SellerOrderItem[]
+}
+
+// ---- Order review (intake) -------------------------------------------------
+
+export interface ReviewIssue {
+  item_id?: number
+  item_code?: string
+  sku_code?: string
+  field: string
+  severity: 'BLOCKER' | 'WARNING'
+  code: string
+  message: string
+}
+
+export interface ReviewOrderDetail {
+  order: Order
+  issues: ReviewIssue[]
 }
 
 // ---- Audit -----------------------------------------------------------------

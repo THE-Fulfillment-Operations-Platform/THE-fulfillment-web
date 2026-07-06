@@ -28,6 +28,10 @@ const form = reactive<UserInput>({
 
 const isSellerRole = computed(() => form.role === 'SELLER')
 
+const roleOptions = (Object.entries(ROLE_LABEL) as [Role, string][]).map(
+  ([value, label]) => ({ value, label }),
+)
+
 function openCreate() {
   editing.value = null
   form.email = ''
@@ -207,9 +211,7 @@ const ROLE_BADGE: Record<Role, string> = {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Vai trò</label>
-            <select v-model="form.role" class="input">
-              <option v-for="(label, role) in ROLE_LABEL" :key="role" :value="role">{{ label }}</option>
-            </select>
+            <UiSelect v-model="form.role" :options="roleOptions" aria-label="Vai trò" />
           </div>
           <div v-if="isSellerRole">
             <label class="label">Seller ID *</label>

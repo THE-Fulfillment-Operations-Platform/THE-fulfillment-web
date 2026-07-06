@@ -70,6 +70,8 @@ function toggleAll() {
 
 const selectedCount = computed(() => selectedIds.value.size)
 
+const priorityOptions = PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label }))
+
 async function createBatch() {
   if (!activeMaterial.value || selectedCount.value === 0) return
   creating.value = true
@@ -180,9 +182,7 @@ onMounted(loadBuckets)
         <div class="mt-4 space-y-3">
           <div>
             <label class="label">Priority</label>
-            <select v-model="priority" class="input">
-              <option v-for="p in PRIORITY_OPTIONS" :key="p" :value="p">{{ PRIORITY[p].label }}</option>
-            </select>
+            <UiSelect v-model="priority" :options="priorityOptions" aria-label="Priority" />
           </div>
           <div>
             <label class="label">Due date</label>

@@ -21,7 +21,7 @@ const columns = computed(() => {
 
 <template>
   <div>
-    <PageHeader title="Production Board" subtitle="Theo dõi batch ở Pending / Đã in / Đã cắt / Đã QC">
+    <PageHeader title="Bảng sản xuất" subtitle="Theo dõi batch ở Pending / Đã in / Đã cắt / Đã QC">
       <template #actions>
         <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /> Làm mới</button>
       </template>

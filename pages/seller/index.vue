@@ -3,7 +3,7 @@ import { sellerViewApi } from '~/services/api'
 import type { SellerOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDateTime } from '~/utils/format'
-import { SELLER_STATUS } from '~/utils/enums'
+import { SELLER_STATUS, sellerDisplayBadge } from '~/utils/enums'
 
 // Seller portal — order list (Wireframe: Seller View). Confined to /seller/* by
 // global middleware; the backend returns only seller-safe fields (no internal
@@ -23,6 +23,11 @@ const { data, meta, loading, error, reload } = useApiResource<SellerOrder[]>(() 
 const orders = computed(() => data.value ?? [])
 
 const SELLER_STATUS_OPTIONS = ['PRODUCTION', 'PACKED', 'HANDED_OFF', 'SHIPPED'] as const
+
+const statusOptions = computed<{ value: string; label: string }[]>(() => [
+  { value: '', label: 'Tất cả' },
+  ...SELLER_STATUS_OPTIONS.map((s) => ({ value: s, label: SELLER_STATUS[s].label })),
+])
 
 function applyFilters() {
   filters.page = 1
@@ -46,10 +51,7 @@ function changePage(p: number) {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div class="sm:col-span-1">
           <label class="label">Trạng thái</label>
-          <select v-model="filters.status" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="s in SELLER_STATUS_OPTIONS" :key="s" :value="s">{{ SELLER_STATUS[s].label }}</option>
-          </select>
+          <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái" @change="applyFilters" />
         </div>
         <div class="sm:col-span-2">
           <label class="label">Mã đơn (Store Order ID)</label>
@@ -89,7 +91,9 @@ function changePage(p: number) {
                 </td>
                 <td class="table-td text-foreground">{{ o.store_name || '—' }}</td>
                 <td class="table-td text-foreground">{{ o.item_count }}</td>
-                <td class="table-td"><UiStatusBadge kind="seller" :value="o.status" /></td>
+                <td class="table-td">
+                  <UiStatusBadge :kind="sellerDisplayBadge(o).kind" :value="sellerDisplayBadge(o).value" />
+                </td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
                 <td class="table-td text-right">
                   <NuxtLink :to="`/seller/${o.id}`" class="text-xs font-medium text-primary hover:underline">

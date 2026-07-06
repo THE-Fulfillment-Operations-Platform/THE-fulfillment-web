@@ -115,7 +115,7 @@ onMounted(focusScan)
 <template>
   <div>
     <PageHeader
-      title="Scan QC"
+      title="Quét QC"
       subtitle="Quét mã item → đối chiếu mockup → PASS (Đã QC) hoặc FAIL (ghi lỗi)"
     />
 
@@ -193,8 +193,34 @@ onMounted(focusScan)
               <dd class="font-medium text-foreground">{{ result.sku_code }}</dd>
             </div>
             <div>
+              <dt class="text-xs text-muted-foreground">Loại VL</dt>
+              <dd class="text-foreground">{{ result.material_name || '—' }}</dd>
+            </div>
+            <div>
               <dt class="text-xs text-muted-foreground">Sản phẩm</dt>
               <dd class="text-foreground">{{ result.product_name || '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-muted-foreground">Số lượng</dt>
+              <dd class="font-medium text-foreground">{{ result.quantity ?? '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-muted-foreground">Mã ảnh</dt>
+              <dd class="text-foreground">{{ result.image_code || '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-muted-foreground">File in / cắt</dt>
+              <dd class="flex items-center gap-3 text-xs">
+                <a v-if="result.print_file_url" :href="result.print_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> In</a>
+                <span v-else class="text-muted-foreground">In ✗</span>
+                <a v-if="result.cut_file_url" :href="result.cut_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Cắt</a>
+                <span v-else class="text-muted-foreground">Cắt ✗</span>
+                <a v-if="result.design_url" :href="result.design_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Link ảnh</a>
+              </dd>
+            </div>
+            <div v-if="result.qc_description" class="col-span-2">
+              <dt class="text-xs text-muted-foreground">Mô tả SP để QC</dt>
+              <dd class="rounded-md bg-muted px-3 py-2 text-sm text-foreground">{{ result.qc_description }}</dd>
             </div>
             <div class="col-span-2">
               <dt class="text-xs text-muted-foreground">Nội dung khắc (engrave)</dt>
@@ -264,9 +290,7 @@ onMounted(focusScan)
         </p>
         <div>
           <label class="label">Loại lỗi</label>
-          <select v-model="defect.defect_code" class="input">
-            <option v-for="d in DEFECT_CODES" :key="d.value" :value="d.value">{{ d.label }}</option>
-          </select>
+          <UiSelect v-model="defect.defect_code" :options="DEFECT_CODES" aria-label="Loại lỗi" />
         </div>
         <div>
           <label class="label">Ghi chú (tuỳ chọn)</label>

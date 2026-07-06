@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch } from '../http'
+import { apiGet, apiPost, apiPatch, apiDownload } from '../http'
 import type { Batch, CreateBatchResult, InternalStatus, Priority, ListParams } from '~/types'
 
 export interface BatchListParams extends ListParams {
@@ -23,4 +23,10 @@ export const batchesApi = {
   create: (body: CreateBatchInput) => apiPost<CreateBatchResult>('/api/batches', body),
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),
+  // Download the legacy-compatible production template CSV for a batch.
+  exportProductionTemplate: (id: number | string, code?: string) =>
+    apiDownload(
+      `/api/batches/${id}/production-template.csv`,
+      `production-${(code ?? String(id)).replace('#', '')}.csv`,
+    ),
 }

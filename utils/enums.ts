@@ -6,6 +6,8 @@ import type {
   NoteSeverity,
   NoteStatus,
   Role,
+  ReviewStatus,
+  CancellationStatus,
 } from '~/types'
 
 export interface BadgeMeta {
@@ -30,6 +32,26 @@ export const SELLER_STATUS: Record<SellerStatus, BadgeMeta> = {
   PACKED: { label: 'Đã đóng gói', classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
   HANDED_OFF: { label: 'Đã bàn giao', classes: 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' },
   SHIPPED: { label: 'Đã gửi đi', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+}
+
+// ---- Review (intake) status ------------------------------------------------
+export const REVIEW_STATUS: Record<ReviewStatus, BadgeMeta> = {
+  PENDING_REVIEW: { label: 'Chờ duyệt', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  NEEDS_CORRECTION: { label: 'Cần chỉnh sửa', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
+  APPROVED: { label: 'Đã duyệt', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  REJECTED: { label: 'Từ chối', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  CANCELLED: { label: 'Đã huỷ', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+}
+
+export const REVIEW_STATUS_OPTIONS = ['PENDING_REVIEW', 'NEEDS_CORRECTION'] as const
+
+// ---- Cancellation status ---------------------------------------------------
+export const CANCELLATION_STATUS: Record<CancellationStatus, BadgeMeta> = {
+  NONE: { label: '—', classes: 'bg-muted text-muted-foreground' },
+  SELLER_CANCELLED: { label: 'Seller huỷ', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+  REQUESTED: { label: 'Chờ xử lý huỷ', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  APPROVED: { label: 'Đồng ý huỷ', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  REJECTED: { label: 'Từ chối huỷ', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
 }
 
 // ---- Design status ---------------------------------------------------------
@@ -83,6 +105,24 @@ export function badgeFrom<T extends string>(
 ): BadgeMeta {
   if (value && map[value]) return map[value]
   return { label: value ?? '—', classes: 'bg-muted text-muted-foreground' }
+}
+
+// Effective seller-facing badge: show the review status until an order is
+// approved, then fall through to the production (seller) status. Sellers never
+// see internal print/cut/QC steps.
+export function sellerDisplayBadge(o: {
+  status: SellerStatus
+  review_status: ReviewStatus
+  cancellation_status: CancellationStatus
+}): { kind: 'seller' | 'review'; value: string } {
+  if (o.cancellation_status === 'SELLER_CANCELLED' || o.review_status === 'CANCELLED') {
+    return { kind: 'review', value: 'CANCELLED' }
+  }
+  if (o.review_status === 'REJECTED') return { kind: 'review', value: 'REJECTED' }
+  if (o.review_status === 'PENDING_REVIEW' || o.review_status === 'NEEDS_CORRECTION') {
+    return { kind: 'review', value: o.review_status }
+  }
+  return { kind: 'seller', value: o.status }
 }
 
 export const PRIORITY_OPTIONS = ['NORMAL', 'HIGH', 'URGENT'] as const

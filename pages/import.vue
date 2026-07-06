@@ -9,6 +9,11 @@ const toast = useToastStore()
 
 const sellers = ref<Seller[]>([])
 const sellerId = ref<number | null>(null)
+const sellerOptions = computed(() =>
+  sellers.value.length === 0
+    ? [{ value: 1, label: 'SELLER01 (mặc định)' }]
+    : sellers.value.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })),
+)
 const mode = ref<'file' | 'paste'>('file')
 const file = ref<File | null>(null)
 const fileName = ref('')
@@ -154,10 +159,7 @@ function masterDataLink(code?: string) {
       <div class="card p-5 lg:col-span-1">
         <div class="mb-4">
           <label class="label">Seller</label>
-          <select v-model="sellerId" class="input">
-            <option v-for="s in sellers" :key="s.id" :value="s.id">{{ s.code }} — {{ s.name }}</option>
-            <option v-if="!sellers.length" :value="1">SELLER01 (mặc định)</option>
-          </select>
+          <UiSelect v-model="sellerId" :options="sellerOptions" aria-label="Seller" />
         </div>
 
         <div class="mb-3 flex gap-1 rounded-xl bg-muted p-1 text-sm">

@@ -21,9 +21,9 @@ const { toggle } = useSidebar()
         <UiIcon name="menu" :size="22" />
       </button>
       <span class="hidden truncate text-sm font-medium text-muted-foreground md:block">
-        THE Fulfillment Operations Platform
+        BGDecor Fulfillment Operations Platform
       </span>
-      <span class="truncate text-sm font-semibold text-foreground md:hidden">THE Fulfillment</span>
+      <span class="truncate text-sm font-semibold text-foreground md:hidden">BGDecor Fulfillment</span>
       <span
         v-if="mock"
         class="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"

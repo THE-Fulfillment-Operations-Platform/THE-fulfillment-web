@@ -2,14 +2,19 @@
 import { sellerViewApi } from '~/services/api'
 import type { SellerOrder, SellerStatus } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
-import { SELLER_STATUS } from '~/utils/enums'
+import { SELLER_STATUS, REVIEW_STATUS, sellerDisplayBadge } from '~/utils/enums'
+import { useToastStore } from '~/stores/toast'
 
-// Seller order detail (Wireframe: Seller View). Shows a friendly progress
-// timeline + the items with their mockups. No internal/production data.
+// Seller order detail. Shows a friendly status (review status until approved,
+// then the production timeline) plus the items with their mockups. Sellers can
+// cancel a pending-review order directly or request cancellation of an approved
+// (not-yet-in-production) order. No internal/production detail is exposed.
 definePageMeta({ layout: 'seller' })
 
 const route = useRoute()
+const toast = useToastStore()
 const id = route.params.id as string
 
 const { data: order, loading, error, reload } = useApiResource<SellerOrder>(() =>
@@ -18,7 +23,36 @@ const { data: order, loading, error, reload } = useApiResource<SellerOrder>(() =
 const items = computed(() => order.value?.items ?? [])
 
 const STAGES: SellerStatus[] = ['PRODUCTION', 'PACKED', 'HANDED_OFF', 'SHIPPED']
+const isApproved = computed(() => order.value?.review_status === 'APPROVED')
 const currentStep = computed(() => (order.value ? STAGES.indexOf(order.value.status) : -1))
+
+// Cancellation
+const open = ref(false)
+const mode = ref<'cancel' | 'request'>('cancel')
+const reason = ref('')
+const saving = ref(false)
+
+function openCancel(m: 'cancel' | 'request') {
+  mode.value = m
+  reason.value = ''
+  open.value = true
+}
+
+async function submit() {
+  if (saving.value) return
+  saving.value = true
+  try {
+    if (mode.value === 'cancel') await sellerViewApi.cancel(id, reason.value.trim() || undefined)
+    else await sellerViewApi.requestCancellation(id, reason.value.trim() || undefined)
+    toast.success(mode.value === 'cancel' ? 'Đã huỷ đơn' : 'Đã gửi yêu cầu huỷ')
+    open.value = false
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -38,11 +72,46 @@ const currentStep = computed(() => (order.value ? STAGES.indexOf(order.value.sta
                 {{ order.store_name || '—' }} · {{ order.item_count }} sản phẩm · {{ formatDateTime(order.created_at) }}
               </p>
             </div>
-            <UiStatusBadge kind="seller" :value="order.status" />
+            <div class="flex flex-col items-end gap-2">
+              <UiStatusBadge :kind="sellerDisplayBadge(order).kind" :value="sellerDisplayBadge(order).value" />
+              <div v-if="order.can_cancel || order.can_request_cancellation" class="flex gap-2">
+                <button
+                  v-if="order.can_cancel"
+                  class="rounded-md border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                  @click="openCancel('cancel')"
+                >
+                  Huỷ đơn
+                </button>
+                <button
+                  v-if="order.can_request_cancellation"
+                  class="btn-secondary text-xs"
+                  @click="openCancel('request')"
+                >
+                  Yêu cầu huỷ
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- Progress timeline -->
-          <div class="mt-6 flex items-center">
+          <!-- Needs-correction / rejected note -->
+          <div
+            v-if="(order.review_status === 'NEEDS_CORRECTION' || order.review_status === 'REJECTED') && order.review_note"
+            class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <span class="font-medium">Phản hồi từ vận hành:</span> {{ order.review_note }}
+          </div>
+
+          <!-- Review state banner (before production) -->
+          <div v-if="!isApproved" class="mt-5 rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+            <template v-if="order.review_status === 'PENDING_REVIEW'">Đơn đang chờ được duyệt trước khi vào sản xuất.</template>
+            <template v-else-if="order.review_status === 'NEEDS_CORRECTION'">Đơn cần bạn chỉnh sửa thông tin theo phản hồi ở trên.</template>
+            <template v-else-if="order.review_status === 'REJECTED'">Đơn đã bị từ chối.</template>
+            <template v-else-if="order.review_status === 'CANCELLED'">Đơn đã được huỷ.</template>
+            <template v-else>Trạng thái: {{ REVIEW_STATUS[order.review_status]?.label }}</template>
+          </div>
+
+          <!-- Production progress timeline (only once approved) -->
+          <div v-else class="mt-6 flex items-center">
             <template v-for="(stage, idx) in STAGES" :key="stage">
               <div class="flex flex-col items-center text-center">
                 <div
@@ -101,5 +170,25 @@ const currentStep = computed(() => (order.value ? STAGES.indexOf(order.value.sta
         </div>
       </template>
     </UiStateBlock>
+
+    <!-- Cancel / request modal -->
+    <UiModal v-model="open" :title="mode === 'cancel' ? 'Huỷ đơn hàng' : 'Yêu cầu huỷ đơn'">
+      <div class="space-y-3">
+        <p class="text-sm text-muted-foreground">
+          <template v-if="mode === 'cancel'">Bạn chắc chắn muốn huỷ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>? Thao tác này không thể hoàn tác.</template>
+          <template v-else>Gửi yêu cầu huỷ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>. Vận hành sẽ xem xét và phản hồi.</template>
+        </p>
+        <div>
+          <label class="label">Lý do (tuỳ chọn)</label>
+          <textarea v-model="reason" rows="3" class="input" placeholder="Nhập lý do huỷ…" />
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="open = false">Đóng</button>
+        <button class="btn-primary" :disabled="saving" @click="submit">
+          <UiSpinner v-if="saving" :size="16" /> {{ mode === 'cancel' ? 'Xác nhận huỷ' : 'Gửi yêu cầu' }}
+        </button>
+      </template>
+    </UiModal>
   </div>
 </template>

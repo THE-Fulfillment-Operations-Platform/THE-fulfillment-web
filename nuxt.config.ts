@@ -12,11 +12,11 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'THE Fulfillment',
+      title: 'BGDecor Fulfillment',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'THE Fulfillment Operations Platform' },
+        { name: 'description', content: 'BGDecor Fulfillment Operations Platform' },
       ],
       link: [
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },

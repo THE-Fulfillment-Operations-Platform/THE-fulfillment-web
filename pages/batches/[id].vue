@@ -20,6 +20,45 @@ const canChangeStatus = computed(() =>
   ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION'].includes(auth.role ?? ''),
 )
 
+// Production rows for the batch table — mirrors the legacy production template.
+// Reads from the preloaded order item (real API); falls back to the flat fields
+// some mock/list shapes carry.
+interface ProdRow {
+  internal_code: string
+  sku_code: string
+  material: string
+  qc_description: string
+  image_code: string
+  production_sequence: number | string
+  quantity: number | string
+  design_url: string
+  mockup_url: string
+  production_file_name: string
+  print_file_url: string
+  cut_file_url: string
+  status: InternalStatus
+}
+const prodRows = computed<ProdRow[]>(() =>
+  items.value.map((bi) => {
+    const oi = bi.order_item
+    return {
+      internal_code: oi?.internal_code ?? bi.item_code ?? '—',
+      sku_code: oi?.sku_code ?? bi.sku_code ?? '—',
+      material: bi.material?.name ?? batch.value?.material_name ?? batch.value?.material?.name ?? '—',
+      qc_description: oi?.qc_description ?? '',
+      image_code: oi?.image_code ?? '',
+      production_sequence: oi?.production_sequence ?? '',
+      quantity: oi?.quantity ?? '',
+      design_url: oi?.design_url ?? '',
+      mockup_url: oi?.mockup_url ?? bi.mockup_url ?? '',
+      production_file_name: oi?.production_file_name ?? '',
+      print_file_url: oi?.print_file_url ?? bi.print_file_url ?? '',
+      cut_file_url: oi?.cut_file_url ?? bi.cut_file_url ?? '',
+      status: bi.status,
+    }
+  }),
+)
+
 const updating = ref(false)
 async function setStatus(status: InternalStatus) {
   if (!batch.value) return
@@ -35,22 +74,19 @@ async function setStatus(status: InternalStatus) {
   }
 }
 
-function exportCsv() {
-  if (!batch.value) return
-  const header = ['item_code', 'order_code', 'sku_code', 'status', 'mockup_url', 'print_file_url', 'cut_file_url']
-  const lines = items.value.map((i) =>
-    [i.item_code, i.order_code, i.sku_code, i.status, i.mockup_url, i.print_file_url, i.cut_file_url]
-      .map((v) => `"${(v ?? '').toString().replace(/"/g, '""')}"`)
-      .join(','),
-  )
-  const csv = [header.join(','), ...lines].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${batch.value.code.replace('#', 'batch-')}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+// Download the legacy-compatible production template CSV (server-generated so it
+// matches the workshop's spreadsheet exactly, incl. Vietnamese headers + BOM).
+const exporting = ref(false)
+async function exportProduction() {
+  if (!batch.value || exporting.value) return
+  exporting.value = true
+  try {
+    await batchesApi.exportProductionTemplate(batch.value.id, batch.value.code)
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    exporting.value = false
+  }
 }
 
 function printLabels() {
@@ -97,7 +133,10 @@ function printLabels() {
             </div>
             <div class="flex flex-wrap gap-2">
               <button class="btn-secondary" @click="printLabels"><UiIcon name="qc" :size="16" /> Print QR</button>
-              <button class="btn-secondary" @click="exportCsv"><UiIcon name="upload" :size="16" /> Export CSV</button>
+              <button class="btn-primary" :disabled="exporting" @click="exportProduction">
+                <UiSpinner v-if="exporting" :size="16" />
+                <UiIcon v-else name="upload" :size="16" /> Xuất file sản xuất
+              </button>
               <button class="btn-secondary" title="Phase sau khi có storage" @click="toast.info('Download ZIP là phase sau (chưa có storage).')">
                 <UiIcon name="box" :size="16" /> Download ZIP
               </button>
@@ -121,33 +160,58 @@ function printLabels() {
           </div>
         </div>
 
-        <!-- Items -->
+        <!-- Items (production template fields) -->
         <div class="card overflow-hidden">
           <div class="border-b border-border bg-muted px-4 py-2.5">
-            <h3 class="text-sm font-semibold text-foreground">Items trong batch</h3>
+            <h3 class="text-sm font-semibold text-foreground">Items trong batch (dữ liệu sản xuất)</h3>
           </div>
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border">
               <thead class="bg-card">
                 <tr>
-                  <th class="table-th">Item</th>
-                  <th class="table-th">Order</th>
+                  <th class="table-th">Mã nội bộ</th>
                   <th class="table-th">SKU</th>
+                  <th class="table-th">Loại VL</th>
+                  <th class="table-th">Mô tả QC</th>
+                  <th class="table-th">Mã ảnh</th>
+                  <th class="table-th">STT</th>
+                  <th class="table-th">SL</th>
+                  <th class="table-th">Link ảnh</th>
                   <th class="table-th">Mockup</th>
-                  <th class="table-th">Print/Cut</th>
+                  <th class="table-th">Tên file</th>
+                  <th class="table-th">Link in</th>
+                  <th class="table-th">Link cắt</th>
                   <th class="table-th">Trạng thái</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
-                <tr v-for="it in items" :key="it.id" class="hover:bg-muted">
-                  <td class="table-td font-medium text-foreground">{{ it.item_code }}</td>
-                  <td class="table-td">{{ it.order_code || it.store_order_id || '—' }}</td>
-                  <td class="table-td">{{ it.sku_code }}</td>
-                  <td class="table-td"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
-                  <td class="table-td text-xs text-muted-foreground">
-                    {{ it.print_file_url ? 'In ✓' : 'In ✗' }} · {{ it.cut_file_url ? 'Cắt ✓' : 'Cắt ✗' }}
+                <tr v-for="(r, idx) in prodRows" :key="idx" class="hover:bg-muted">
+                  <td class="table-td font-medium text-foreground">{{ r.internal_code }}</td>
+                  <td class="table-td">{{ r.sku_code }}</td>
+                  <td class="table-td">{{ r.material }}</td>
+                  <td class="table-td max-w-[16rem] truncate text-xs text-muted-foreground" :title="r.qc_description">
+                    {{ r.qc_description || '—' }}
                   </td>
-                  <td class="table-td"><UiStatusBadge kind="internal" :value="it.status" /></td>
+                  <td class="table-td text-xs">{{ r.image_code || '—' }}</td>
+                  <td class="table-td text-xs">{{ r.production_sequence === '' ? '—' : r.production_sequence }}</td>
+                  <td class="table-td text-xs">{{ r.quantity === '' ? '—' : r.quantity }}</td>
+                  <td class="table-td">
+                    <a v-if="r.design_url" :href="r.design_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                  <td class="table-td"><UiMockupLink :url="r.mockup_url" small label="Mockup" /></td>
+                  <td class="table-td max-w-[10rem] truncate text-xs text-muted-foreground" :title="r.production_file_name">
+                    {{ r.production_file_name || '—' }}
+                  </td>
+                  <td class="table-td">
+                    <a v-if="r.print_file_url" :href="r.print_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                  <td class="table-td">
+                    <a v-if="r.cut_file_url" :href="r.cut_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                  <td class="table-td"><UiStatusBadge kind="internal" :value="r.status" /></td>
                 </tr>
               </tbody>
             </table>

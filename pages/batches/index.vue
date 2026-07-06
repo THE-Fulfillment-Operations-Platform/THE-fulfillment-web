@@ -26,6 +26,19 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
   }),
 )
 
+const materialOptions = computed(() => [
+  { value: '', label: 'Tất cả' },
+  ...materials.value.map((m) => ({ value: m.id, label: m.name })),
+])
+const statusOptions = [
+  { value: '', label: 'Tất cả' },
+  ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+]
+const priorityOptions = [
+  { value: '', label: 'Tất cả' },
+  ...PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label })),
+]
+
 onMounted(async () => {
   try {
     const { data: m } = await materialsApi.list()
@@ -79,10 +92,7 @@ function changePage(p: number) {
         </div>
         <div>
           <label class="label">Material</label>
-          <select v-model="filters.material_id" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="m in materials" :key="m.id" :value="m.id">{{ m.name }}</option>
-          </select>
+          <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="Material" @change="applyFilters" />
         </div>
         <div>
           <label class="label">SKU</label>
@@ -90,17 +100,11 @@ function changePage(p: number) {
         </div>
         <div>
           <label class="label">Status</label>
-          <select v-model="filters.status" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="s in INTERNAL_STATUS_ORDER" :key="s" :value="s">{{ INTERNAL_STATUS[s].label }}</option>
-          </select>
+          <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Status" @change="applyFilters" />
         </div>
         <div>
           <label class="label">Priority</label>
-          <select v-model="filters.priority" class="input" @change="applyFilters">
-            <option value="">Tất cả</option>
-            <option v-for="p in PRIORITY_OPTIONS" :key="p" :value="p">{{ PRIORITY[p].label }}</option>
-          </select>
+          <UiSelect v-model="filters.priority" :options="priorityOptions" aria-label="Priority" @change="applyFilters" />
         </div>
         <div class="flex items-end">
           <button class="btn-secondary w-full" @click="applyFilters">

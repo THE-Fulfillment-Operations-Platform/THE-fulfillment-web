@@ -14,8 +14,8 @@ const items = computed(() => navForRole(auth.role))
     <div class="flex items-center gap-2.5 border-b border-border px-4 py-4">
       <AppLogo variant="the" />
       <div class="min-w-0 leading-tight">
-        <p class="truncate text-sm font-semibold text-foreground">Fulfillment</p>
-        <p class="text-[11px] text-muted-foreground">Operations</p>
+        <p class="truncate text-sm font-semibold text-foreground">BGDecor</p>
+        <p class="text-[11px] text-muted-foreground">Fulfillment Operations</p>
       </div>
       <!-- Close (mobile drawer only) -->
       <button

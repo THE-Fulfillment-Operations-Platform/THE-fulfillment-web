@@ -26,6 +26,18 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   }),
 )
 
+const statusOptions = computed(() => [
+  { value: '', label: 'Tất cả' },
+  ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+])
+const designStatusOptions = [
+  { value: '', label: 'Tất cả' },
+  { value: 'PENDING', label: 'Chờ design' },
+  { value: 'IN_PROGRESS', label: 'Đang design' },
+  { value: 'READY', label: 'Sẵn sàng' },
+  { value: 'MISSING', label: 'Thiếu file' },
+]
+
 function applyFilters() {
   filters.page = 1
   reload()
@@ -63,20 +75,11 @@ const items = computed(() => data.value ?? [])
         </div>
         <div>
           <label class="label">Trạng thái nội bộ</label>
-          <select v-model="filters.status" class="input">
-            <option value="">Tất cả</option>
-            <option v-for="s in INTERNAL_STATUS_ORDER" :key="s" :value="s">{{ INTERNAL_STATUS[s].label }}</option>
-          </select>
+          <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái nội bộ" />
         </div>
         <div>
           <label class="label">Design</label>
-          <select v-model="filters.design_status" class="input">
-            <option value="">Tất cả</option>
-            <option value="PENDING">Chờ design</option>
-            <option value="IN_PROGRESS">Đang design</option>
-            <option value="READY">Sẵn sàng</option>
-            <option value="MISSING">Thiếu file</option>
-          </select>
+          <UiSelect v-model="filters.design_status" :options="designStatusOptions" aria-label="Design" />
         </div>
         <div>
           <label class="label">Batch ID</label>

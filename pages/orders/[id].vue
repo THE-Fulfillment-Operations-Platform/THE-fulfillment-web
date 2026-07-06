@@ -66,7 +66,11 @@ const shippingRows = computed(() => {
                 {{ formatDateTime(order.created_at) }}
               </p>
             </div>
-            <UiStatusBadge kind="seller" :value="order.seller_status" />
+            <div class="flex flex-col items-end gap-1">
+              <UiStatusBadge v-if="order.review_status && order.review_status !== 'APPROVED'" kind="review" :value="order.review_status" />
+              <UiStatusBadge v-if="order.cancellation_status === 'REQUESTED'" kind="cancellation" :value="order.cancellation_status" />
+              <UiStatusBadge kind="seller" :value="order.seller_status" />
+            </div>
           </div>
 
           <!-- Timeline -->
