@@ -128,11 +128,11 @@ function changePage(p: number) {
               <tr>
                 <th class="table-th">Batch</th>
                 <th class="table-th">Material</th>
-                <th class="table-th">Items</th>
-                <th class="table-th">SKU / Products</th>
+                <th class="table-th hidden md:table-cell">Items</th>
+                <th class="table-th hidden lg:table-cell">SKU / Products</th>
                 <th class="table-th">Status</th>
-                <th class="table-th">Priority</th>
-                <th class="table-th">Người tạo</th>
+                <th class="table-th hidden sm:table-cell">Priority</th>
+                <th class="table-th hidden lg:table-cell">Người tạo</th>
                 <th class="table-th"></th>
               </tr>
             </thead>
@@ -140,11 +140,11 @@ function changePage(p: number) {
               <tr v-for="b in rows" :key="b.id" class="hover:bg-muted">
                 <td class="table-td font-medium text-foreground">{{ b.code }}</td>
                 <td class="table-td">{{ b.material_name || b.material?.name || b.material_code }}</td>
-                <td class="table-td">{{ b.item_count ?? b.items?.length ?? 0 }}</td>
-                <td class="table-td text-muted-foreground">{{ skuSummary(b) }}</td>
+                <td class="table-td hidden md:table-cell">{{ b.item_count ?? b.items?.length ?? 0 }}</td>
+                <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
                 <td class="table-td"><UiStatusBadge kind="internal" :value="b.status" /></td>
-                <td class="table-td"><UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" /></td>
-                <td class="table-td text-muted-foreground">{{ b.creator_name || b.created_by || '—' }}</td>
+                <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" /></td>
+                <td class="table-td hidden text-muted-foreground lg:table-cell">{{ b.created_by?.full_name || b.created_by?.email || '—' }}</td>
                 <td class="table-td text-right">
                   <NuxtLink :to="`/batches/${b.id}`" class="text-xs font-medium text-primary hover:underline">Open</NuxtLink>
                 </td>

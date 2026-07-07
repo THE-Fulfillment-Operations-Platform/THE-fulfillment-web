@@ -26,7 +26,9 @@ export interface SkuInput {
 
 // ---- Sellers ---------------------------------------------------------------
 export const sellersApi = {
-  list: () => apiGet<Seller[]>('/api/sellers'),
+  // page_size=200 → fetch the whole list so the Users dropdown & seller tab
+  // don't silently drop sellers past the default page.
+  list: () => apiGet<Seller[]>('/api/sellers', { page_size: 200 }),
   get: (id: number | string) => apiGet<Seller>(`/api/sellers/${id}`),
   create: (body: Partial<Seller>) => apiPost<Seller>('/api/sellers', body),
   update: (id: number | string, body: Partial<Seller>) => apiPut<Seller>(`/api/sellers/${id}`, body),

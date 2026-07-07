@@ -3,6 +3,7 @@ import { notesApi } from '~/services/api'
 import type { NoteInput } from '~/services/api'
 import type { Note } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
@@ -161,7 +162,15 @@ async function resolve(n: Note) {
 }
 
 async function remove(n: Note) {
-  if (!confirm(`Xoá note "${n.title}"?`)) return
+  if (
+    !(await useConfirm().confirm({
+      title: 'Xoá ghi chú',
+      message: `Xoá note "${n.title}"? Thao tác không thể hoàn tác.`,
+      tone: 'danger',
+      confirmText: 'Xoá',
+    }))
+  )
+    return
   try {
     await notesApi.remove(n.id)
     toast.success('Đã xoá note')
@@ -216,11 +225,11 @@ async function remove(n: Note) {
             <thead class="bg-muted">
               <tr>
                 <th class="table-th">Tiêu đề</th>
-                <th class="table-th">Đối tượng</th>
-                <th class="table-th">Phụ trách</th>
+                <th class="table-th hidden md:table-cell">Đối tượng</th>
+                <th class="table-th hidden lg:table-cell">Phụ trách</th>
                 <th class="table-th">Mức độ</th>
                 <th class="table-th">Trạng thái</th>
-                <th class="table-th">Tạo lúc</th>
+                <th class="table-th hidden sm:table-cell">Tạo lúc</th>
                 <th class="table-th"></th>
               </tr>
             </thead>
@@ -233,26 +242,26 @@ async function remove(n: Note) {
                   </div>
                   <p v-if="n.reason_code" class="text-xs text-muted-foreground">{{ n.reason_code }}</p>
                 </td>
-                <td class="table-td text-xs text-muted-foreground">
+                <td class="table-td hidden text-xs text-muted-foreground md:table-cell">
                   <span v-if="n.entity_type">{{ n.entity_type }} #{{ n.entity_id }}</span>
                   <span v-else>—</span>
                 </td>
-                <td class="table-td text-xs text-muted-foreground">{{ n.owner_role ? ROLE_LABEL[n.owner_role] : '—' }}</td>
+                <td class="table-td hidden text-xs text-muted-foreground lg:table-cell">{{ n.owner_role ? ROLE_LABEL[n.owner_role] : '—' }}</td>
                 <td class="table-td"><UiStatusBadge kind="severity" :value="n.severity" /></td>
                 <td class="table-td"><UiStatusBadge kind="noteStatus" :value="n.status" /></td>
-                <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(n.created_at) }}</td>
+                <td class="table-td hidden text-xs text-muted-foreground sm:table-cell">{{ formatDateTime(n.created_at) }}</td>
                 <td class="table-td">
-                  <div class="flex items-center justify-end gap-2">
+                  <div class="flex items-center justify-end gap-1">
                     <button
                       v-if="n.status !== 'RESOLVED'"
-                      class="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline disabled:opacity-50"
+                      class="table-action text-emerald-600 disabled:opacity-50 dark:text-emerald-400"
                       :disabled="resolvingId === n.id"
                       @click="resolve(n)"
                     >
                       Giải quyết
                     </button>
-                    <button class="text-xs font-medium text-primary hover:underline" @click="openEdit(n)">Sửa</button>
-                    <button class="text-xs font-medium text-red-500 dark:text-rose-400 hover:underline" @click="remove(n)">Xoá</button>
+                    <button class="table-action text-primary" @click="openEdit(n)">Sửa</button>
+                    <button class="table-action text-red-500 dark:text-rose-400" @click="remove(n)">Xoá</button>
                   </div>
                 </td>
               </tr>

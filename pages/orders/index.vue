@@ -13,6 +13,7 @@ const filters = reactive({
   design_status: '',
   batch_id: '',
   page: 1,
+  page_size: 20,
 })
 
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
@@ -22,7 +23,7 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     design_status: filters.design_status || undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     page: filters.page,
-    page_size: 20,
+    page_size: filters.page_size,
   }),
 )
 
@@ -56,7 +57,25 @@ function changePage(p: number) {
   reload()
 }
 
+function changePageSize(size: number) {
+  filters.page_size = size
+  filters.page = 1 // avoid landing past the last page after enlarging rows
+  reload()
+}
+
 const items = computed(() => data.value ?? [])
+
+// A rejected/cancelled/pending order shouldn't read as a production status —
+// surface its review state instead of the (misleading) internal_status.
+function itemStatus(it: OrderItem): { kind: 'review' | 'internal'; value: string } {
+  const rv = it.order?.review_status
+  if (rv && rv !== 'APPROVED') return { kind: 'review', value: rv }
+  return { kind: 'internal', value: it.internal_status }
+}
+function itemDead(it: OrderItem): boolean {
+  const rv = it.order?.review_status
+  return rv === 'REJECTED' || rv === 'CANCELLED'
+}
 </script>
 
 <template>
@@ -107,26 +126,26 @@ const items = computed(() => data.value ?? [])
             <thead class="bg-muted">
               <tr>
                 <th class="table-th">Internal Item</th>
-                <th class="table-th">Store Order</th>
+                <th class="table-th hidden md:table-cell">Store Order</th>
                 <th class="table-th">SKU</th>
-                <th class="table-th">NVL</th>
-                <th class="table-th">Design</th>
-                <th class="table-th">Mockup</th>
-                <th class="table-th">Batch</th>
+                <th class="table-th hidden lg:table-cell">NVL</th>
+                <th class="table-th hidden sm:table-cell">Design</th>
+                <th class="table-th hidden lg:table-cell">Mockup</th>
+                <th class="table-th hidden md:table-cell">Batch</th>
                 <th class="table-th">Trạng thái</th>
                 <th class="table-th"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="it in items" :key="it.id" class="hover:bg-muted">
+              <tr v-for="it in items" :key="it.id" class="hover:bg-muted" :class="{ 'opacity-55': itemDead(it) }">
                 <td class="table-td font-medium text-foreground">{{ it.internal_code }}</td>
-                <td class="table-td">{{ itemStoreOrderId(it) }}</td>
+                <td class="table-td hidden md:table-cell">{{ itemStoreOrderId(it) }}</td>
                 <td class="table-td">{{ it.sku_code }}</td>
-                <td class="table-td">{{ itemMaterial(it) }}</td>
-                <td class="table-td"><UiStatusBadge kind="design" :value="it.design_status" /></td>
-                <td class="table-td"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
-                <td class="table-td text-muted-foreground">{{ itemBatchLabel(it) }}</td>
-                <td class="table-td"><UiStatusBadge kind="internal" :value="it.internal_status" /></td>
+                <td class="table-td hidden lg:table-cell">{{ itemMaterial(it) }}</td>
+                <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="design" :value="it.design_status" /></td>
+                <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
+                <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
+                <td class="table-td"><UiStatusBadge :kind="itemStatus(it).kind" :value="itemStatus(it).value" /></td>
                 <td class="table-td text-right">
                   <NuxtLink
                     v-if="itemOrderId(it)"
@@ -141,7 +160,12 @@ const items = computed(() => data.value ?? [])
           </table>
         </div>
         <div class="px-4">
-          <UiPagination :meta="meta" @change="changePage" />
+          <UiPagination
+            :meta="meta"
+            :page-size="filters.page_size"
+            @change="changePage"
+            @update:page-size="changePageSize"
+          />
         </div>
       </UiStateBlock>
     </div>

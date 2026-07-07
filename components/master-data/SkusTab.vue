@@ -5,6 +5,7 @@ import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
+import { useConfirm } from '~/composables/useConfirm'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -97,7 +98,7 @@ async function submit() {
       toast.success('Đã cập nhật SKU')
     } else {
       await skusApi.create({
-        code: form.code.trim(),
+        code: normalizeCode(form.code),
         name: form.name.trim(),
         product_name: form.product_name.trim(),
         description: form.description.trim(),
@@ -131,7 +132,15 @@ async function toggleActive(s: Sku) {
 
 const removingId = ref<number | null>(null)
 async function remove(s: Sku) {
-  if (!confirm(`Xoá SKU "${s.code}"?`)) return
+  if (
+    !(await useConfirm().confirm({
+      title: 'Xoá SKU',
+      message: `Xoá SKU "${s.code}"? Thao tác không thể hoàn tác.`,
+      tone: 'danger',
+      confirmText: 'Xoá',
+    }))
+  )
+    return
   removingId.value = s.id
   try {
     await skusApi.remove(s.id)
@@ -196,19 +205,19 @@ async function remove(s: Sku) {
                 </span>
               </td>
               <td class="table-td">
-                <div class="flex items-center justify-end gap-3">
+                <div class="flex items-center justify-end gap-1">
                   <button
-                    class="text-xs font-medium hover:underline disabled:opacity-50"
+                    class="table-action disabled:opacity-50"
                     :class="(s.is_active ?? true) ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'"
                     :disabled="togglingId === s.id"
                     @click="toggleActive(s)"
                   >
                     {{ (s.is_active ?? true) ? 'Ẩn' : 'Bật' }}
                   </button>
-                  <button class="text-xs font-medium text-primary hover:underline" @click="openEdit(s)">Sửa</button>
+                  <button class="table-action text-primary" @click="openEdit(s)">Sửa</button>
                   <button
                     v-if="canDelete"
-                    class="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50 dark:text-rose-400"
+                    class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
                     :disabled="removingId === s.id"
                     @click="remove(s)"
                   >
@@ -227,7 +236,14 @@ async function remove(s: Sku) {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Mã SKU *</label>
-            <input v-model="form.code" class="input font-mono" :disabled="!!editing" placeholder="VD: BR A 1.6 kep" />
+            <input
+              v-model="form.code"
+              class="input font-mono"
+              :disabled="!!editing"
+              placeholder="VD: WOOD-01"
+              @blur="form.code = normalizeCode(form.code)"
+            />
+            <p v-if="!editing" class="mt-1 text-[11px] text-muted-foreground">Mã tự động VIẾT HOA, bỏ dấu tiếng Việt và bỏ khoảng trắng.</p>
           </div>
           <div>
             <label class="label">Tên *</label>

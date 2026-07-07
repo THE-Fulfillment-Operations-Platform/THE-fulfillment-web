@@ -11,6 +11,15 @@ const { data: order, loading, error, reload } = useApiResource<Order>(() => orde
 
 const items = computed<OrderItem[]>(() => order.value?.items ?? [])
 
+// The seller/production status only means something once the order is APPROVED.
+// While it is pending / rejected / cancelled, showing "Đang sản xuất" alongside
+// "Từ chối" is contradictory — so we gate the production UI on review state.
+const reviewStatus = computed(() => order.value?.review_status)
+const inProduction = computed(() => reviewStatus.value === 'APPROVED')
+const reviewDead = computed(
+  () => reviewStatus.value === 'REJECTED' || reviewStatus.value === 'CANCELLED',
+)
+
 // Derive a coarse timeline from the items' internal statuses.
 const timeline = computed(() => {
   const its = items.value
@@ -69,12 +78,28 @@ const shippingRows = computed(() => {
             <div class="flex flex-col items-end gap-1">
               <UiStatusBadge v-if="order.review_status && order.review_status !== 'APPROVED'" kind="review" :value="order.review_status" />
               <UiStatusBadge v-if="order.cancellation_status === 'REQUESTED'" kind="cancellation" :value="order.cancellation_status" />
-              <UiStatusBadge kind="seller" :value="order.seller_status" />
+              <!-- Production status is only meaningful once approved. -->
+              <UiStatusBadge v-if="inProduction" kind="seller" :value="order.seller_status" />
             </div>
           </div>
 
-          <!-- Timeline -->
-          <div class="mt-5 flex flex-wrap items-center gap-1">
+          <!-- Rejected / cancelled → dead order, no production timeline. -->
+          <div
+            v-if="reviewDead"
+            class="mt-5 rounded-lg border border-rose-200/60 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+          >
+            {{ reviewStatus === 'REJECTED' ? 'Đơn đã bị từ chối — không vào sản xuất.' : 'Đơn đã bị huỷ.' }}
+            <span v-if="order.review_note" class="text-rose-600/80 dark:text-rose-300/80">· {{ order.review_note }}</span>
+          </div>
+          <!-- Pending review → not in production yet. -->
+          <div
+            v-else-if="!inProduction"
+            class="mt-5 rounded-lg border border-amber-200/60 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            Đơn đang chờ duyệt — chưa vào sản xuất.
+          </div>
+          <!-- Approved → production timeline. -->
+          <div v-else class="mt-5 flex flex-wrap items-center gap-1">
             <template v-for="(step, idx) in timeline" :key="step.key">
               <div class="flex items-center gap-2">
                 <div

@@ -77,7 +77,8 @@ const ORDERS: Order[] = [
 const BATCHES: Batch[] = [
   {
     id: 101001, code: '#101001', material_id: 1, material_code: 'WOOD', material_name: 'Gỗ',
-    status: 'PRINTED', priority: 'NORMAL', creator_name: 'Designer', item_count: 1, created_at: ts,
+    status: 'PRINTED', priority: 'NORMAL', item_count: 1, created_at: ts,
+    created_by: { id: 4, email: 'designer@the.local', full_name: 'Designer Demo', role: 'DESIGNER', is_active: true },
     items: [{ id: 1, item_code: 'ORD-000001_1', order_code: 'ORD-000001', sku_code: 'WOOD-01', status: 'PRINTED', mockup_url: 'https://mockups.example.com/ORD-000001_1.png', print_file_url: 'https://files.example.com/ORD-000001_1-print.pdf' }],
   },
 ]

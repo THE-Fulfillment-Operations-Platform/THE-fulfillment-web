@@ -23,10 +23,11 @@ export const batchesApi = {
   create: (body: CreateBatchInput) => apiPost<CreateBatchResult>('/api/batches', body),
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),
-  // Download the legacy-compatible production template CSV for a batch.
+  // Download the legacy-compatible production template as a real .xlsx workbook
+  // (columns split cleanly in Excel on any locale, unlike a comma CSV).
   exportProductionTemplate: (id: number | string, code?: string) =>
     apiDownload(
-      `/api/batches/${id}/production-template.csv`,
-      `production-${(code ?? String(id)).replace('#', '')}.csv`,
+      `/api/batches/${id}/production-template.xlsx`,
+      `production-${(code ?? String(id)).replace('#', '')}.xlsx`,
     ),
 }

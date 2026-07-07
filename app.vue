@@ -4,5 +4,6 @@
       <NuxtPage />
     </NuxtLayout>
     <ToastHost />
+    <ConfirmHost />
   </div>
 </template>

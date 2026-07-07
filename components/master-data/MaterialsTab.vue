@@ -5,6 +5,7 @@ import type { Material } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
+import { useConfirm } from '~/composables/useConfirm'
 
 const props = defineProps<{ materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -59,7 +60,7 @@ async function submit() {
       toast.success('Đã cập nhật nguyên vật liệu')
     } else {
       await materialsApi.create({
-        code: form.code.trim(),
+        code: normalizeCode(form.code),
         name: form.name.trim(),
         description: form.description?.trim(),
       })
@@ -76,7 +77,15 @@ async function submit() {
 
 const removingId = ref<number | null>(null)
 async function remove(m: Material) {
-  if (!confirm(`Xoá nguyên vật liệu "${m.name}" (${m.code})?`)) return
+  if (
+    !(await useConfirm().confirm({
+      title: 'Xoá nguyên vật liệu',
+      message: `Xoá "${m.name}" (${m.code})? Thao tác không thể hoàn tác.`,
+      tone: 'danger',
+      confirmText: 'Xoá',
+    }))
+  )
+    return
   removingId.value = m.id
   try {
     await materialsApi.remove(m.id)
@@ -121,11 +130,11 @@ async function remove(m: Material) {
               <td class="table-td font-medium text-foreground">{{ m.name }}</td>
               <td class="table-td max-w-md whitespace-normal text-muted-foreground">{{ m.description || '—' }}</td>
               <td class="table-td">
-                <div class="flex items-center justify-end gap-3">
-                  <button class="text-xs font-medium text-primary hover:underline" @click="openEdit(m)">Sửa</button>
+                <div class="flex items-center justify-end gap-1">
+                  <button class="table-action text-primary" @click="openEdit(m)">Sửa</button>
                   <button
                     v-if="canDelete"
-                    class="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50 dark:text-rose-400"
+                    class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
                     :disabled="removingId === m.id"
                     @click="remove(m)"
                   >
@@ -143,8 +152,14 @@ async function remove(m: Material) {
       <div class="space-y-4">
         <div>
           <label class="label">Mã material *</label>
-          <input v-model="form.code" class="input font-mono" :disabled="!!editing" placeholder="VD: MICA-TRONG-3-LY" />
-          <p v-if="!editing" class="mt-1 text-[11px] text-muted-foreground">Mã sẽ được tự động viết hoa.</p>
+          <input
+            v-model="form.code"
+            class="input font-mono"
+            :disabled="!!editing"
+            placeholder="VD: MICA-TRONG-3-LY"
+            @blur="form.code = normalizeCode(form.code)"
+          />
+          <p v-if="!editing" class="mt-1 text-[11px] text-muted-foreground">Mã tự động VIẾT HOA, bỏ dấu tiếng Việt và bỏ khoảng trắng.</p>
         </div>
         <div>
           <label class="label">Tên *</label>

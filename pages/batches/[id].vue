@@ -15,9 +15,10 @@ const toast = useToastStore()
 const { data: batch, loading, error, reload } = useApiResource<Batch>(() => batchesApi.get(id))
 const items = computed(() => batch.value?.items ?? [])
 
-// Roles allowed to advance batch status (production + supervisors).
+// Roles allowed to advance batch status (production + supervisors). Mirrors the
+// backend PATCH /batches/:id/status guard (Owner/Admin/Ops/Production/Designer).
 const canChangeStatus = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION'].includes(auth.role ?? ''),
+  ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'DESIGNER'].includes(auth.role ?? ''),
 )
 
 // Production rows for the batch table — mirrors the legacy production template.
@@ -74,8 +75,9 @@ async function setStatus(status: InternalStatus) {
   }
 }
 
-// Download the legacy-compatible production template CSV (server-generated so it
-// matches the workshop's spreadsheet exactly, incl. Vietnamese headers + BOM).
+// Download the legacy-compatible production template as a real .xlsx workbook
+// (server-generated so columns split cleanly in Excel on any locale and the
+// Vietnamese headers match the workshop's spreadsheet exactly).
 const exporting = ref(false)
 async function exportProduction() {
   if (!batch.value || exporting.value) return
@@ -135,7 +137,7 @@ function printLabels() {
               <button class="btn-secondary" @click="printLabels"><UiIcon name="qc" :size="16" /> Print QR</button>
               <button class="btn-primary" :disabled="exporting" @click="exportProduction">
                 <UiSpinner v-if="exporting" :size="16" />
-                <UiIcon v-else name="upload" :size="16" /> Xuất file sản xuất
+                <UiIcon v-else name="upload" :size="16" /> Xuất Excel (.xlsx)
               </button>
               <button class="btn-secondary" title="Phase sau khi có storage" @click="toast.info('Download ZIP là phase sau (chưa có storage).')">
                 <UiIcon name="box" :size="16" /> Download ZIP
@@ -169,45 +171,45 @@ function printLabels() {
             <table class="min-w-full divide-y divide-border">
               <thead class="bg-card">
                 <tr>
-                  <th class="table-th">Mã nội bộ</th>
-                  <th class="table-th">SKU</th>
-                  <th class="table-th">Loại VL</th>
-                  <th class="table-th">Mô tả QC</th>
-                  <th class="table-th">Mã ảnh</th>
-                  <th class="table-th">STT</th>
-                  <th class="table-th">SL</th>
-                  <th class="table-th">Link ảnh</th>
-                  <th class="table-th">Mockup</th>
-                  <th class="table-th">Tên file</th>
-                  <th class="table-th">Link in</th>
-                  <th class="table-th">Link cắt</th>
+                  <th class="table-th sticky left-0 z-20 bg-card">Mã nội bộ</th>
+                  <th class="table-th hidden sm:table-cell">SKU</th>
+                  <th class="table-th hidden md:table-cell">Loại VL</th>
+                  <th class="table-th hidden lg:table-cell">Mô tả QC</th>
+                  <th class="table-th hidden lg:table-cell">Mã ảnh</th>
+                  <th class="table-th hidden lg:table-cell">STT</th>
+                  <th class="table-th hidden sm:table-cell">SL</th>
+                  <th class="table-th hidden lg:table-cell">Link ảnh</th>
+                  <th class="table-th hidden md:table-cell">Mockup</th>
+                  <th class="table-th hidden lg:table-cell">Tên file</th>
+                  <th class="table-th hidden md:table-cell">Link in</th>
+                  <th class="table-th hidden md:table-cell">Link cắt</th>
                   <th class="table-th">Trạng thái</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
-                <tr v-for="(r, idx) in prodRows" :key="idx" class="hover:bg-muted">
-                  <td class="table-td font-medium text-foreground">{{ r.internal_code }}</td>
-                  <td class="table-td">{{ r.sku_code }}</td>
-                  <td class="table-td">{{ r.material }}</td>
-                  <td class="table-td max-w-[16rem] truncate text-xs text-muted-foreground" :title="r.qc_description">
+                <tr v-for="(r, idx) in prodRows" :key="idx" class="group hover:bg-muted">
+                  <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.internal_code }}</td>
+                  <td class="table-td hidden sm:table-cell">{{ r.sku_code }}</td>
+                  <td class="table-td hidden md:table-cell">{{ r.material }}</td>
+                  <td class="table-td hidden max-w-[16rem] truncate text-xs text-muted-foreground lg:table-cell" :title="r.qc_description">
                     {{ r.qc_description || '—' }}
                   </td>
-                  <td class="table-td text-xs">{{ r.image_code || '—' }}</td>
-                  <td class="table-td text-xs">{{ r.production_sequence === '' ? '—' : r.production_sequence }}</td>
-                  <td class="table-td text-xs">{{ r.quantity === '' ? '—' : r.quantity }}</td>
-                  <td class="table-td">
+                  <td class="table-td hidden text-xs lg:table-cell">{{ r.image_code || '—' }}</td>
+                  <td class="table-td hidden text-xs lg:table-cell">{{ r.production_sequence === '' ? '—' : r.production_sequence }}</td>
+                  <td class="table-td hidden text-xs sm:table-cell">{{ r.quantity === '' ? '—' : r.quantity }}</td>
+                  <td class="table-td hidden lg:table-cell">
                     <a v-if="r.design_url" :href="r.design_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
                     <span v-else class="text-xs text-muted-foreground">—</span>
                   </td>
-                  <td class="table-td"><UiMockupLink :url="r.mockup_url" small label="Mockup" /></td>
-                  <td class="table-td max-w-[10rem] truncate text-xs text-muted-foreground" :title="r.production_file_name">
+                  <td class="table-td hidden md:table-cell"><UiMockupLink :url="r.mockup_url" small label="Mockup" /></td>
+                  <td class="table-td hidden max-w-[10rem] truncate text-xs text-muted-foreground lg:table-cell" :title="r.production_file_name">
                     {{ r.production_file_name || '—' }}
                   </td>
-                  <td class="table-td">
+                  <td class="table-td hidden md:table-cell">
                     <a v-if="r.print_file_url" :href="r.print_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
                     <span v-else class="text-xs text-muted-foreground">—</span>
                   </td>
-                  <td class="table-td">
+                  <td class="table-td hidden md:table-cell">
                     <a v-if="r.cut_file_url" :href="r.cut_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
                     <span v-else class="text-xs text-muted-foreground">—</span>
                   </td>

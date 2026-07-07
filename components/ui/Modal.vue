@@ -16,19 +16,23 @@ function close() {
         @click.self="close"
       >
         <div
-          class="card my-4 w-full shadow-soft"
+          class="card my-4 flex max-h-[calc(100dvh_-_2rem)] w-full flex-col shadow-soft"
           :class="wide ? 'max-w-3xl' : 'max-w-lg'"
         >
-          <div class="flex items-center justify-between border-b border-border px-5 py-3.5">
+          <div class="flex shrink-0 items-center justify-between border-b border-border px-5 py-3.5">
             <h3 class="text-sm font-semibold text-foreground">{{ title }}</h3>
-            <button class="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground" @click="close">
+            <button
+              class="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Đóng"
+              @click="close"
+            >
               <UiIcon name="close" :size="18" />
             </button>
           </div>
-          <div class="px-5 py-4">
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <slot />
           </div>
-          <div v-if="$slots.footer" class="flex justify-end gap-2 border-t border-border px-5 py-3.5">
+          <div v-if="$slots.footer" class="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3.5">
             <slot name="footer" />
           </div>
         </div>

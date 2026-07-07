@@ -21,7 +21,7 @@ const toneClasses: Record<string, string> = {
       <UiIcon :name="icon || 'box'" :size="22" />
     </div>
     <div class="min-w-0">
-      <p class="text-2xl font-semibold leading-tight text-foreground">{{ value }}</p>
+      <p class="truncate text-2xl font-semibold leading-tight tabular-nums text-foreground">{{ value }}</p>
       <p class="truncate text-xs text-muted-foreground">{{ label }}</p>
       <p v-if="hint" class="truncate text-[11px] text-muted-foreground">{{ hint }}</p>
     </div>

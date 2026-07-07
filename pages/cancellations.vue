@@ -68,10 +68,10 @@ async function submit() {
     />
 
     <div class="card mb-4 p-4">
-      <div class="flex gap-2">
-        <input v-model="filters.search" class="input" placeholder="Tìm theo mã đơn…" @keyup.enter="applyFilters" />
-        <button class="btn-primary" @click="applyFilters"><UiIcon name="search" :size="16" /> Tìm</button>
-        <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /></button>
+      <div class="flex flex-wrap items-center gap-2">
+        <input v-model="filters.search" class="input min-w-[10rem] flex-1" placeholder="Tìm theo mã đơn…" @keyup.enter="applyFilters" />
+        <button class="btn-primary shrink-0" @click="applyFilters"><UiIcon name="search" :size="16" /> Tìm</button>
+        <button class="btn-secondary shrink-0" @click="reload"><UiIcon name="refresh" :size="16" /></button>
       </div>
     </div>
 

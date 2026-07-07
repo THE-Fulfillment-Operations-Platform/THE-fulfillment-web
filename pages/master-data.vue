@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { materialsApi, skusApi } from '~/services/api'
-import type { Material, Sku } from '~/types'
+import { materialsApi, skusApi, sellersApi } from '~/services/api'
+import type { Material, Sku, Seller } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
@@ -10,22 +10,25 @@ import { useToastStore } from '~/stores/toast'
 const route = useRoute()
 const router = useRouter()
 
-type TabKey = 'materials' | 'skus' | 'mapping' | 'import'
+type TabKey = 'materials' | 'skus' | 'mapping' | 'sellers' | 'import'
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'materials', label: 'Materials', icon: 'box' },
   { key: 'skus', label: 'SKUs', icon: 'orders' },
   { key: 'mapping', label: 'SKU → Material', icon: 'link' },
+  { key: 'sellers', label: 'Seller', icon: 'users' },
   { key: 'import', label: 'Import Excel vận hành cũ', icon: 'upload' },
 ]
 
-const VALID: TabKey[] = ['materials', 'skus', 'mapping', 'import']
+const VALID: TabKey[] = ['materials', 'skus', 'mapping', 'sellers', 'import']
 const tab = ref<TabKey>(VALID.includes(route.query.tab as TabKey) ? (route.query.tab as TabKey) : 'materials')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
 
 const materials = ref<Material[]>([])
 const skus = ref<Sku[]>([])
+const sellers = ref<Seller[]>([])
 const loadingMaterials = ref(false)
 const loadingSkus = ref(false)
+const loadingSellers = ref(false)
 
 async function loadMaterials() {
   loadingMaterials.value = true
@@ -47,9 +50,20 @@ async function loadSkus() {
     loadingSkus.value = false
   }
 }
+async function loadSellers() {
+  loadingSellers.value = true
+  try {
+    sellers.value = (await sellersApi.list()).data ?? []
+  } catch (e) {
+    useToastStore().error(errorMessage(e))
+  } finally {
+    loadingSellers.value = false
+  }
+}
 function reloadAll() {
   loadMaterials()
   loadSkus()
+  loadSellers()
 }
 onMounted(reloadAll)
 
@@ -107,6 +121,12 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
       :skus="skus"
       :materials="materials"
       :loading="loadingSkus"
+      @changed="reloadAll"
+    />
+    <MasterDataSellersTab
+      v-else-if="tab === 'sellers'"
+      :sellers="sellers"
+      :loading="loadingSellers"
       @changed="reloadAll"
     />
     <MasterDataLegacyImportTab v-else @committed="reloadAll" />

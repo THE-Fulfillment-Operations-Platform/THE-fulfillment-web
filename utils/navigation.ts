@@ -36,11 +36,13 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Ghi chú / Cần xử lý', to: '/notes', icon: 'notes', roles: ALL_INTERNAL },
   { label: 'Người dùng', to: '/users', icon: 'users', roles: ['OWNER', 'ADMIN'] },
   { label: 'Nhật ký hệ thống', to: '/audit', icon: 'audit', roles: ['OWNER', 'ADMIN'] },
+  { label: 'Cài đặt', to: '/settings', icon: 'alert', roles: ['OWNER'] },
 ]
 
 // Seller sidebar — intentionally minimal, no internal operations.
 export const SELLER_NAV: NavItem[] = [
   { label: 'Đơn của tôi', to: '/seller', icon: 'orders', roles: ['SELLER'] },
+  { label: 'Tải đơn lên', to: '/seller/import', icon: 'upload', roles: ['SELLER'] },
 ]
 
 export function navForRole(role: Role | null): NavItem[] {

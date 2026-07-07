@@ -160,12 +160,12 @@ onMounted(focusScan)
           <h3 class="text-sm font-semibold text-foreground">Mockup chuẩn (seller)</h3>
           <UiMockupLink :url="result.mockup_url" small label="Mở tab mới" />
         </div>
-        <div class="flex items-center justify-center bg-slate-900 p-4" style="min-height: 22rem">
+        <div class="flex min-h-[14rem] items-center justify-center bg-slate-900 p-4 sm:min-h-[18rem] lg:min-h-[22rem]">
           <img
             v-if="isValidUrl(result.mockup_url)"
             :src="result.mockup_url"
             :alt="`Mockup ${result.item_code}`"
-            class="max-h-[28rem] max-w-full rounded object-contain"
+            class="max-h-[14rem] max-w-full rounded object-contain sm:max-h-[20rem] lg:max-h-[28rem]"
           />
           <div v-else class="flex flex-col items-center gap-2 text-muted-foreground">
             <UiIcon name="alert" :size="28" />

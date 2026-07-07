@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { usersApi } from '~/services/api'
+import { usersApi, sellersApi } from '~/services/api'
 import type { UserInput } from '~/services/api'
-import type { Role, User } from '~/types'
+import type { Role, User, Seller } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
@@ -31,6 +31,26 @@ const isSellerRole = computed(() => form.role === 'SELLER')
 const roleOptions = (Object.entries(ROLE_LABEL) as [Role, string][]).map(
   ([value, label]) => ({ value, label }),
 )
+
+// Sellers for the "Vai trò = Seller" dropdown. A SELLER user must link to an
+// existing seller entity (its id), so we offer a picker instead of a free-text
+// id that invites typing a non-existent number.
+const sellers = ref<Seller[]>([])
+const loadingSellers = ref(false)
+const sellerOptions = computed(() =>
+  sellers.value.map((s) => ({ value: s.id, label: `${s.name} (${s.code}) — #${s.id}` })),
+)
+async function loadSellers() {
+  loadingSellers.value = true
+  try {
+    sellers.value = (await sellersApi.list()).data ?? []
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    loadingSellers.value = false
+  }
+}
+onMounted(loadSellers)
 
 function openCreate() {
   editing.value = null
@@ -62,8 +82,25 @@ const canSubmit = computed(() => {
   return true
 })
 
+// Fast client-side checks so obvious mistakes get an instant, clear Vietnamese
+// message instead of a round-trip to the backend.
+function validate(): string | null {
+  if (!form.email.trim()) return 'Vui lòng nhập email.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Email không đúng định dạng (ví dụ: ten@congty.com).'
+  if (!form.full_name.trim()) return 'Vui lòng nhập họ tên.'
+  if (!editing.value && !form.password) return 'Vui lòng nhập mật khẩu.'
+  if (isSellerRole.value && !form.seller_id)
+    return 'Vui lòng chọn Seller cho tài khoản này. Nếu chưa có, hãy tạo seller ở Master data → Seller.'
+  return null
+}
+
 async function submit() {
-  if (!canSubmit.value || saving.value) return
+  if (saving.value) return
+  const problem = validate()
+  if (problem) {
+    toast.error(problem)
+    return
+  }
   saving.value = true
   try {
     if (editing.value) {
@@ -214,10 +251,24 @@ const ROLE_BADGE: Record<Role, string> = {
             <UiSelect v-model="form.role" :options="roleOptions" aria-label="Vai trò" />
           </div>
           <div v-if="isSellerRole">
-            <label class="label">Seller ID *</label>
-            <input v-model.number="form.seller_id" type="number" class="input" placeholder="VD: 1" />
+            <label class="label">Seller *</label>
+            <UiSelect
+              v-model="form.seller_id"
+              :options="sellerOptions"
+              aria-label="Seller"
+              :placeholder="loadingSellers ? 'Đang tải…' : 'Chọn seller…'"
+            />
           </div>
         </div>
+        <p v-if="isSellerRole && !loadingSellers && sellerOptions.length === 0" class="text-xs text-amber-600 dark:text-amber-400">
+          Chưa có seller nào trong hệ thống.
+          <NuxtLink to="/master-data?tab=sellers" class="font-medium underline">Tạo seller mới</NuxtLink>
+          rồi quay lại chọn.
+        </p>
+        <p v-else-if="isSellerRole" class="text-[11px] text-muted-foreground">
+          Tài khoản Seller phải gắn với một seller đã có. Chưa có thì
+          <NuxtLink to="/master-data?tab=sellers" class="underline">tạo seller mới</NuxtLink>.
+        </p>
         <label class="flex cursor-pointer items-center gap-2">
           <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
           <span class="text-sm text-foreground">Tài khoản hoạt động</span>

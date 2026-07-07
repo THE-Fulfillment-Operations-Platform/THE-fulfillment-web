@@ -2,6 +2,7 @@
 import { importsApi, sellersApi } from '~/services/api'
 import type { ImportPreview, ImportRow, Seller } from '~/types'
 import { parseCsv, importTemplateCsv, IMPORT_COLUMNS } from '~/utils/csv'
+import { importErrorVi } from '~/utils/import-errors'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
@@ -136,6 +137,10 @@ const SKU_ISSUE_CODES = ['SKU_UNMAPPED', 'SKU_NO_MATERIAL']
 function isSkuIssue(code?: string) {
   return !!code && SKU_ISSUE_CODES.includes(code)
 }
+// Enrich each row error with its Vietnamese, customer-friendly copy.
+const errorRows = computed(() =>
+  (preview.value?.errors ?? []).map((e) => ({ ...e, vi: importErrorVi(e) })),
+)
 const skuIssues = computed(() => (preview.value?.errors ?? []).filter((e) => isSkuIssue(e.error_code)))
 const unmappedSkus = computed(() => [...new Set(skuIssues.value.map((e) => e.sku).filter(Boolean))] as string[])
 // Deep-link: unknown SKU → legacy import / create; existing-but-unmapped → mapping.
@@ -308,31 +313,32 @@ function masterDataLink(code?: string) {
                 <thead class="bg-card">
                   <tr>
                     <th class="table-th">Dòng</th>
-                    <th class="table-th">StoreOrderID</th>
+                    <th class="table-th">Mã đơn</th>
                     <th class="table-th">SKU</th>
-                    <th class="table-th">Field</th>
+                    <th class="table-th hidden sm:table-cell">Cột</th>
                     <th class="table-th">Lỗi</th>
-                    <th class="table-th">Gợi ý xử lý</th>
+                    <th class="table-th">Cần làm gì</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
-                  <tr v-for="(err, i) in preview.errors" :key="i" class="hover:bg-red-50/40 dark:bg-rose-500/10">
+                  <tr v-for="(err, i) in errorRows" :key="i" class="hover:bg-red-50/40 dark:bg-rose-500/10">
                     <td class="table-td">{{ err.row_number }}</td>
                     <td class="table-td">{{ err.store_order_id || '—' }}</td>
                     <td class="table-td">{{ err.sku || '—' }}</td>
-                    <td class="table-td">{{ err.field || '—' }}</td>
-                    <td class="table-td text-red-600 dark:text-rose-400">
-                      <span class="font-medium">{{ err.error_code }}</span>
-                      <span class="block text-xs text-muted-foreground">{{ err.message }}</span>
+                    <td class="table-td hidden text-xs text-muted-foreground sm:table-cell">{{ err.field || '—' }}</td>
+                    <td class="table-td max-w-xs whitespace-normal">
+                      <span class="font-medium text-red-600 dark:text-rose-400">{{ err.vi.label }}</span>
+                      <span class="mt-0.5 block text-xs text-muted-foreground">{{ err.vi.detail }}</span>
+                      <span class="mt-1 inline-block rounded bg-muted px-1.5 font-mono text-[10px] text-muted-foreground/60">{{ err.error_code }}</span>
                     </td>
-                    <td class="table-td text-muted-foreground">
-                      <span>{{ err.suggestion || '—' }}</span>
+                    <td class="table-td max-w-xs whitespace-normal text-muted-foreground">
+                      <span>{{ err.vi.suggestion || '—' }}</span>
                       <NuxtLink
                         v-if="isSkuIssue(err.error_code)"
                         :to="masterDataLink(err.error_code)"
                         class="mt-0.5 block text-xs font-medium text-primary hover:underline"
                       >
-                        → Setup SKU/NVL
+                        → Thiết lập SKU/NVL
                       </NuxtLink>
                     </td>
                   </tr>

@@ -28,23 +28,27 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const [orders, pend, batchList, attn, handoffs, recent] = await Promise.all([
+    // allSettled: one KPI a role can't access (e.g. handoffs) must not blank the
+    // whole dashboard — that widget just shows 0 instead.
+    const r = await Promise.allSettled([
       ordersApi.list({ page_size: 1 }),
       itemsApi.list({ status: 'PENDING', page_size: 1 }),
       batchesApi.list({ page_size: 200 }),
       notesApi.list({ required_attention: true, page_size: 1 }),
       handoffsApi.list(),
       ordersApi.list({ page_size: 8 }),
+      notesApi.list({ required_attention: true, page_size: 6 }),
     ])
-    totalOrders.value = orders.meta?.total ?? orders.data.length
-    pendingItems.value = pend.meta?.total ?? pend.data.length
-    batches.value = batchList.data ?? []
-    attentionCount.value = attn.meta?.total ?? attn.data.length
-    handoffCount.value = handoffs.data?.length ?? 0
-    recentOrders.value = recent.data ?? []
-    // Reuse the attention query for the list (small set).
-    const attnList = await notesApi.list({ required_attention: true, page_size: 6 })
-    attentionNotes.value = attnList.data ?? []
+    const val = <T>(i: number): T | null => (r[i].status === 'fulfilled' ? (r[i] as PromiseFulfilledResult<T>).value : null)
+    const orders = val<any>(0), pend = val<any>(1), batchList = val<any>(2)
+    const attn = val<any>(3), handoffs = val<any>(4), recent = val<any>(5), attnList = val<any>(6)
+    totalOrders.value = orders?.meta?.total ?? orders?.data?.length ?? 0
+    pendingItems.value = pend?.meta?.total ?? pend?.data?.length ?? 0
+    batches.value = batchList?.data ?? []
+    attentionCount.value = attn?.meta?.total ?? attn?.data?.length ?? 0
+    handoffCount.value = handoffs?.data?.length ?? 0
+    recentOrders.value = recent?.data ?? []
+    attentionNotes.value = attnList?.data ?? []
   } catch (e) {
     error.value = errorMessage(e)
   } finally {
@@ -67,7 +71,7 @@ onMounted(load)
 
     <UiStateBlock :loading="loading" :error="error" @retry="load">
       <!-- KPI row -->
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
         <KpiCard label="Tổng đơn hàng" :value="totalOrders" icon="orders" />
         <KpiCard label="Item chờ xử lý" :value="pendingItems" icon="batches" tone="warn" />
         <KpiCard label="Batch đang chạy" :value="runningBatches" icon="board" />

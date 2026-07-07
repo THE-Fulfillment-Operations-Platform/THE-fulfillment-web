@@ -41,9 +41,14 @@ function changePage(p: number) {
 
 <template>
   <div>
-    <div class="mb-5">
-      <h1 class="text-xl font-semibold text-foreground">Đơn hàng của tôi</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Theo dõi tiến độ sản xuất và giao hàng các đơn của bạn</p>
+    <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-semibold text-foreground">Đơn hàng của tôi</h1>
+        <p class="mt-1 text-sm text-muted-foreground">Theo dõi tiến độ sản xuất và giao hàng các đơn của bạn</p>
+      </div>
+      <NuxtLink to="/seller/import" class="btn-primary">
+        <UiIcon name="upload" :size="16" /> Tải đơn lên
+      </NuxtLink>
     </div>
 
     <!-- Filters -->

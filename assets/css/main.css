@@ -152,4 +152,10 @@ html.theme-transition *::after {
   .table-td {
     @apply whitespace-nowrap px-3 py-2.5 text-sm text-foreground;
   }
+  /* Inline row-action for data tables: gives bare text links a real ~32px tap
+     target (touch-friendly on tablets) while staying compact enough for dense
+     rows. Pair with a colour utility, e.g. `table-action text-primary`. */
+  .table-action {
+    @apply inline-flex items-center rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-muted;
+  }
 }

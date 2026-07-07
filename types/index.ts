@@ -413,8 +413,8 @@ export interface Batch {
   priority?: Priority
   due_date?: string
   note?: string
-  creator_name?: string
-  created_by?: string
+  created_by_id?: number
+  created_by?: User | null
   item_count?: number
   created_at?: string
   items?: BatchItem[]
