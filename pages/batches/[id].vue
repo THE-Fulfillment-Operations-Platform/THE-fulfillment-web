@@ -91,21 +91,89 @@ async function exportProduction() {
   }
 }
 
-function printLabels() {
-  // No QR generator in MVP — print the scannable item codes as labels.
+const HTML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+const esc = (s: string | number) => String(s ?? '').replace(/[&<>"']/g, (c) => HTML_ESC[c])
+
+// Google Drive share links (…/file/d/ID/view, open?id=ID, uc?id=ID) don't render
+// in <img>; rewrite to the public thumbnail endpoint so the design preview shows.
+// Other URLs are returned as-is (assumed direct image links).
+function toImageSrc(url: string): string {
+  if (!url) return ''
+  const m = url.match(/\/file\/d\/([\w-]+)/) || url.match(/[?&]id=([\w-]+)/)
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w600` : url
+}
+
+const printingLabels = ref(false)
+async function printLabels() {
+  if (!batch.value || printingLabels.value) return
+  // Open the print window synchronously (before any await) so popup blockers
+  // don't kill it; fill in the real content once QR codes are generated.
   const w = window.open('', '_blank')
-  if (!w || !batch.value) return
-  const labels = items.value
-    .map(
-      (i) =>
-        `<div style="border:1px solid #ccc;padding:16px;margin:8px;display:inline-block;text-align:center;width:200px;font-family:monospace">
-          <div style="font-size:12px;color:#666">${batch.value!.code} · ${i.sku_code ?? ''}</div>
-          <div style="font-size:20px;font-weight:bold;margin-top:8px">${i.item_code ?? ''}</div>
-        </div>`,
+  if (!w) {
+    toast.error('Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại.')
+    return
+  }
+  w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px sans-serif;padding:24px">Đang tạo tem…</body>')
+
+  printingLabels.value = true
+  try {
+    const { code } = batch.value
+    const QRCode = (await import('qrcode')).default
+    const labels = await Promise.all(
+      prodRows.value.map(async (r) => {
+        const payload = r.internal_code || code
+        let qr = ''
+        try {
+          qr = await QRCode.toDataURL(payload, { margin: 1, width: 240 })
+        } catch { /* QR optional — fall through to text-only label */ }
+        const img = toImageSrc(r.design_url)
+        return `
+          <div class="label">
+            <div class="top">
+              ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
+              <div class="meta">
+                <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
+                <div class="code">${esc(r.internal_code || '—')}</div>
+                <div class="desc">${esc(r.qc_description || '')}</div>
+              </div>
+            </div>
+            ${img ? `<img class="design" src="${esc(img)}" alt="design" onerror="this.style.display='none'" />` : ''}
+          </div>`
+      }),
     )
-    .join('')
-  w.document.write(`<html><head><title>${batch.value.code} labels</title></head><body>${labels}<script>window.print()<\/script></body></html>`)
-  w.document.close()
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
+      <style>
+        body { margin: 16px; font-family: ui-monospace, monospace; }
+        .label { display: inline-block; box-sizing: border-box; width: 340px; vertical-align: top;
+          border: 1px solid #ccc; border-radius: 8px; padding: 14px; margin: 8px; page-break-inside: avoid; }
+        .top { display: flex; gap: 12px; align-items: center; }
+        .qr { width: 96px; height: 96px; flex: 0 0 auto; }
+        .meta { min-width: 0; }
+        .sub { font-size: 12px; color: #666; }
+        .code { font-size: 20px; font-weight: bold; margin-top: 4px; word-break: break-all; }
+        .desc { font-size: 11px; color: #888; margin-top: 4px; }
+        .design { display: block; width: 100%; max-height: 180px; object-fit: contain; margin-top: 12px;
+          border-top: 1px dashed #ddd; padding-top: 12px; }
+        @media print { .label { border-color: #999; } }
+      </style></head>
+      <body>${labels.join('')}
+      <script>
+        (function () {
+          var printed = false;
+          function go() { if (!printed) { printed = true; window.print(); } }
+          window.addEventListener('load', go);
+          setTimeout(go, 3000); // fallback if a design image never loads
+        })();
+      <\/script></body></html>`
+    w.document.open()
+    w.document.write(html)
+    w.document.close()
+  } catch (e) {
+    w.close()
+    toast.error(errorMessage(e))
+  } finally {
+    printingLabels.value = false
+  }
 }
 </script>
 
@@ -134,7 +202,10 @@ function printLabels() {
               </div>
             </div>
             <div class="flex flex-wrap gap-2">
-              <button class="btn-secondary" @click="printLabels"><UiIcon name="qc" :size="16" /> Print QR</button>
+              <button class="btn-secondary" :disabled="printingLabels" @click="printLabels">
+                <UiSpinner v-if="printingLabels" :size="16" />
+                <UiIcon v-else name="qc" :size="16" /> In tem QR
+              </button>
               <button class="btn-primary" :disabled="exporting" @click="exportProduction">
                 <UiSpinner v-if="exporting" :size="16" />
                 <UiIcon v-else name="upload" :size="16" /> Xuất Excel (.xlsx)

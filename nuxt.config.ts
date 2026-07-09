@@ -4,7 +4,9 @@ export default defineNuxtConfig({
   // Internal ops dashboard behind JWT login — SPA mode keeps token/localStorage
   // handling simple and avoids SSR hydration concerns for an authenticated tool.
   ssr: false,
-  devtools: { enabled: true },
+  // Tắt Nuxt DevTools trong dev: overlay + client plugin của devtools làm nặng
+  // HMR/reload rõ rệt. Bật lại (enabled: true) khi cần debug bằng devtools.
+  devtools: { enabled: false },
 
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 

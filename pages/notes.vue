@@ -13,6 +13,10 @@ import {
   NOTE_SEVERITY_OPTIONS,
   NOTE_STATUS_OPTIONS,
   ENTITY_TYPE_OPTIONS,
+  ENTITY_TYPE_LABEL,
+  entityTypeLabel,
+  DEFECT_CODE_OPTIONS,
+  reasonCodeLabel,
   ROLE_LABEL,
 } from '~/utils/enums'
 
@@ -78,8 +82,18 @@ const severityOptions = NOTE_SEVERITY_OPTIONS.map((s) => ({ value: s, label: NOT
 const statusOptions = NOTE_STATUS_OPTIONS.map((s) => ({ value: s, label: NOTE_STATUS[s].label }))
 const entityTypeOptions = [
   { value: '', label: '— Không gắn —' },
-  ...ENTITY_TYPE_OPTIONS.map((t) => ({ value: t, label: t })),
+  ...ENTITY_TYPE_OPTIONS.map((t) => ({ value: t, label: ENTITY_TYPE_LABEL[t] })),
 ]
+
+// Reason-code select mirrors the QC defect list (shows Vietnamese labels). If the
+// note being edited carries a code outside that list (legacy/custom), keep it as
+// its own option so saving never silently drops it.
+const reasonCodeOptions = computed(() => {
+  const opts = [{ value: '', label: '— Không có —' }, ...DEFECT_CODE_OPTIONS]
+  const cur = form.reason_code
+  if (cur && !opts.some((o) => o.value === cur)) opts.push({ value: cur, label: cur })
+  return opts
+})
 
 function resetForm() {
   form.title = ''
@@ -183,7 +197,7 @@ async function remove(n: Note) {
 
 <template>
   <div>
-    <PageHeader title="Notes / Attention" subtitle="Ghi chú & cảnh báo xuyên suốt quy trình — Ops phân loại và xử lý">
+    <PageHeader title="Ghi chú & Cảnh báo" subtitle="Ghi chú & cảnh báo xuyên suốt quy trình — Ops phân loại và xử lý">
       <template #actions>
         <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Tạo note</button>
       </template>
@@ -240,10 +254,10 @@ async function remove(n: Note) {
                     <UiIcon v-if="n.is_required_attention" name="alert" :size="14" class="shrink-0 text-red-500 dark:text-rose-400" />
                     <span class="truncate font-medium text-foreground">{{ n.title }}</span>
                   </div>
-                  <p v-if="n.reason_code" class="text-xs text-muted-foreground">{{ n.reason_code }}</p>
+                  <p v-if="n.reason_code" class="text-xs text-muted-foreground">{{ reasonCodeLabel(n.reason_code) }}</p>
                 </td>
                 <td class="table-td hidden text-xs text-muted-foreground md:table-cell">
-                  <span v-if="n.entity_type">{{ n.entity_type }} #{{ n.entity_id }}</span>
+                  <span v-if="n.entity_type">{{ entityTypeLabel(n.entity_type) }} #{{ n.entity_id }}</span>
                   <span v-else>—</span>
                 </td>
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell">{{ n.owner_role ? ROLE_LABEL[n.owner_role] : '—' }}</td>
@@ -287,8 +301,8 @@ async function remove(n: Note) {
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label class="label">Mã lý do</label>
-            <input v-model="form.reason_code" class="input" placeholder="VD: ART_MISSING" />
+            <label class="label">Loại lỗi / lý do</label>
+            <UiSelect v-model="form.reason_code" :options="reasonCodeOptions" aria-label="Loại lỗi / lý do" placeholder="— Không có —" />
           </div>
           <div>
             <label class="label">Phụ trách (role)</label>

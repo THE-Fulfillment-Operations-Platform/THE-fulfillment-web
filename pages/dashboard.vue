@@ -3,6 +3,7 @@ import { ordersApi, itemsApi, batchesApi, notesApi, handoffsApi } from '~/servic
 import type { Batch, Note, Order } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { formatShort } from '~/utils/format'
+import { entityTypeLabel, reasonCodeLabel } from '~/utils/enums'
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -125,8 +126,8 @@ onMounted(load)
       <!-- Required attention -->
       <div class="card mt-6 p-5">
         <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-sm font-semibold text-foreground">Required Attention</h3>
-          <NuxtLink to="/notes" class="text-xs font-medium text-primary hover:underline">Quản lý notes</NuxtLink>
+          <h3 class="text-sm font-semibold text-foreground">Việc cần chú ý gấp</h3>
+          <NuxtLink to="/notes" class="text-xs font-medium text-primary hover:underline">Quản lý ghi chú</NuxtLink>
         </div>
         <div v-if="attentionNotes.length" class="space-y-2">
           <div
@@ -136,7 +137,7 @@ onMounted(load)
           >
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-foreground">{{ n.title }}</p>
-              <p class="truncate text-xs text-muted-foreground">{{ n.entity_type }} #{{ n.entity_id }} · {{ n.reason_code }}</p>
+              <p class="truncate text-xs text-muted-foreground">{{ entityTypeLabel(n.entity_type) }} #{{ n.entity_id }} · {{ reasonCodeLabel(n.reason_code) }}</p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <UiStatusBadge kind="severity" :value="n.severity" />

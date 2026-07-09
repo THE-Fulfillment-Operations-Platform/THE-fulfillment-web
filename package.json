@@ -16,12 +16,14 @@
     "@nuxtjs/tailwindcss": "^6.12.2",
     "@pinia/nuxt": "^0.5.5",
     "@types/node": "^20.19.43",
+    "@types/qrcode": "^1.5.6",
     "nuxt": "3.14.1592",
     "typescript": "^5.6.3",
     "vue-tsc": "^2.1.6"
   },
   "dependencies": {
-    "pinia": "^2.2.6"
+    "pinia": "^2.2.6",
+    "qrcode": "^1.5.4"
   },
   "overrides": {
     "vite": "5.4.21"

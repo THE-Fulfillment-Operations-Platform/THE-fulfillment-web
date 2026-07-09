@@ -2,8 +2,9 @@
 import { qcApi } from '~/services/api'
 import type { QcScanResult } from '~/types'
 import { errorMessage } from '~/utils/api-error'
-import { isValidUrl } from '~/utils/format'
+import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
+import { DEFECT_CODE_OPTIONS } from '~/utils/enums'
 
 // Scan-driven QC station (Wireframe: Scan QC). The operator scans an item code,
 // the screen pulls the canonical mockup + engrave text, and PASS advances the
@@ -22,19 +23,18 @@ const allChecked = computed(() => checks.mockup && checks.engrave && checks.qual
 // Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
 const alreadyQC = computed(() => result.value?.internal_status === 'QC_PASSED')
 
+// Mockup preview: convert share links (e.g. Google Drive) to a directly-embeddable
+// URL, and track load failures so a broken/non-image link shows a clean fallback
+// instead of the browser's broken-image icon. Reset the error flag on each scan.
+const mockupSrc = computed(() => toDisplayImageUrl(result.value?.mockup_url))
+const mockupError = ref(false)
+watch(() => result.value?.mockup_url, () => { mockupError.value = false })
+
 const passing = ref(false)
 const failOpen = ref(false)
 const failing = ref(false)
 const defect = reactive({ defect_code: 'PRINT_WRONG', note: '' })
 
-const DEFECT_CODES = [
-  { value: 'PRINT_WRONG', label: 'In sai / lệch màu' },
-  { value: 'CUT_WRONG', label: 'Cắt sai / mẻ cạnh' },
-  { value: 'ENGRAVE_WRONG', label: 'Khắc sai nội dung' },
-  { value: 'MATERIAL_DEFECT', label: 'Lỗi vật liệu' },
-  { value: 'WRONG_MOCKUP', label: 'Không khớp mockup' },
-  { value: 'OTHER', label: 'Lỗi khác' },
-]
 
 function resetChecks() {
   checks.mockup = false
@@ -164,14 +164,19 @@ onMounted(focusScan)
         </div>
         <div class="flex min-h-[14rem] items-center justify-center bg-slate-900 p-4 sm:min-h-[18rem] lg:min-h-[22rem]">
           <img
-            v-if="isValidUrl(result.mockup_url)"
-            :src="result.mockup_url"
+            v-if="isValidUrl(result.mockup_url) && !mockupError"
+            :src="mockupSrc"
             :alt="`Mockup ${result.item_code}`"
             class="max-h-[14rem] max-w-full rounded object-contain sm:max-h-[20rem] lg:max-h-[28rem]"
+            @error="mockupError = true"
           />
-          <div v-else class="flex flex-col items-center gap-2 text-muted-foreground">
+          <div v-else class="flex flex-col items-center gap-2 text-center text-slate-300">
             <UiIcon name="alert" :size="28" />
-            <p class="text-sm">Item này chưa có mockup — không thể đối chiếu.</p>
+            <p v-if="!isValidUrl(result.mockup_url)" class="text-sm">Item này chưa có mockup — không thể đối chiếu.</p>
+            <template v-else>
+              <p class="text-sm">Ảnh mockup không tải được — link không phải ảnh trực tiếp.</p>
+              <UiMockupLink :url="result.mockup_url" small label="Mở mockup ở tab mới" />
+            </template>
           </div>
         </div>
       </div>
@@ -304,7 +309,7 @@ onMounted(focusScan)
         </p>
         <div>
           <label class="label">Loại lỗi</label>
-          <UiSelect v-model="defect.defect_code" :options="DEFECT_CODES" aria-label="Loại lỗi" />
+          <UiSelect v-model="defect.defect_code" :options="DEFECT_CODE_OPTIONS" aria-label="Loại lỗi" />
         </div>
         <div>
           <label class="label">Ghi chú (tuỳ chọn)</label>

@@ -8,6 +8,7 @@ import type {
   Role,
   ReviewStatus,
   CancellationStatus,
+  EntityType,
 } from '~/types'
 
 export interface BadgeMeta {
@@ -136,3 +137,36 @@ export const ENTITY_TYPE_OPTIONS = [
   'PACKAGE',
   'HANDOFF',
 ] as const
+
+// Plain-Vietnamese labels for the note "attach to" entity types — the raw codes
+// (ORDER_ITEM, BATCH_ITEM, HANDOFF…) mean nothing to workshop staff.
+export const ENTITY_TYPE_LABEL: Record<EntityType, string> = {
+  ORDER: 'Đơn hàng',
+  ORDER_ITEM: 'Sản phẩm trong đơn',
+  BATCH: 'Batch sản xuất',
+  BATCH_ITEM: 'Sản phẩm trong batch',
+  PACKAGE: 'Kiện hàng',
+  HANDOFF: 'Bàn giao',
+}
+// Safe lookup for display: falls back to the raw value if it's an unknown/legacy code.
+export const entityTypeLabel = (t?: string | null): string =>
+  (t && ENTITY_TYPE_LABEL[t as EntityType]) || t || ''
+
+// QC defect codes + plain-Vietnamese labels. Single source of truth shared by the
+// QC "Ghi nhận lỗi" dialog (dropdown) and note/dashboard displays — a note's
+// reason_code IS the QC defect code, so it must read the same everywhere instead
+// of surfacing the raw PRINT_WRONG / CUT_WRONG on the notes screen.
+export const DEFECT_CODE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'PRINT_WRONG', label: 'In sai / lệch màu' },
+  { value: 'CUT_WRONG', label: 'Cắt sai / mẻ cạnh' },
+  { value: 'ENGRAVE_WRONG', label: 'Khắc sai nội dung' },
+  { value: 'MATERIAL_DEFECT', label: 'Lỗi vật liệu' },
+  { value: 'WRONG_MOCKUP', label: 'Không khớp mockup' },
+  { value: 'OTHER', label: 'Lỗi khác' },
+]
+export const DEFECT_CODE_LABEL: Record<string, string> = Object.fromEntries(
+  DEFECT_CODE_OPTIONS.map((o) => [o.value, o.label]),
+)
+// Display helper for a note reason_code; unknown/custom codes fall back to raw.
+export const reasonCodeLabel = (code?: string | null): string =>
+  (code && DEFECT_CODE_LABEL[code]) || code || ''

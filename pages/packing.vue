@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { packingApi } from '~/services/api'
-import type { PackingResult } from '~/types'
+import { packingApi, ordersApi } from '~/services/api'
+import type { PackingResult, Order } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
@@ -39,6 +39,7 @@ async function scan() {
     pkg.value = data
     if (data.fully_packed && !wasComplete) {
       toast.success(`${data.order_code} đã đóng gói đủ — package ${data.package_code}`)
+      loadPacked()
     }
   } catch (e) {
     scanError.value = errorMessage(e)
@@ -72,7 +73,34 @@ function clearStation() {
   focusScan()
 }
 
-onMounted(focusScan)
+// Packed orders waiting for handoff (seller_status = PACKED). Gives the packing
+// station a visible record of what's been fully packed — the scan panel alone
+// only ever shows the current package, never a history. Client-side filter guards
+// against the backend ignoring the status param.
+const packedOrders = ref<Order[]>([])
+const loadingPacked = ref(false)
+async function loadPacked() {
+  loadingPacked.value = true
+  try {
+    const { data } = await ordersApi.list({ status: 'PACKED', page_size: 50 })
+    packedOrders.value = (data ?? []).filter((o) => o.seller_status === 'PACKED')
+  } catch {
+    packedOrders.value = []
+  } finally {
+    loadingPacked.value = false
+  }
+}
+// Reopen a packed order's package in the panel above (reuses the Order-ID lookup).
+function openPacked(o: Order) {
+  orderLookup.value = String(o.id)
+  loadOrder()
+  if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+onMounted(() => {
+  focusScan()
+  loadPacked()
+})
 </script>
 
 <template>
@@ -221,6 +249,49 @@ onMounted(focusScan)
           </NuxtLink>
           <button class="btn-secondary" @click="clearStation">Đơn khác</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Packed orders (waiting for handoff) — visible record of what's been packed -->
+    <div class="card mt-5 overflow-hidden">
+      <div class="flex items-center justify-between gap-3 border-b border-border bg-muted px-4 py-2.5">
+        <div>
+          <h3 class="text-sm font-semibold text-foreground">Đơn đã đóng gói (chờ bàn giao)</h3>
+          <p class="text-xs text-muted-foreground">{{ packedOrders.length }} đơn đã đóng đủ, chưa bàn giao THE</p>
+        </div>
+        <button class="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline" @click="loadPacked">
+          <UiIcon name="refresh" :size="14" /> Làm mới
+        </button>
+      </div>
+
+      <div v-if="loadingPacked" class="p-8 text-center text-sm text-muted-foreground">Đang tải…</div>
+      <div v-else-if="!packedOrders.length" class="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+        <UiIcon name="box" :size="28" />
+        <p class="text-sm">Chưa có đơn nào đóng gói xong.</p>
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-border">
+          <thead class="bg-card">
+            <tr>
+              <th class="table-th">Mã đơn</th>
+              <th class="table-th hidden sm:table-cell">Store Order</th>
+              <th class="table-th hidden md:table-cell">Store</th>
+              <th class="table-th">Trạng thái</th>
+              <th class="table-th"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            <tr v-for="o in packedOrders" :key="o.id" class="hover:bg-muted">
+              <td class="table-td font-mono font-medium text-foreground">{{ o.internal_code }}</td>
+              <td class="table-td hidden text-muted-foreground sm:table-cell">{{ o.store_order_id }}</td>
+              <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.store_name }}</td>
+              <td class="table-td"><UiStatusBadge kind="seller" :value="o.seller_status" /></td>
+              <td class="table-td text-right">
+                <button class="table-action text-primary" @click="openPacked(o)">Mở kiện</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

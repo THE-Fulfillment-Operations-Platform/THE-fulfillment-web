@@ -47,6 +47,16 @@ export function isValidUrl(value?: string | null): boolean {
   }
 }
 
+// Turn a shareable image URL into one that actually renders inside <img>. Google
+// Drive "share" links (…/file/d/ID/view, open?id=ID, uc?id=ID) serve an HTML
+// viewer page, not the raw image, so <img> shows a broken icon — rewrite them to
+// the public thumbnail endpoint. Any other URL passes through unchanged.
+export function toDisplayImageUrl(value?: string | null): string {
+  if (!value) return ''
+  const m = value.match(/\/file\/d\/([\w-]+)/) || value.match(/[?&]id=([\w-]+)/)
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1000` : value
+}
+
 export function pluralVi(count: number, noun: string): string {
   return `${count} ${noun}`
 }
