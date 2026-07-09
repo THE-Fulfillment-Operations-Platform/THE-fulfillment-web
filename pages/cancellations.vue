@@ -95,9 +95,23 @@ async function submit() {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="o in orders" :key="o.id" class="hover:bg-muted">
+              <tr
+                v-for="o in orders"
+                :key="o.id"
+                class="hover:bg-muted"
+                :class="{ 'bg-rose-50/60 dark:bg-rose-500/10': o.store_order_dup }"
+              >
                 <td class="table-td">
-                  <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline">{{ o.store_order_id }}</NuxtLink>
+                  <span class="flex items-center gap-1.5">
+                    <NuxtLink :to="`/orders/${o.id}`" class="font-medium text-primary hover:underline">{{ o.store_order_id }}</NuxtLink>
+                    <span
+                      v-if="o.store_order_dup"
+                      class="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                      title="StoreOrderID này trùng với đơn khác"
+                    >
+                      <UiIcon name="alert" :size="10" /> Trùng
+                    </span>
+                  </span>
                   <p class="text-xs text-muted-foreground">{{ o.internal_code }}</p>
                 </td>
                 <td class="table-td text-foreground">{{ o.seller?.name || o.seller?.code || '—' }}</td>

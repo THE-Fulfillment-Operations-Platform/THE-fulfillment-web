@@ -9,6 +9,12 @@ export function itemStoreOrderId(it: OrderItem): string {
   return it.store_order_id ?? it.order?.store_order_id ?? '—'
 }
 
+/** True when this item's StoreOrderID is shared by more than one order (a repeated
+ *  store order id worth flagging), as computed by the backend list endpoints. */
+export function itemStoreOrderDup(it: OrderItem): boolean {
+  return it.store_order_dup ?? it.order?.store_order_dup ?? false
+}
+
 export function itemMaterial(it: OrderItem): string {
   if (it.material_name) return it.material_name
   if (it.material_code) return it.material_code

@@ -73,7 +73,15 @@ async function submit() {
               </p>
             </div>
             <div class="flex flex-col items-end gap-2">
-              <UiStatusBadge :kind="sellerDisplayBadge(order).kind" :value="sellerDisplayBadge(order).value" />
+              <div class="flex flex-wrap items-center justify-end gap-1.5">
+                <UiStatusBadge :kind="sellerDisplayBadge(order).kind" :value="sellerDisplayBadge(order).value" />
+                <span
+                  v-if="order.cancellation_status === 'REQUESTED'"
+                  class="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                >
+                  <UiIcon name="alert" :size="10" /> Chờ xử lý huỷ
+                </span>
+              </div>
               <div v-if="order.can_cancel || order.can_request_cancellation" class="flex gap-2">
                 <button
                   v-if="order.can_cancel"
@@ -90,6 +98,20 @@ async function submit() {
                   Yêu cầu huỷ
                 </button>
               </div>
+            </div>
+          </div>
+
+          <!-- Pending cancellation request — shown in ANY state (incl. in-production) so it isn't forgotten -->
+          <div
+            v-if="order.cancellation_status === 'REQUESTED'"
+            class="mt-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
+            <div>
+              <p class="font-semibold">Yêu cầu huỷ đang chờ vận hành xử lý</p>
+              <p class="mt-0.5 text-xs text-amber-700/90 dark:text-amber-300/90">
+                Bạn đã yêu cầu huỷ đơn này. Đơn vẫn tiếp tục ở trạng thái hiện tại cho tới khi vận hành duyệt huỷ — theo dõi để không bỏ sót.
+              </p>
             </div>
           </div>
 

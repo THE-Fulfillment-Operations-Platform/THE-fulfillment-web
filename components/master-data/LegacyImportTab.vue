@@ -11,6 +11,7 @@ const mode = ref<'file' | 'paste'>('file')
 const file = ref<File | null>(null)
 const fileName = ref('')
 const csvText = ref('')
+const dragging = ref(false)
 
 const previewing = ref(false)
 const committing = ref(false)
@@ -18,13 +19,26 @@ const previewError = ref<string | null>(null)
 const preview = ref<MasterImportPreview | null>(null)
 const committed = ref(false)
 
-function onFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
+// Shared by both the click-to-select input and the drag-drop zone.
+function setFile(f: File | null | undefined) {
   if (!f) return
+  if (!/\.(csv|xlsx|xlsm)$/i.test(f.name)) {
+    toast.error('Chỉ nhận file .csv, .xlsx hoặc .xlsm')
+    return
+  }
   file.value = f
   fileName.value = f.name
   preview.value = null
   committed.value = false
+}
+
+function onFile(e: Event) {
+  setFile((e.target as HTMLInputElement).files?.[0])
+}
+
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  setFile(e.dataTransfer?.files?.[0])
 }
 
 async function runPreview() {
@@ -105,14 +119,20 @@ function loadSample() {
   mode.value = 'paste'
   csvText.value = SAMPLE_CSV
 }
-function downloadTemplate() {
-  const blob = new Blob([SAMPLE_CSV], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'legacy-master-template.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+
+const downloadingTemplate = ref(false)
+// Pull the sample as a real .xlsx from the backend: columns split cleanly in
+// Excel on any locale, so it never comes out as the garbled text the old
+// client-side CSV blob produced.
+async function downloadTemplate() {
+  downloadingTemplate.value = true
+  try {
+    await masterDataApi.downloadTemplate()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingTemplate.value = false
+  }
 }
 </script>
 
@@ -145,10 +165,21 @@ function downloadTemplate() {
       </div>
 
       <div v-if="mode === 'file'">
-        <label class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-8 text-center hover:border-primary">
-          <UiIcon name="upload" :size="28" class="text-muted-foreground" />
-          <span class="text-sm text-foreground">{{ fileName || 'Chọn file CSV / XLSX' }}</span>
-          <span class="text-xs text-muted-foreground">File Excel vận hành hiện tại của xưởng</span>
+        <label
+          class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors"
+          :class="dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary'"
+          @dragenter.prevent="dragging = true"
+          @dragover.prevent="dragging = true"
+          @dragleave.prevent="dragging = false"
+          @drop.prevent="onDrop"
+        >
+          <div class="pointer-events-none flex flex-col items-center gap-2">
+            <UiIcon name="upload" :size="28" :class="dragging ? 'text-primary' : 'text-muted-foreground'" />
+            <span class="text-sm text-foreground">
+              {{ fileName || (dragging ? 'Thả file vào đây…' : 'Kéo thả file vào đây, hoặc bấm để chọn') }}
+            </span>
+            <span class="text-xs text-muted-foreground">File Excel vận hành hiện tại của xưởng · CSV / XLSX</span>
+          </div>
           <input type="file" accept=".csv,.xlsx,.xlsm" class="hidden" @change="onFile" />
         </label>
       </div>
@@ -161,8 +192,10 @@ function downloadTemplate() {
         <UiSpinner v-if="previewing" :size="16" />
         {{ previewing ? 'Đang phân tích…' : 'Preview' }}
       </button>
-      <button class="btn-secondary mt-2 w-full" @click="downloadTemplate">
-        <UiIcon name="upload" :size="14" /> Tải template mẫu
+      <button class="btn-secondary mt-2 w-full" :disabled="downloadingTemplate" @click="downloadTemplate">
+        <UiSpinner v-if="downloadingTemplate" :size="14" />
+        <UiIcon v-else name="upload" :size="14" />
+        {{ downloadingTemplate ? 'Đang tải…' : 'Tải template mẫu (.xlsx)' }}
       </button>
     </div>
 

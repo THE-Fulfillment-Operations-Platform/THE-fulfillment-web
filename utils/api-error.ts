@@ -2,9 +2,9 @@
 export class ApiError extends Error {
   code: string
   status: number
-  details?: string
+  details?: unknown
 
-  constructor(message: string, code = 'INTERNAL', status = 0, details?: string) {
+  constructor(message: string, code = 'INTERNAL', status = 0, details?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.code = code
@@ -38,12 +38,28 @@ const VI_BY_PHRASE: Array<[RegExp, string]> = [
   [/could not update user|update user failed/i, 'Không cập nhật được người dùng. Vui lòng kiểm tra lại thông tin.'],
 ]
 
+/** Render error `details` to a readable string. The backend sometimes sends an
+ *  object (e.g. field→reason validation map); naively joining that yields the
+ *  useless "[object Object]", so stringify it as "key: value" (or JSON), and never
+ *  append an unhelpful object stringification. */
+function detailText(d: unknown): string {
+  if (d == null) return ''
+  if (typeof d === 'string') return d
+  if (typeof d === 'object') {
+    const parts = Object.entries(d as Record<string, unknown>)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+    return parts.join('; ')
+  }
+  return String(d)
+}
+
 /** Human-friendly Vietnamese message for an arbitrary thrown error. */
 export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     // Consider both the backend message and its details — the specific reason
     // often lives in `details`, which we must not hide.
-    const raw = [e.message, e.details].filter(Boolean).join(' — ').trim()
+    const raw = [e.message, detailText(e.details)].filter(Boolean).join(' — ').trim()
     for (const [re, vi] of VI_BY_PHRASE) {
       if (re.test(raw)) return vi
     }

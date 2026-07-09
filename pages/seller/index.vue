@@ -89,15 +89,38 @@ function changePage(p: number) {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="o in orders" :key="o.id" class="hover:bg-muted">
+              <tr
+                v-for="o in orders"
+                :key="o.id"
+                class="hover:bg-muted"
+                :class="{ 'bg-rose-50/60 dark:bg-rose-500/10': o.store_order_dup }"
+              >
                 <td class="table-td">
-                  <p class="font-medium text-foreground">{{ o.store_order_id }}</p>
+                  <p class="flex items-center gap-1.5 font-medium" :class="o.store_order_dup ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'">
+                    {{ o.store_order_id }}
+                    <span
+                      v-if="o.store_order_dup"
+                      class="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                      title="Đơn này trùng mã StoreOrderID với đơn đã tải trước — kiểm tra lại"
+                    >
+                      <UiIcon name="alert" :size="10" /> Trùng
+                    </span>
+                  </p>
                   <p class="text-xs text-muted-foreground">{{ o.internal_code }}</p>
                 </td>
                 <td class="table-td text-foreground">{{ o.store_name || '—' }}</td>
                 <td class="table-td text-foreground">{{ o.item_count }}</td>
                 <td class="table-td">
-                  <UiStatusBadge :kind="sellerDisplayBadge(o).kind" :value="sellerDisplayBadge(o).value" />
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <UiStatusBadge :kind="sellerDisplayBadge(o).kind" :value="sellerDisplayBadge(o).value" />
+                    <span
+                      v-if="o.cancellation_status === 'REQUESTED'"
+                      class="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                      title="Bạn đã yêu cầu huỷ đơn này — vận hành đang xử lý"
+                    >
+                      <UiIcon name="alert" :size="10" /> Chờ xử lý huỷ
+                    </span>
+                  </div>
                 </td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
                 <td class="table-td text-right">

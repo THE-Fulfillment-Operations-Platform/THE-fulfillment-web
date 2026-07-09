@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../http'
+import { apiGet, apiPost, apiDownload } from '../http'
 import type { ImportPreview, ImportCommitResult, ImportJob, ImportRow } from '~/types'
 
 export interface ImportInput {
@@ -25,4 +25,8 @@ export const importsApi = {
   },
   jobs: () => apiGet<ImportJob[]>('/api/import-jobs'),
   job: (id: number | string) => apiGet<ImportJob>(`/api/import-jobs/${id}`),
+  // Download the order-import template as a real .xlsx (columns split cleanly in
+  // Excel on any locale, unlike a comma CSV that opened crammed into one column).
+  downloadTemplate: () =>
+    apiDownload('/api/orders/import/template.xlsx', 'order-import-template.xlsx'),
 }

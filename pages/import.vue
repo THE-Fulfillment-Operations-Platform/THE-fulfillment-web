@@ -19,6 +19,7 @@ const mode = ref<'file' | 'paste'>('file')
 const file = ref<File | null>(null)
 const fileName = ref('')
 const csvText = ref('')
+const dragging = ref(false)
 
 const previewing = ref(false)
 const committing = ref(false)
@@ -36,13 +37,26 @@ onMounted(async () => {
   }
 })
 
-function onFile(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0]
+// Shared by both the click-to-select input and the drag-drop zone.
+function setFile(f: File | null | undefined) {
   if (!f) return
+  if (!/\.(csv|xlsx|xls)$/i.test(f.name)) {
+    toast.error('Chỉ nhận file .csv, .xlsx hoặc .xls')
+    return
+  }
   file.value = f
   fileName.value = f.name
   preview.value = null
   committed.value = false
+}
+
+function onFile(e: Event) {
+  setFile((e.target as HTMLInputElement).files?.[0])
+}
+
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  setFile(e.dataTransfer?.files?.[0])
 }
 
 function rowsFromCsv(): ImportRow[] {
@@ -111,14 +125,19 @@ async function commit() {
   }
 }
 
-function downloadTemplate() {
-  const blob = new Blob([importTemplateCsv()], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'import-template.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+const downloadingTemplate = ref(false)
+// Pull the template as a real .xlsx from the backend: columns split cleanly in
+// Excel on any locale, unlike the old client-side comma CSV that opened with
+// everything crammed into column A and "Mã ảnh" garbled.
+async function downloadTemplate() {
+  downloadingTemplate.value = true
+  try {
+    await importsApi.downloadTemplate()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingTemplate.value = false
+  }
 }
 
 function loadSample() {
@@ -141,6 +160,12 @@ function isSkuIssue(code?: string) {
 const errorRows = computed(() =>
   (preview.value?.errors ?? []).map((e) => ({ ...e, vi: importErrorVi(e) })),
 )
+// Non-blocking heads-up rows (duplicate StoreOrderID). They ARE imported — a store
+// order id is a repeatable reference label — but we surface them red so staff can
+// eyeball a possible re-send and confirm with the customer.
+const warningRows = computed(() =>
+  (preview.value?.warnings ?? []).map((e) => ({ ...e, vi: importErrorVi(e) })),
+)
 const skuIssues = computed(() => (preview.value?.errors ?? []).filter((e) => isSkuIssue(e.error_code)))
 const unmappedSkus = computed(() => [...new Set(skuIssues.value.map((e) => e.sku).filter(Boolean))] as string[])
 // Deep-link: unknown SKU → legacy import / create; existing-but-unmapped → mapping.
@@ -153,8 +178,10 @@ function masterDataLink(code?: string) {
   <div>
     <PageHeader title="Import đơn hàng" subtitle="Upload CSV/XLSX, kiểm tra lỗi theo dòng, commit các dòng hợp lệ">
       <template #actions>
-        <button class="btn-secondary" @click="downloadTemplate">
-          <UiIcon name="upload" :size="16" /> Tải template
+        <button class="btn-secondary" :disabled="downloadingTemplate" @click="downloadTemplate">
+          <UiSpinner v-if="downloadingTemplate" :size="16" />
+          <UiIcon v-else name="upload" :size="16" />
+          {{ downloadingTemplate ? 'Đang tải…' : 'Tải template (.xlsx)' }}
         </button>
       </template>
     </PageHeader>
@@ -186,11 +213,20 @@ function masterDataLink(code?: string) {
 
         <div v-if="mode === 'file'">
           <label
-            class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-8 text-center hover:border-primary"
+            class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors"
+            :class="dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary'"
+            @dragenter.prevent="dragging = true"
+            @dragover.prevent="dragging = true"
+            @dragleave.prevent="dragging = false"
+            @drop.prevent="onDrop"
           >
-            <UiIcon name="upload" :size="28" class="text-muted-foreground" />
-            <span class="text-sm text-foreground">{{ fileName || 'Chọn file CSV / XLSX' }}</span>
-            <span class="text-xs text-muted-foreground">Backend tự parse và validate</span>
+            <div class="pointer-events-none flex flex-col items-center gap-2">
+              <UiIcon name="upload" :size="28" :class="dragging ? 'text-primary' : 'text-muted-foreground'" />
+              <span class="text-sm text-foreground">
+                {{ fileName || (dragging ? 'Thả file vào đây…' : 'Kéo thả file vào đây, hoặc bấm để chọn') }}
+              </span>
+              <span class="text-xs text-muted-foreground">Backend tự parse và validate · CSV / XLSX</span>
+            </div>
             <input type="file" accept=".csv,.xlsx,.xls" class="hidden" @change="onFile" />
           </label>
         </div>
@@ -263,6 +299,9 @@ function masterDataLink(code?: string) {
                 ✓ Đã tạo đơn. Xem ở <NuxtLink to="/orders" class="underline">Orders</NuxtLink>.
               </p>
             </div>
+            <p v-if="warningRows.length" class="mt-3 text-xs font-medium text-rose-600 dark:text-rose-400">
+              ⚠ {{ warningRows.length }} dòng trùng StoreOrderID — vẫn import (mã nội bộ riêng), xem chi tiết bên dưới.
+            </p>
           </div>
 
           <!-- SKU setup call-to-action -->
@@ -300,6 +339,38 @@ function masterDataLink(code?: string) {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Duplicate StoreOrderID — non-blocking heads-up (rows are still imported) -->
+          <div v-if="warningRows.length" class="card overflow-hidden border-rose-300/60 dark:border-rose-500/30">
+            <div class="border-b border-rose-200/60 bg-rose-50 px-4 py-2.5 dark:border-rose-500/25 dark:bg-rose-500/10">
+              <h3 class="flex items-center gap-1.5 text-sm font-semibold text-rose-700 dark:text-rose-300">
+                <UiIcon name="alert" :size="16" /> Trùng StoreOrderID ({{ warningRows.length }}) — vẫn import, cần kiểm tra
+              </h3>
+              <p class="mt-0.5 text-xs text-rose-600/90 dark:text-rose-300/80">
+                Các đơn dưới đây trùng StoreOrderID với đơn đã có. Hệ thống vẫn tạo đơn mới (mã nội bộ riêng) — kiểm tra kẻo up nhầm, nghi trùng thì báo lại khách.
+              </p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-border">
+                <thead class="bg-card">
+                  <tr>
+                    <th class="table-th">Dòng</th>
+                    <th class="table-th">Mã đơn (StoreOrderID)</th>
+                    <th class="table-th">SKU</th>
+                    <th class="table-th">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  <tr v-for="(w, i) in warningRows" :key="i" class="bg-rose-50/50 dark:bg-rose-500/10">
+                    <td class="table-td">{{ w.row_number }}</td>
+                    <td class="table-td font-medium text-rose-700 dark:text-rose-300">{{ w.store_order_id || '—' }}</td>
+                    <td class="table-td">{{ w.sku || '—' }}</td>
+                    <td class="table-td max-w-xs whitespace-normal text-muted-foreground">{{ w.vi.suggestion || w.vi.detail }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 

@@ -184,6 +184,7 @@ export interface OrderItem {
   order_id?: number
   order_code?: string
   store_order_id?: string
+  store_order_dup?: boolean
   store_name?: string
   batch_items?: BatchItemRef[]
   sku?: Sku
@@ -220,6 +221,9 @@ export interface Order {
   shipping_email?: string
   ioss?: string
   note?: string
+  // Computed by list endpoints: true when this StoreOrderID is shared by more than
+  // one order for the same seller (a repeated store order id, not just many items).
+  store_order_dup?: boolean
   created_at: string
   items?: OrderItem[]
   seller?: Seller
@@ -272,6 +276,10 @@ export interface ImportPreview {
   error_rows: number
   created_count?: number
   errors?: ImportError[]
+  // Non-blocking heads-up rows (e.g. a StoreOrderID that already exists). These
+  // rows ARE imported — the UI highlights them so staff can double-check a possible
+  // duplicate with the customer — and never gate the commit.
+  warnings?: ImportError[]
 }
 
 export interface ImportCommitResult {
@@ -523,6 +531,7 @@ export interface SellerOrder {
   id: number
   internal_code: string
   store_order_id: string
+  store_order_dup?: boolean
   store_name?: string
   status: SellerStatus
   review_status: ReviewStatus

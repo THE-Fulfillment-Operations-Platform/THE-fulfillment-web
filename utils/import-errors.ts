@@ -53,9 +53,9 @@ const IMPORT_ERROR_VI: Record<string, ImportErrorVi> = {
     suggestion: 'Sửa lại link design, hoặc để trống nếu chưa có.',
   },
   ORD_DUPLICATE: {
-    label: 'Đơn bị trùng',
-    detail: 'Mã đơn (StoreOrderID) này đã được import trước đó cho seller này.',
-    suggestion: 'Kiểm tra lại file nguồn và bỏ dòng trùng. Nếu đơn đã có trong hệ thống thì không cần import lại.',
+    label: 'Trùng mã đơn (StoreOrderID)',
+    detail: 'StoreOrderID này đã tồn tại cho seller — KHÔNG chặn, đơn vẫn được import với mã nội bộ riêng.',
+    suggestion: 'Kiểm tra kẻo up nhầm; nếu đúng là đơn mới thì bỏ qua, nếu nghi trùng thì báo lại khách.',
   },
   LOOKUP_FAILED: {
     label: 'Không kiểm tra được trùng đơn',

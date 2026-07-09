@@ -52,25 +52,25 @@ function makeItem(id: number, code: string, sku: string, material: string, statu
 
 const ORDERS: Order[] = [
   {
-    id: 1, internal_code: 'ORD-000001', store_order_id: 'Etsy-7821', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
+    id: 1, internal_code: '100001', store_order_id: 'Etsy-7821', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
     seller_status: 'PRODUCTION', shipping_name: 'John Doe', shipping_country: 'US', shipping_address1: '12 Main St',
     shipping_city: 'Austin', created_at: ts,
-    items: [makeItem(1, 'ORD-000001_1', 'WOOD-01', 'WOOD', 'CUT', 'READY')],
+    items: [makeItem(1, '100001_1/1', 'WOOD-01', 'WOOD', 'CUT', 'READY')],
   },
   {
-    id: 2, internal_code: 'ORD-000002', store_order_id: 'Etsy-7822', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
+    id: 2, internal_code: '100002', store_order_id: 'Etsy-7822', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
     seller_status: 'PRODUCTION', shipping_name: 'Jane Smith', shipping_country: 'US', created_at: ts,
-    items: [makeItem(2, 'ORD-000002_1', 'MICA-02', 'MICA', 'PRINTED', 'READY')],
+    items: [makeItem(2, '100002_1/1', 'MICA-02', 'MICA', 'PRINTED', 'READY')],
   },
   {
-    id: 3, internal_code: 'ORD-000003', store_order_id: 'Etsy-7823', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
+    id: 3, internal_code: '100003', store_order_id: 'Etsy-7823', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
     seller_status: 'PRODUCTION', shipping_name: 'Bob Lee', shipping_country: 'CA', created_at: ts,
-    items: [makeItem(3, 'ORD-000003_1', 'COMBO-01', 'WOOD', 'PENDING', 'IN_PROGRESS')],
+    items: [makeItem(3, '100003_1/1', 'COMBO-01', 'WOOD', 'PENDING', 'IN_PROGRESS')],
   },
   {
-    id: 4, internal_code: 'ORD-000004', store_order_id: 'Etsy-7824', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
+    id: 4, internal_code: '100004', store_order_id: 'Etsy-7824', seller_id: SELLER_ID, store_name: 'Etsy-Demo',
     seller_status: 'PRODUCTION', shipping_name: 'Alice Wong', shipping_country: 'AU', created_at: ts,
-    items: [makeItem(4, 'ORD-000004_1', 'ACR-05', 'ACRYLIC', 'PENDING', 'MISSING')],
+    items: [makeItem(4, '100004_1/1', 'ACR-05', 'ACRYLIC', 'PENDING', 'MISSING')],
   },
 ]
 
@@ -79,7 +79,7 @@ const BATCHES: Batch[] = [
     id: 101001, code: '#101001', material_id: 1, material_code: 'WOOD', material_name: 'Gỗ',
     status: 'PRINTED', priority: 'NORMAL', item_count: 1, created_at: ts,
     created_by: { id: 4, email: 'designer@the.local', full_name: 'Designer Demo', role: 'DESIGNER', is_active: true },
-    items: [{ id: 1, item_code: 'ORD-000001_1', order_code: 'ORD-000001', sku_code: 'WOOD-01', status: 'PRINTED', mockup_url: 'https://mockups.example.com/ORD-000001_1.png', print_file_url: 'https://files.example.com/ORD-000001_1-print.pdf' }],
+    items: [{ id: 1, item_code: '100001_1/1', order_code: '100001', sku_code: 'WOOD-01', status: 'PRINTED', mockup_url: 'https://mockups.example.com/100001_1/1.png', print_file_url: 'https://files.example.com/100001_1/1-print.pdf' }],
   },
 ]
 
@@ -155,9 +155,9 @@ export async function resolveMock<T>(
   }
   if (method === 'POST' && path === '/api/qc/scan') {
     const result: QcScanResult = {
-      item_id: 1, item_code: 'ORD-000001_1', order_code: 'ORD-000001', store_order_id: 'Etsy-7821',
+      item_id: 1, item_code: '100001_1/1', order_code: '100001', store_order_id: 'Etsy-7821',
       sku_code: 'WOOD-01', product_name: 'Personalized Wood Sign', engrave_text: '',
-      mockup_url: 'https://mockups.example.com/ORD-000001_1.png', internal_status: 'CUT',
+      mockup_url: 'https://mockups.example.com/100001_1/1.png', internal_status: 'CUT',
       batches: [{ batch_item_id: 1, batch_code: '#101001', material_code: 'WOOD', status: 'CUT' }],
     }
     return { data: result as T }

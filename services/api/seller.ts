@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../http'
+import { apiGet, apiPost, apiDownload } from '../http'
 import type { SellerOrder, ImportPreview, ImportJob, ImportRow, ListParams } from '~/types'
 
 export interface SellerOrderListParams extends ListParams {
@@ -36,4 +36,8 @@ export const sellerImportApi = {
   // Commit a previously previewed job (ownership checked server-side).
   commitJob: (importJobId: number) =>
     apiPost<ImportJob>('/api/seller/orders/import/commit', { import_job_id: importJobId }),
+  // Download the order-import template as a real .xlsx (columns split cleanly in
+  // Excel on any locale, unlike a comma CSV that opened crammed into one column).
+  downloadTemplate: () =>
+    apiDownload('/api/seller/orders/import/template.xlsx', 'order-import-template.xlsx'),
 }

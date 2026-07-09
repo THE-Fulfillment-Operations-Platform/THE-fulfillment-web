@@ -2,7 +2,7 @@
 import { itemsApi } from '~/services/api'
 import type { OrderItem } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
-import { itemOrderId, itemStoreOrderId, itemMaterial, itemBatchLabel } from '~/utils/item'
+import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
 import { useApiResource } from '~/composables/useApiResource'
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
@@ -137,15 +137,40 @@ function itemDead(it: OrderItem): boolean {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="it in items" :key="it.id" class="hover:bg-muted" :class="{ 'opacity-55': itemDead(it) }">
-                <td class="table-td font-medium text-foreground">{{ it.internal_code }}</td>
-                <td class="table-td hidden md:table-cell">{{ itemStoreOrderId(it) }}</td>
+              <tr
+                v-for="it in items"
+                :key="it.id"
+                class="hover:bg-muted"
+                :class="{ 'opacity-55': itemDead(it), 'bg-rose-50/60 dark:bg-rose-500/10': itemStoreOrderDup(it) }"
+              >
+                <td class="table-td font-medium text-foreground">
+                  {{ it.internal_code }}
+                  <span
+                    v-if="itemStoreOrderDup(it)"
+                    class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                    title="StoreOrderID này trùng với đơn khác — kiểm tra, báo khách nếu cần"
+                  >
+                    <UiIcon name="alert" :size="10" /> Trùng
+                  </span>
+                </td>
+                <td class="table-td hidden md:table-cell" :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''">{{ itemStoreOrderId(it) }}</td>
                 <td class="table-td">{{ it.sku_code }}</td>
                 <td class="table-td hidden lg:table-cell">{{ itemMaterial(it) }}</td>
                 <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="design" :value="it.design_status" /></td>
                 <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
-                <td class="table-td"><UiStatusBadge :kind="itemStatus(it).kind" :value="itemStatus(it).value" /></td>
+                <td class="table-td">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <UiStatusBadge :kind="itemStatus(it).kind" :value="itemStatus(it).value" />
+                    <span
+                      v-if="it.order?.cancellation_status === 'REQUESTED'"
+                      class="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                      title="Đơn này có yêu cầu huỷ đang chờ xử lý — kiểm tra trước khi sản xuất tiếp"
+                    >
+                      <UiIcon name="alert" :size="10" /> Yêu cầu huỷ
+                    </span>
+                  </div>
+                </td>
                 <td class="table-td text-right">
                   <NuxtLink
                     v-if="itemOrderId(it)"

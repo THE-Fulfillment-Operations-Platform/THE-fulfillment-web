@@ -106,7 +106,8 @@ export async function request<T>(
  * Download a file from an authenticated endpoint (e.g. a CSV export) and trigger
  * a browser save. Uses the same configured client (baseURL + bearer token) as the
  * rest of the service layer, but expects a raw blob response instead of the JSON
- * envelope. No-op under mock mode (nothing to stream).
+ * envelope. Throws a MOCK_MISS ApiError under mock mode (nothing to stream);
+ * callers wrap this in try/catch and surface it as a toast.
  */
 export async function apiDownload(url: string, filename: string): Promise<void> {
   if (_mockEnabled) {

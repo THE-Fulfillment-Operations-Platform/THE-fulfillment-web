@@ -28,13 +28,16 @@ const columns = computed(() => {
     </PageHeader>
 
     <UiStateBlock :loading="loading" :error="error" @retry="reload">
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div v-for="col in columns" :key="col.status" class="rounded-lg bg-muted p-3">
-          <div class="mb-3 flex items-center justify-between px-1">
+      <!-- items-start stops the grid from stretching every column to the tallest
+           one: an empty column keeps its own compact, stable height (min-h) with a
+           centered "Trống" instead of bulging to match columns that have cards. -->
+      <div class="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div v-for="col in columns" :key="col.status" class="flex min-h-[9rem] flex-col rounded-lg bg-muted p-3">
+          <div class="mb-3 flex shrink-0 items-center justify-between px-1">
             <UiStatusBadge kind="internal" :value="col.status" />
             <span class="text-sm font-semibold text-muted-foreground">{{ col.batches.length }}</span>
           </div>
-          <div class="space-y-2">
+          <div v-if="col.batches.length" class="space-y-2">
             <NuxtLink
               v-for="b in col.batches"
               :key="b.id"
@@ -49,8 +52,8 @@ const columns = computed(() => {
                 {{ b.material_name || b.material_code }} · {{ b.item_count ?? b.items?.length ?? 0 }} items
               </p>
             </NuxtLink>
-            <p v-if="!col.batches.length" class="px-1 py-4 text-center text-xs text-muted-foreground">Trống</p>
           </div>
+          <div v-else class="flex flex-1 items-center justify-center text-xs text-muted-foreground">Trống</div>
         </div>
       </div>
     </UiStateBlock>

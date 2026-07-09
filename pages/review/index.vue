@@ -79,9 +79,23 @@ function changePage(p: number) {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="o in orders" :key="o.id" class="hover:bg-muted">
+              <tr
+                v-for="o in orders"
+                :key="o.id"
+                class="hover:bg-muted"
+                :class="{ 'bg-rose-50/60 dark:bg-rose-500/10': o.store_order_dup }"
+              >
                 <td class="table-td">
-                  <p class="font-medium text-foreground">{{ o.store_order_id }}</p>
+                  <p class="flex items-center gap-1.5 font-medium" :class="o.store_order_dup ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'">
+                    {{ o.store_order_id }}
+                    <span
+                      v-if="o.store_order_dup"
+                      class="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                      title="StoreOrderID này trùng với đơn khác — kiểm tra, báo khách nếu cần"
+                    >
+                      <UiIcon name="alert" :size="10" /> Trùng
+                    </span>
+                  </p>
                   <p class="text-xs text-muted-foreground">{{ o.internal_code }}</p>
                 </td>
                 <td class="table-td text-foreground">

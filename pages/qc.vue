@@ -19,6 +19,8 @@ const scanError = ref<string | null>(null)
 // Manual visual checklist — QC must confirm each before PASS is enabled.
 const checks = reactive({ mockup: false, engrave: false, quality: false })
 const allChecked = computed(() => checks.mockup && checks.engrave && checks.quality)
+// Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
+const alreadyQC = computed(() => result.value?.internal_status === 'QC_PASSED')
 
 const passing = ref(false)
 const failOpen = ref(false)
@@ -71,7 +73,7 @@ function clearStation() {
 }
 
 async function pass() {
-  if (!result.value || !allChecked.value || passing.value) return
+  if (!result.value || !allChecked.value || passing.value || alreadyQC.value) return
   passing.value = true
   try {
     await qcApi.pass({ item_id: result.value.item_id })
@@ -247,6 +249,18 @@ onMounted(focusScan)
 
         <!-- Checklist -->
         <div class="card p-5">
+          <div
+            v-if="alreadyQC"
+            class="mb-4 flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+          >
+            <UiIcon name="check" :size="18" class="mt-0.5 shrink-0" />
+            <div>
+              <p class="font-semibold">Item này đã QC rồi</p>
+              <p class="mt-0.5 text-xs text-emerald-700/90 dark:text-emerald-300/90">
+                Không cần quét lại. Bấm “Bỏ qua / Quét mã khác” để tiếp tục item khác.
+              </p>
+            </div>
+          </div>
           <h3 class="mb-3 text-sm font-semibold text-foreground">Checklist đối chiếu</h3>
           <div class="space-y-2.5">
             <label class="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2.5 hover:bg-muted">
@@ -266,14 +280,14 @@ onMounted(focusScan)
           <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
-              :disabled="!allChecked || passing"
-              :title="!allChecked ? 'Phải tích đủ 3 mục checklist' : ''"
+              :disabled="!allChecked || passing || alreadyQC"
+              :title="alreadyQC ? 'Item đã QC rồi' : !allChecked ? 'Phải tích đủ 3 mục checklist' : ''"
               @click="pass"
             >
               <UiSpinner v-if="passing" :size="16" />
-              <UiIcon v-else name="check" :size="16" /> PASS — Đã QC
+              <UiIcon v-else name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
             </button>
-            <button class="btn-danger" :disabled="failing" @click="openFail">
+            <button class="btn-danger" :disabled="failing || alreadyQC" :title="alreadyQC ? 'Item đã QC rồi' : ''" @click="openFail">
               <UiIcon name="alert" :size="16" /> FAIL — Ghi lỗi
             </button>
           </div>
