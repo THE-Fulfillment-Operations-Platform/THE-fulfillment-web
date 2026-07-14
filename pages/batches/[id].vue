@@ -8,6 +8,7 @@ import { errorMessage } from '~/utils/api-error'
 import { formatDate } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
+import { useConfirm } from '~/composables/useConfirm'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -30,6 +31,17 @@ const canChangeStatus = computed(() =>
 // Batch đã QC (roll-up từ item đã QC ở trạm QC) → khoá board, không cho hạ cấp
 // trạng thái sản xuất. QC_PASSED chỉ do trạm QC đặt, 1 lần cho cả sản phẩm.
 const qcLocked = computed(() => batch.value?.status === 'QC_PASSED')
+
+// Sản xuất tiến 1 chiều: một chặng ĐỨNG TRƯỚC trạng thái hiện tại đã qua rồi → làm
+// mờ + không cho bấm (lùi về sẽ hạ cấp batch-item và phá cổng QC "mọi NVL đã cắt").
+function isPastStep(s: InternalStatus): boolean {
+  if (!batch.value) return false
+  return PRODUCTION_STATUS_ORDER.indexOf(s) < PRODUCTION_STATUS_ORDER.indexOf(batch.value.status)
+}
+
+// Chỉ OWNER được hạ trạng thái (sửa khi bấm nhầm) — khớp guard BE. Các role khác
+// chỉ tiến. Item đã QC trong batch không bị đụng tới dù có hạ (BE bảo vệ).
+const isOwner = computed(() => auth.role === 'OWNER')
 
 // Production rows for the batch table — mirrors the legacy production template.
 // Reads from the preloaded order item (real API); falls back to the flat fields
@@ -83,6 +95,22 @@ async function setStatus(status: InternalStatus) {
   } finally {
     updating.value = false
   }
+}
+
+// Từ nút board: nếu là hạ trạng thái (OWNER sửa bấm nhầm) thì xác nhận trước —
+// vì nó cascade xuống item. Tiến tới thì cập nhật thẳng.
+async function chooseStatus(status: InternalStatus) {
+  if (!batch.value) return
+  if (isPastStep(status)) {
+    const ok = await useConfirm().confirm({
+      title: 'Hạ trạng thái sản xuất',
+      message: `Batch đang ở "${INTERNAL_STATUS[batch.value.status].label}". Hạ về "${INTERNAL_STATUS[status].label}"? Chỉ dùng khi bấm nhầm — item đã QC sẽ không bị ảnh hưởng.`,
+      tone: 'danger',
+      confirmText: 'Hạ trạng thái',
+    })
+    if (!ok) return
+  }
+  setStatus(status)
 }
 
 // Download the legacy-compatible production template as a real .xlsx workbook
@@ -268,14 +296,21 @@ async function printLabels() {
               <button
                 v-for="s in PRODUCTION_STATUS_ORDER"
                 :key="s"
-                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-                :class="batch.status === s ? 'border-primary bg-accent text-primary' : 'border-border text-foreground hover:bg-muted'"
-                :disabled="updating || batch.status === s"
-                @click="setStatus(s)"
+                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed"
+                :class="batch.status === s
+                  ? 'border-primary bg-accent text-primary'
+                  : isPastStep(s)
+                    ? (isOwner ? 'border-dashed border-border text-muted-foreground hover:bg-muted' : 'border-border text-muted-foreground opacity-40')
+                    : 'border-border text-foreground hover:bg-muted'"
+                :disabled="updating || batch.status === s || (isPastStep(s) && !isOwner)"
+                :title="isPastStep(s) ? (isOwner ? 'Chặng đã qua — bấm để hạ về (sửa nhầm)' : 'Chặng đã qua — sản xuất chỉ tiến, không lùi') : ''"
+                @click="chooseStatus(s)"
               >
                 {{ INTERNAL_STATUS[s].label }}
               </button>
-              <span class="text-[11px] text-muted-foreground">(cascade xuống item · QC làm 1 lần ở trạm QC)</span>
+              <span class="text-[11px] text-muted-foreground">
+                (cascade xuống item · QC làm 1 lần ở trạm QC{{ isOwner ? ' · OWNER được hạ để sửa nhầm' : '' }})
+              </span>
             </div>
           </div>
         </div>
