@@ -1,18 +1,35 @@
 <script setup lang="ts">
 // Unified loading / empty / error placeholder for data regions.
-const props = defineProps<{
-  loading?: boolean
-  error?: string | null
-  empty?: boolean
-  emptyText?: string
-  loadingText?: string
-}>()
+// Loading defaults to a centred spinner; pass `skeleton` for a row-shimmer
+// preview (nicer for table/list regions) with `skeleton-rows` controlling count.
+withDefaults(
+  defineProps<{
+    loading?: boolean
+    error?: string | null
+    empty?: boolean
+    emptyText?: string
+    loadingText?: string
+    skeleton?: boolean
+    skeletonRows?: number
+  }>(),
+  { skeletonRows: 6 },
+)
 
 const emit = defineEmits<{ (e: 'retry'): void }>()
 </script>
 
 <template>
-  <div v-if="loading" class="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
+  <div v-if="loading && skeleton" class="space-y-3 p-4" aria-busy="true" aria-live="polite">
+    <div v-for="i in skeletonRows" :key="i" class="flex items-center gap-3">
+      <UiSkeleton height="0.9rem" width="20%" />
+      <UiSkeleton height="0.9rem" width="30%" />
+      <UiSkeleton height="0.9rem" width="18%" />
+      <UiSkeleton height="0.9rem" width="16%" />
+      <UiSkeleton height="0.9rem" width="10%" />
+    </div>
+  </div>
+
+  <div v-else-if="loading" class="flex flex-col items-center justify-center gap-3 py-12 text-muted-foreground">
     <UiSpinner :size="28" />
     <p class="text-sm">{{ loadingText || 'Đang tải dữ liệu…' }}</p>
   </div>

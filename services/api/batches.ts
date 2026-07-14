@@ -30,4 +30,10 @@ export const batchesApi = {
       `/api/batches/${id}/production-template.xlsx`,
       `production-${(code ?? String(id)).replace('#', '')}.xlsx`,
     ),
+  // Download all asset files for the batch as a ZIP bundle.
+  downloadAssetsZip: (id: number | string, code?: string) =>
+    apiDownload(
+      `/api/batches/${id}/assets.zip`,
+      `batch-${(code ?? String(id)).replace('#', '')}-assets.zip`,
+    ),
 }

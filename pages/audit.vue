@@ -3,6 +3,8 @@ import { auditApi } from '~/services/api'
 import type { AuditLog } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDateTime } from '~/utils/format'
+import { exportCsv } from '~/utils/csv'
+import { useToastStore } from '~/stores/toast'
 
 // Audit log viewer (Wireframe: Users/Audit). Read-only trail of mutating actions
 // across the system. The endpoint returns the full recent set; we filter client
@@ -23,6 +25,23 @@ const logs = computed(() => {
   )
 })
 
+const toast = useToastStore()
+function exportLogs() {
+  const rows = logs.value
+  if (!rows.length) {
+    toast.info('Không có bản ghi nào để xuất.')
+    return
+  }
+  exportCsv(`audit-logs-${new Date().toISOString().slice(0, 10)}`, rows, [
+    { label: 'Thời gian', value: (l) => formatDateTime(l.created_at) },
+    { label: 'Hành động', value: 'action' },
+    { label: 'Người thực hiện', value: 'actor_email' },
+    { label: 'Đối tượng', value: (l) => (l.entity_type ? `${l.entity_type}${l.entity_id ? ' #' + l.entity_id : ''}` : '') },
+    { label: 'Tóm tắt', value: 'summary' },
+  ])
+  toast.success(`Đã xuất ${rows.length} dòng CSV.`)
+}
+
 // Colour the action verb so create/update/delete read at a glance.
 function actionClass(action: string): string {
   const a = action.toLowerCase()
@@ -37,6 +56,9 @@ function actionClass(action: string): string {
   <div>
     <PageHeader title="Audit Logs" subtitle="Nhật ký các thao tác thay đổi dữ liệu trong hệ thống">
       <template #actions>
+        <button class="btn-secondary" :disabled="!logs.length" @click="exportLogs">
+          <UiIcon name="upload" :size="16" /> Xuất CSV
+        </button>
         <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /> Làm mới</button>
       </template>
     </PageHeader>
@@ -60,6 +82,8 @@ function actionClass(action: string): string {
         :error="error"
         :empty="!loading && !error && logs.length === 0"
         empty-text="Không có bản ghi audit nào."
+        skeleton
+        :skeleton-rows="10"
         @retry="reload"
       >
         <div class="overflow-x-auto">

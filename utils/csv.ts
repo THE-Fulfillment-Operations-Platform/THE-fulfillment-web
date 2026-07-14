@@ -1,3 +1,62 @@
+// ---------------------------------------------------------------------------
+// CSV writer — turn a list of rows into a downloadable CSV. Complements the
+// parser below (used by the paste-import flow). Kept dependency-free so any data
+// grid can offer an "Export CSV" without a spreadsheet library.
+// ---------------------------------------------------------------------------
+
+export interface CsvColumn<T> {
+  /** Header text written to the first row. */
+  label: string
+  /** Cell value; a plain key on the row or a derived getter. */
+  value: keyof T | ((row: T) => unknown)
+}
+
+function escapeCsvCell(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  let s = String(v)
+  // CSV-injection guard (CWE-1236): a cell that begins with a formula trigger is
+  // prefixed with an apostrophe so spreadsheets treat it as text, not a live
+  // formula. Quote-wrapping alone does NOT help — the app strips CSV quoting
+  // before evaluating the cell. Data here can originate from seller imports.
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
+  // Quote-wrap when the cell contains a delimiter, quote or newline.
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+
+export function toCsv<T>(rows: T[], columns: CsvColumn<T>[]): string {
+  const header = columns.map((c) => escapeCsvCell(c.label)).join(',')
+  const body = rows.map((row) =>
+    columns
+      .map((c) =>
+        escapeCsvCell(typeof c.value === 'function' ? (c.value as (r: T) => unknown)(row) : row[c.value]),
+      )
+      .join(','),
+  )
+  return [header, ...body].join('\r\n')
+}
+
+/**
+ * Trigger a browser download of a CSV string. Prepends a UTF-8 BOM so Excel
+ * opens Vietnamese text without mojibake.
+ */
+export function downloadCsv(filename: string, csv: string): void {
+  const BOM = '﻿'
+  const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+/** Convenience: build the CSV and download it in one call. */
+export function exportCsv<T>(filename: string, rows: T[], columns: CsvColumn<T>[]): void {
+  downloadCsv(filename, toCsv(rows, columns))
+}
+
 // Minimal CSV parser supporting quoted fields, escaped quotes and CRLF.
 export function parseCsv(text: string): Record<string, string>[] {
   const rows: string[][] = []

@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from '../http'
-import type { Order, ReviewOrderDetail, ListParams } from '~/types'
+import type { Order, OrderItem, ReviewOrderDetail, ListParams } from '~/types'
 
 export interface ReviewListParams extends ListParams {
   status?: string // PENDING_REVIEW | NEEDS_CORRECTION
@@ -26,4 +26,9 @@ export const cancellationApi = {
     apiPost<Order>(`/api/cancellation-requests/${id}/approve`, { note }),
   reject: (id: number | string, note?: string) =>
     apiPost<Order>(`/api/cancellation-requests/${id}/reject`, { note }),
+  itemList: (params?: ListParams) => apiGet<OrderItem[]>('/api/cancellation-requests/items', params),
+  approveItem: (id: number | string, note?: string) =>
+    apiPost<OrderItem>(`/api/cancellation-requests/items/${id}/approve`, { note }),
+  rejectItem: (id: number | string, note?: string) =>
+    apiPost<OrderItem>(`/api/cancellation-requests/items/${id}/reject`, { note }),
 }

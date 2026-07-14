@@ -5,6 +5,8 @@ import { useAuthStore } from '~/stores/auth'
 import { useApiResource } from '~/composables/useApiResource'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
+import { formatDate } from '~/utils/format'
+import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 
 const route = useRoute()
@@ -13,7 +15,11 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const { data: batch, loading, error, reload } = useApiResource<Batch>(() => batchesApi.get(id))
-const items = computed(() => batch.value?.items ?? [])
+const items = computed(() =>
+  (batch.value?.items ?? []).filter(
+    (item) => item.order_item?.cancellation_status !== 'SELLER_CANCELLED' && item.order_item?.cancellation_status !== 'APPROVED',
+  ),
+)
 
 // Roles allowed to advance batch status (production + supervisors). Mirrors the
 // backend PATCH /batches/:id/status guard (Owner/Admin/Ops/Production/Designer).
@@ -101,6 +107,19 @@ function toImageSrc(url: string): string {
   if (!url) return ''
   const m = url.match(/\/file\/d\/([\w-]+)/) || url.match(/[?&]id=([\w-]+)/)
   return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w600` : url
+}
+
+const downloadingZip = ref(false)
+async function downloadBatchAssets() {
+  if (!batch.value || downloadingZip.value) return
+  downloadingZip.value = true
+  try {
+    await batchesApi.downloadAssetsZip(batch.value.id, batch.value.code)
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingZip.value = false
+  }
 }
 
 const printingLabels = ref(false)
@@ -195,10 +214,11 @@ async function printLabels() {
                   Material: {{ batch.material_name || batch.material?.name || batch.material_code }}
                 </span>
               </h1>
-              <div class="mt-2 flex items-center gap-2">
+              <div class="mt-2 flex flex-wrap items-center gap-2">
                 <UiStatusBadge kind="internal" :value="batch.status" />
                 <UiStatusBadge kind="priority" :value="batch.priority || 'NORMAL'" />
                 <span class="text-xs text-muted-foreground">{{ batch.item_count ?? items.length }} item</span>
+                <span v-if="batch.due_date" class="text-xs text-muted-foreground">· Hạn: {{ formatDate(batch.due_date) }}</span>
               </div>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -210,10 +230,20 @@ async function printLabels() {
                 <UiSpinner v-if="exporting" :size="16" />
                 <UiIcon v-else name="upload" :size="16" /> Xuất Excel (.xlsx)
               </button>
-              <button class="btn-secondary" title="Phase sau khi có storage" @click="toast.info('Download ZIP là phase sau (chưa có storage).')">
-                <UiIcon name="box" :size="16" /> Download ZIP
+              <button class="btn-secondary" :disabled="downloadingZip" @click="downloadBatchAssets">
+                <UiSpinner v-if="downloadingZip" :size="16" />
+                <UiIcon v-else name="box" :size="16" /> Download ZIP
               </button>
             </div>
+          </div>
+
+          <!-- Overdue warning -->
+          <div
+            v-if="isBatchOverdue(batch)"
+            class="mt-4 flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"
+          >
+            <UiIcon name="alert" :size="16" />
+            Batch đã trễ hạn {{ overdueDays(batch) }} ngày (hạn {{ formatDate(batch.due_date) }}) mà chưa hoàn tất QC.
           </div>
 
           <!-- Status control -->

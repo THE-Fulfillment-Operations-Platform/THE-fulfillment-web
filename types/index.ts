@@ -168,6 +168,10 @@ export interface OrderItem {
   quantity: number
   internal_status: InternalStatus
   design_status: DesignStatus
+  cancellation_status?: CancellationStatus
+  cancellation_requested_at?: string | null
+  cancellation_reason?: string
+  cancellation_resolution_note?: string
   mockup_url?: string
   engrave_text?: string
   print_file_url?: string
@@ -520,11 +524,23 @@ export interface Note {
 // ---- Seller view -----------------------------------------------------------
 
 export interface SellerOrderItem {
+  // Line-item id the backend assigns (same value as the internal OrderItem.id).
+  // Required to target a single product for per-item cancellation — SKU/name are
+  // not unique within an order (an order can hold the same SKU several times).
+  id?: number
+  // Some backend serializers expose the FK-style name instead of `id`.
+  // Accept it during the API transition, but the UI still requires one of the
+  // two values before it offers a per-item cancellation action.
+  item_id?: number
   sku_code: string
   product_name?: string
   variant_code?: string
   quantity: number
   mockup_url?: string
+  // Per-item cancellation state. Absent/NONE = active. SELLER_CANCELLED/APPROVED
+  // = the product was removed from the order; REQUESTED = a removal is waiting on
+  // ops to approve. Mirrors the order-level cancellation lifecycle.
+  cancellation_status?: CancellationStatus
 }
 
 export interface SellerOrder {

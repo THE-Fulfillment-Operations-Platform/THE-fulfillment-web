@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { itemsApi } from '~/services/api'
 import type { OrderItem } from '~/types'
-import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
+import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, REVIEW_STATUS, DESIGN_STATUS, badgeFrom } from '~/utils/enums'
 import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
 import { useApiResource } from '~/composables/useApiResource'
+import { exportCsv } from '~/utils/csv'
+import { useToastStore } from '~/stores/toast'
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
@@ -76,6 +78,36 @@ function itemDead(it: OrderItem): boolean {
   const rv = it.order?.review_status
   return rv === 'REJECTED' || rv === 'CANCELLED'
 }
+
+const toast = useToastStore()
+function statusLabel(it: OrderItem): string {
+  const s = itemStatus(it)
+  return s.kind === 'review'
+    ? badgeFrom(REVIEW_STATUS, s.value as never).label
+    : badgeFrom(INTERNAL_STATUS, s.value as never).label
+}
+function exportItems() {
+  const rows = items.value
+  if (!rows.length) {
+    toast.info('Không có item nào để xuất.')
+    return
+  }
+  // Exports the rows currently loaded (this page). Increase rows-per-page to
+  // export more in one go.
+  exportCsv(`orders-items-${new Date().toISOString().slice(0, 10)}`, rows, [
+    { label: 'Internal Item', value: 'internal_code' },
+    { label: 'Store Order', value: (it) => itemStoreOrderId(it) },
+    { label: 'Trùng StoreOrderID', value: (it) => (itemStoreOrderDup(it) ? 'Có' : '') },
+    { label: 'SKU', value: 'sku_code' },
+    { label: 'Sản phẩm', value: (it) => it.product_name ?? '' },
+    { label: 'Số lượng', value: 'quantity' },
+    { label: 'NVL', value: (it) => itemMaterial(it) },
+    { label: 'Design', value: (it) => badgeFrom(DESIGN_STATUS, it.design_status).label },
+    { label: 'Batch', value: (it) => itemBatchLabel(it) },
+    { label: 'Trạng thái', value: (it) => statusLabel(it) },
+  ])
+  toast.success(`Đã xuất ${rows.length} dòng CSV.`)
+}
 </script>
 
 <template>
@@ -83,7 +115,18 @@ function itemDead(it: OrderItem): boolean {
     <PageHeader
       title="Orders / Items"
       subtitle="Góc nhìn item-level — sản xuất/QC/packing chạy theo từng sản phẩm"
-    />
+    >
+      <template #actions>
+        <button
+          class="btn-secondary"
+          :disabled="!items.length"
+          title="Xuất các dòng đang hiển thị (trang hiện tại) ra CSV"
+          @click="exportItems"
+        >
+          <UiIcon name="upload" :size="16" /> Xuất CSV
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Filters -->
     <div class="card mb-4 p-4">
@@ -119,6 +162,8 @@ function itemDead(it: OrderItem): boolean {
         :error="error"
         :empty="!loading && !error && items.length === 0"
         empty-text="Không có item nào khớp bộ lọc."
+        skeleton
+        :skeleton-rows="8"
         @retry="reload"
       >
         <div class="overflow-x-auto">

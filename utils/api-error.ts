@@ -30,7 +30,7 @@ const VI_BY_CODE: Record<string, string> = {
 const VI_BY_PHRASE: Array<[RegExp, string]> = [
   [/(email).*(exist|taken|duplicate|unique)|(exist|taken|duplicate|unique).*(email)|đã tồn tại/i,
     'Email này đã được dùng cho tài khoản khác. Hãy nhập email khác.'],
-  [/seller.*(not\s*found|invalid|exist)|foreign key|violates foreign/i,
+  [/(seller[ _-]?id).*(not\s*found|invalid|does not exist)|(not\s*found|invalid|does not exist).*(seller[ _-]?id)/i,
     'Seller ID không tồn tại. Hãy nhập đúng ID của seller đã có trong hệ thống.'],
   [/password/i, 'Mật khẩu không hợp lệ (thường cần tối thiểu 8 ký tự).'],
   [/could not create user|create user failed/i,

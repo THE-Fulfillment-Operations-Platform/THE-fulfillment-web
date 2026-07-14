@@ -6,6 +6,7 @@ import { useApiResource } from '~/composables/useApiResource'
 import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
+import { exportCsv } from '~/utils/csv'
 import { useToastStore } from '~/stores/toast'
 import {
   NOTE_SEVERITY,
@@ -54,6 +55,26 @@ function applyFilters() {
 function changePage(p: number) {
   filters.page = p
   reload()
+}
+
+function exportNotes() {
+  const rows = notes.value
+  if (!rows.length) {
+    toast.info('Không có note nào để xuất.')
+    return
+  }
+  exportCsv(`notes-${new Date().toISOString().slice(0, 10)}`, rows, [
+    { label: 'Tiêu đề', value: 'title' },
+    { label: 'Nội dung', value: (n) => n.body ?? '' },
+    { label: 'Lý do', value: (n) => reasonCodeLabel(n.reason_code) },
+    { label: 'Mức độ', value: (n) => NOTE_SEVERITY[n.severity]?.label ?? n.severity },
+    { label: 'Trạng thái', value: (n) => NOTE_STATUS[n.status]?.label ?? n.status },
+    { label: 'Cần chú ý', value: (n) => (n.is_required_attention ? 'Có' : '') },
+    { label: 'Đối tượng', value: (n) => (n.entity_type ? `${entityTypeLabel(n.entity_type)}${n.entity_id ? ' #' + n.entity_id : ''}` : '') },
+    { label: 'Phụ trách', value: (n) => (n.owner_role ? ROLE_LABEL[n.owner_role] : '') },
+    { label: 'Tạo lúc', value: (n) => formatDateTime(n.created_at) },
+  ])
+  toast.success(`Đã xuất ${rows.length} note ra CSV.`)
 }
 
 // ---- Create / edit ---------------------------------------------------------
@@ -199,6 +220,9 @@ async function remove(n: Note) {
   <div>
     <PageHeader title="Ghi chú & Cảnh báo" subtitle="Ghi chú & cảnh báo xuyên suốt quy trình — Ops phân loại và xử lý">
       <template #actions>
+        <button class="btn-secondary" :disabled="!notes.length" title="Xuất các note đang hiển thị ra CSV" @click="exportNotes">
+          <UiIcon name="upload" :size="16" /> Xuất CSV
+        </button>
         <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Tạo note</button>
       </template>
     </PageHeader>
@@ -232,6 +256,8 @@ async function remove(n: Note) {
         :error="error"
         :empty="!loading && !error && notes.length === 0"
         empty-text="Không có note nào khớp bộ lọc."
+        skeleton
+        :skeleton-rows="8"
         @retry="reload"
       >
         <div class="overflow-x-auto">

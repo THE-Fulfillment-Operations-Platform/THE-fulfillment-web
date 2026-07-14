@@ -2,6 +2,7 @@ import type { ApiResult, HttpMethod, RequestOptions } from './http'
 import { ApiError } from '~/utils/api-error'
 import type {
   Batch,
+  CancellationStatus,
   LoginResponse,
   MaterialBucket,
   Note,
@@ -9,6 +10,7 @@ import type {
   OrderItem,
   QcScanResult,
   SellerOrder,
+  SellerOrderItem,
   User,
 } from '~/types'
 
@@ -94,19 +96,57 @@ const NOTES: Note[] = [
   { id: 1, title: 'Thiếu mockup ACR-05', body: 'Seller chưa gửi mockup', reason_code: 'ART_MISSING', severity: 'HIGH', status: 'OPEN', is_required_attention: true, entity_type: 'ORDER_ITEM', entity_id: 4, owner_role: 'DESIGNER', created_at: ts },
 ]
 
-const SELLER_ORDERS: SellerOrder[] = ORDERS.map((o) => ({
-  id: o.id,
-  internal_code: o.internal_code,
-  store_order_id: o.store_order_id,
-  store_name: o.store_name,
-  status: o.seller_status,
-  review_status: o.review_status ?? 'APPROVED',
-  cancellation_status: o.cancellation_status ?? 'NONE',
-  can_cancel: false,
-  can_request_cancellation: false,
-  item_count: o.items?.length ?? 0,
-  created_at: o.created_at,
-}))
+function sellerItem(
+  id: number,
+  sku: string,
+  name: string,
+  quantity: number,
+  cancellation: CancellationStatus = 'NONE',
+): SellerOrderItem {
+  return { id, sku_code: sku, product_name: name, quantity, cancellation_status: cancellation }
+}
+
+// Seller-facing fixtures. Kept mutable (module singleton) so the mock cancel
+// handlers below can flip item / order state and the UI reflects it on reload.
+// Order 1 is still in the review flow (per-item DIRECT cancel); orders 2 & 3 are
+// approved (per-item cancel is a REQUEST ops must approve); order 3 also seeds a
+// pending request + an already-cancelled product to show those states.
+const SELLER_ORDERS: SellerOrder[] = [
+  {
+    id: 1, internal_code: '100001', store_order_id: 'US-0925-008', store_name: 'CrochetedChari',
+    status: 'PRODUCTION', review_status: 'PENDING_REVIEW', cancellation_status: 'NONE',
+    can_cancel: true, can_request_cancellation: false, item_count: 3, created_at: ts,
+    items: [
+      sellerItem(11, 'BR-SH-2-KEP', 'Móc khoá len Cải bó xôi', 1),
+      sellerItem(12, 'BR-SH-2-KEP', 'Móc khoá len Bắp cải', 1),
+      sellerItem(13, 'BR-SH-2-KEP', 'Móc khoá len Dưa leo', 2),
+    ],
+  },
+  {
+    id: 2, internal_code: '100002', store_order_id: 'US-0925-011', store_name: 'CrochetedChari',
+    status: 'PRODUCTION', review_status: 'APPROVED', cancellation_status: 'NONE',
+    can_cancel: false, can_request_cancellation: true, item_count: 2, created_at: ts,
+    items: [
+      sellerItem(21, 'WOOD-01', 'Personalized Wood Sign', 1),
+      sellerItem(22, 'MICA-02', 'Mica Name Plate', 1),
+    ],
+  },
+  {
+    id: 3, internal_code: '100003', store_order_id: 'US-0925-014', store_name: 'CrochetedChari',
+    status: 'PRODUCTION', review_status: 'APPROVED', cancellation_status: 'NONE',
+    can_cancel: false, can_request_cancellation: true, item_count: 3, created_at: ts,
+    items: [
+      sellerItem(31, 'ACR-05', 'Acrylic Keychain', 1, 'REQUESTED'),
+      sellerItem(32, 'ACR-06', 'Acrylic Stand', 1),
+      sellerItem(33, 'WOOD-02', 'Wood Ornament', 1, 'SELLER_CANCELLED'),
+    ],
+  },
+]
+
+// An item counts as "gone" once cancelled outright or approved-for-cancel.
+function itemGone(it: SellerOrderItem): boolean {
+  return it.cancellation_status === 'SELLER_CANCELLED' || it.cancellation_status === 'APPROVED'
+}
 
 function list<T>(data: T[]): ApiResult<T[]> {
   return { data, meta: { page: 1, page_size: 20, total: data.length, total_pages: 1 } }
@@ -164,6 +204,76 @@ export async function resolveMock<T>(
   }
   if (method === 'GET' && path === '/api/notes') return list(NOTES) as ApiResult<T>
   if (method === 'GET' && path === '/api/seller/orders') return list(SELLER_ORDERS) as ApiResult<T>
+  if (method === 'GET' && /^\/api\/seller\/orders\/\d+$/.test(path)) {
+    const o = SELLER_ORDERS.find((x) => x.id === Number(path.split('/').pop()))
+    // Return a fresh copy each read (like a real backend) so a reload after a
+    // cancel yields a new object reference — otherwise Vue keeps the same ref and
+    // computed values derived from it (e.g. the cancelled count) go stale.
+    return o ? ({ data: structuredClone(o) as T }) : null
+  }
+  // Whole-order cancel: kill every still-active product and lock the order.
+  {
+    const m = path.match(/^\/api\/seller\/orders\/(\d+)\/cancel$/)
+    if (method === 'POST' && m) {
+      const o = SELLER_ORDERS.find((x) => x.id === Number(m[1]))
+      if (!o) return null
+      o.cancellation_status = 'SELLER_CANCELLED'
+      o.review_status = 'CANCELLED'
+      o.can_cancel = false
+      o.can_request_cancellation = false
+      o.items?.forEach((it) => {
+        if (!itemGone(it)) it.cancellation_status = 'SELLER_CANCELLED'
+      })
+      o.item_count = 0
+      return { data: o as T }
+    }
+  }
+  // Whole-order cancellation request (approved/in-production order).
+  {
+    const m = path.match(/^\/api\/seller\/orders\/(\d+)\/cancellation-request$/)
+    if (method === 'POST' && m) {
+      const o = SELLER_ORDERS.find((x) => x.id === Number(m[1]))
+      if (!o) return null
+      o.cancellation_status = 'REQUESTED'
+      o.can_request_cancellation = false
+      return { data: o as T }
+    }
+  }
+  // Per-item direct cancel; if it empties the order, cancel the order too.
+  {
+    const m = path.match(/^\/api\/seller\/orders\/(\d+)\/items\/(\d+)\/cancel$/)
+    if (method === 'POST' && m) {
+      const o = SELLER_ORDERS.find((x) => x.id === Number(m[1]))
+      const it = o?.items?.find((x) => x.id === Number(m[2]))
+      if (!o || !it) return null
+      if (!o.can_cancel || itemGone(it) || it.cancellation_status === 'REQUESTED') {
+        throw new ApiError('Sản phẩm không còn ở trạng thái có thể huỷ trực tiếp.', 'CONFLICT', 409)
+      }
+      it.cancellation_status = 'SELLER_CANCELLED'
+      o.item_count = o.items?.filter((item) => !itemGone(item)).length ?? 0
+      if (o.items?.every(itemGone)) {
+        o.cancellation_status = 'SELLER_CANCELLED'
+        o.review_status = 'CANCELLED'
+        o.can_cancel = false
+        o.can_request_cancellation = false
+      }
+      return { data: o as T }
+    }
+  }
+  // Per-item cancellation request (waits on ops).
+  {
+    const m = path.match(/^\/api\/seller\/orders\/(\d+)\/items\/(\d+)\/cancellation-request$/)
+    if (method === 'POST' && m) {
+      const o = SELLER_ORDERS.find((x) => x.id === Number(m[1]))
+      const it = o?.items?.find((x) => x.id === Number(m[2]))
+      if (!o || !it) return null
+      if (!o.can_request_cancellation || itemGone(it) || it.cancellation_status === 'REQUESTED') {
+        throw new ApiError('Sản phẩm không còn ở trạng thái có thể yêu cầu huỷ.', 'CONFLICT', 409)
+      }
+      it.cancellation_status = 'REQUESTED'
+      return { data: o as T }
+    }
+  }
   if (method === 'GET' && path === '/api/handoffs') return list([]) as ApiResult<T>
   if (method === 'GET' && path === '/api/audit-logs') return list([]) as ApiResult<T>
   if (method === 'GET' && path === '/api/import-jobs') return list([]) as ApiResult<T>

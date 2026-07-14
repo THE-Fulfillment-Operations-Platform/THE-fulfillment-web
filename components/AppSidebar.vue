@@ -2,11 +2,13 @@
 import { useAuthStore } from '~/stores/auth'
 import { navForRole } from '~/utils/navigation'
 import { ROLE_LABEL } from '~/utils/enums'
+import { useActionCounts } from '~/composables/useActionCounts'
 
 defineEmits<{ (e: 'navigate'): void; (e: 'close'): void }>()
 
 const auth = useAuthStore()
 const items = computed(() => navForRole(auth.role))
+const { countForPath } = useActionCounts()
 </script>
 
 <template>
@@ -38,6 +40,13 @@ const items = computed(() => navForRole(auth.role))
       >
         <UiIcon :name="item.icon" :size="18" class="shrink-0" />
         <span class="truncate">{{ item.label }}</span>
+        <span
+          v-if="countForPath(item.to) > 0"
+          class="ml-auto inline-flex min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white"
+          :title="`${countForPath(item.to)} mục cần xử lý`"
+        >
+          {{ countForPath(item.to) > 99 ? '99+' : countForPath(item.to) }}
+        </span>
       </NuxtLink>
     </nav>
 

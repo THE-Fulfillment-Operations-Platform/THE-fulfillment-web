@@ -7,6 +7,12 @@ export default defineNuxtRouteMiddleware((to) => {
   const auth = useAuthStore()
   const isPublic = PUBLIC_ROUTES.has(to.path)
 
+  // Proactively end an expired session on navigation rather than letting the
+  // first API call 401. Drops through to the not-logged-in branch below.
+  if (auth.isAuthenticated && auth.isExpired()) {
+    auth.clear()
+  }
+
   // Not logged in → only public routes allowed.
   if (!auth.isAuthenticated) {
     if (isPublic) return

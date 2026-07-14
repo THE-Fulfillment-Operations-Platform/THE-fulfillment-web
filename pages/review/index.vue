@@ -102,7 +102,7 @@ function changePage(p: number) {
                   {{ o.seller?.name || o.seller?.code || '—' }}
                   <span v-if="o.store_name" class="text-xs text-muted-foreground">· {{ o.store_name }}</span>
                 </td>
-                <td class="table-td text-foreground">{{ o.items?.length ?? 0 }}</td>
+                <td class="table-td text-foreground">{{ o.items?.filter(it => it.cancellation_status !== 'SELLER_CANCELLED' && it.cancellation_status !== 'APPROVED').length ?? 0 }}</td>
                 <td class="table-td"><UiStatusBadge kind="review" :value="o.review_status" /></td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
                 <td class="table-td text-right">

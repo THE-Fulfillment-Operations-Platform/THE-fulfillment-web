@@ -16,6 +16,11 @@ const id = route.params.id as string
 
 const { data, loading, error, reload } = useApiResource<ReviewOrderDetail>(() => reviewApi.get(id))
 const order = computed(() => data.value?.order ?? null)
+const reviewItems = computed(() =>
+  (order.value?.items ?? []).filter(
+    (item) => item.cancellation_status !== 'SELLER_CANCELLED' && item.cancellation_status !== 'APPROVED',
+  ),
+)
 const issues = computed<ReviewIssue[]>(() => data.value?.issues ?? [])
 const blockers = computed(() => issues.value.filter((i) => i.severity === 'BLOCKER'))
 const warnings = computed(() => issues.value.filter((i) => i.severity === 'WARNING'))
@@ -191,7 +196,7 @@ const shippingRows = computed(() => {
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <!-- Items -->
           <div class="space-y-4 lg:col-span-2">
-            <div v-for="it in order.items ?? []" :key="it.id" class="card p-4">
+            <div v-for="it in reviewItems" :key="it.id" class="card p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <p class="font-semibold text-foreground">

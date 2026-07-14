@@ -27,6 +27,23 @@ const canSetReady = computed(
   () => isValidUrl(form.mockup_url) && isValidUrl(form.print_file_url),
 )
 
+const validMockupUrl = computed(() => isValidUrl(form.mockup_url))
+const validDesignUrl = computed(() => isValidUrl(form.design_url))
+const validPrintUrl = computed(() => isValidUrl(form.print_file_url))
+const validCutUrl = computed(() => isValidUrl(form.cut_file_url))
+
+function downloadAsset(url: string, filename?: string) {
+  if (!url) return
+  const a = document.createElement('a')
+  a.href = url
+  a.target = '_blank'
+  a.rel = 'noopener noreferrer'
+  if (filename) a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
 async function save() {
   if (!selected.value) return
   saving.value = true
@@ -158,6 +175,75 @@ async function setReady() {
           <p class="text-[11px] text-muted-foreground">
             MVP chưa có endpoint upload binary — upload file lên storage rồi dán URL vào đây.
           </p>
+
+          <div class="space-y-2 rounded-md border border-border bg-slate-50 p-3 dark:bg-slate-900">
+            <p class="text-xs uppercase tracking-wide text-muted-foreground">Asset files</p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <button
+                class="btn-secondary"
+                :disabled="!validMockupUrl"
+                @click="downloadAsset(form.mockup_url, `${selected.internal_code}-mockup`)">
+                <UiIcon name="link" :size="16" /> Mockup
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validDesignUrl"
+                @click="downloadAsset(form.design_url, `${selected.internal_code}-design`)">
+                <UiIcon name="link" :size="16" /> Design
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validPrintUrl"
+                @click="downloadAsset(form.print_file_url, `${selected.internal_code}-print`)">
+                <UiIcon name="link" :size="16" /> File in
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validCutUrl"
+                @click="downloadAsset(form.cut_file_url, `${selected.internal_code}-cut`)">
+                <UiIcon name="link" :size="16" /> File cắt
+              </button>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Nếu file đã có, nhân viên có thể mở ngay để thiết kế đúng mã nội bộ.
+            </p>
+          </div>
+
+          <div class="space-y-3 rounded-md border border-border bg-slate-50 p-3 dark:bg-slate-900">
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-xs uppercase tracking-wide text-muted-foreground">Asset files</p>
+              <span class="text-xs text-muted-foreground">Mã nội bộ {{ selected.internal_code }}</span>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <button
+                class="btn-secondary"
+                :disabled="!validMockupUrl"
+                @click="downloadAsset(form.mockup_url, `${selected.internal_code}-mockup`)">
+                <UiIcon name="download" :size="16" /> Tải mockup
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validDesignUrl"
+                @click="downloadAsset(form.design_url, `${selected.internal_code}-design`)">
+                <UiIcon name="download" :size="16" /> Tải design
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validPrintUrl"
+                @click="downloadAsset(form.print_file_url, `${selected.internal_code}-print`)">
+                <UiIcon name="download" :size="16" /> Tải file in
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="!validCutUrl"
+                @click="downloadAsset(form.cut_file_url, `${selected.internal_code}-cut`)">
+                <UiIcon name="download" :size="16" /> Tải file cắt
+              </button>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              Các file download được gắn với mã nội bộ hiện tại để tránh nhầm lẫn giữa mockup, design và file sản xuất.
+            </p>
+          </div>
 
           <div class="flex flex-col gap-2 pt-1">
             <button class="btn-secondary" :disabled="saving" @click="save">

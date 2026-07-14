@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { sellerViewApi } from '~/services/api'
-import type { SellerOrder, SellerStatus } from '~/types'
+import type { SellerOrder, SellerOrderItem, SellerStatus } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
@@ -9,8 +9,9 @@ import { useToastStore } from '~/stores/toast'
 
 // Seller order detail. Shows a friendly status (review status until approved,
 // then the production timeline) plus the items with their mockups. Sellers can
-// cancel a pending-review order directly or request cancellation of an approved
-// (not-yet-in-production) order. No internal/production detail is exposed.
+// cancel the whole order or a single product inside it: while the order is still
+// in the import/review flow the removal is immediate; once approved or in
+// production it becomes a request ops must approve. No internal detail is exposed.
 definePageMeta({ layout: 'seller' })
 
 const route = useRoute()
@@ -26,14 +27,54 @@ const STAGES: SellerStatus[] = ['PRODUCTION', 'PACKED', 'HANDED_OFF', 'SHIPPED']
 const isApproved = computed(() => order.value?.review_status === 'APPROVED')
 const currentStep = computed(() => (order.value ? STAGES.indexOf(order.value.status) : -1))
 
-// Cancellation
+// Per-item cancellation mirrors the whole-order rules: a still-cancellable order
+// (import/review flow) removes the product outright; an approved/in-production
+// order turns it into a request ops must approve. Null = order is locked
+// (shipped/resolved) and no per-item action is offered.
+const itemAction = computed<'cancel' | 'request' | null>(() =>
+  order.value?.can_cancel ? 'cancel' : order.value?.can_request_cancellation ? 'request' : null,
+)
+function itemCancelled(it: SellerOrderItem) {
+  return it.cancellation_status === 'SELLER_CANCELLED' || it.cancellation_status === 'APPROVED'
+}
+function itemPending(it: SellerOrderItem) {
+  return it.cancellation_status === 'REQUESTED'
+}
+function itemId(it: SellerOrderItem): number | null {
+  const value = it.id ?? it.item_id
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+const cancelledCount = computed(() => items.value.filter(itemCancelled).length)
+
+// Cancellation modal. target = null cancels the whole order; otherwise it targets
+// a single product (id + a friendly label for the confirmation copy).
 const open = ref(false)
 const mode = ref<'cancel' | 'request'>('cancel')
+const target = ref<{ id: number; label: string } | null>(null)
 const reason = ref('')
 const saving = ref(false)
 
-function openCancel(m: 'cancel' | 'request') {
+const modalTitle = computed(() => {
+  if (target.value) return mode.value === 'cancel' ? 'Huỷ sản phẩm' : 'Yêu cầu huỷ sản phẩm'
+  return mode.value === 'cancel' ? 'Huỷ đơn hàng' : 'Yêu cầu huỷ đơn'
+})
+
+function openOrderCancel(m: 'cancel' | 'request') {
   mode.value = m
+  target.value = null
+  reason.value = ''
+  open.value = true
+}
+
+function openItemCancel(it: SellerOrderItem) {
+  if (!itemAction.value) return
+  const targetId = itemId(it)
+  if (targetId === null) {
+    toast.error('Không thể huỷ sản phẩm: API chưa trả về ID của dòng sản phẩm.')
+    return
+  }
+  mode.value = itemAction.value
+  target.value = { id: targetId, label: it.product_name || it.sku_code }
   reason.value = ''
   open.value = true
 }
@@ -41,10 +82,17 @@ function openCancel(m: 'cancel' | 'request') {
 async function submit() {
   if (saving.value) return
   saving.value = true
+  const r = reason.value.trim() || undefined
   try {
-    if (mode.value === 'cancel') await sellerViewApi.cancel(id, reason.value.trim() || undefined)
-    else await sellerViewApi.requestCancellation(id, reason.value.trim() || undefined)
-    toast.success(mode.value === 'cancel' ? 'Đã huỷ đơn' : 'Đã gửi yêu cầu huỷ')
+    if (target.value) {
+      if (mode.value === 'cancel') await sellerViewApi.cancelItem(id, target.value.id, r)
+      else await sellerViewApi.requestItemCancellation(id, target.value.id, r)
+      toast.success(mode.value === 'cancel' ? 'Đã huỷ sản phẩm' : 'Đã gửi yêu cầu huỷ sản phẩm')
+    } else {
+      if (mode.value === 'cancel') await sellerViewApi.cancel(id, r)
+      else await sellerViewApi.requestCancellation(id, r)
+      toast.success(mode.value === 'cancel' ? 'Đã huỷ đơn' : 'Đã gửi yêu cầu huỷ')
+    }
     open.value = false
     await reload()
   } catch (e) {
@@ -69,7 +117,7 @@ async function submit() {
             <div>
               <h1 class="text-xl font-semibold text-foreground">{{ order.store_order_id }}</h1>
               <p class="mt-1 text-sm text-muted-foreground">
-                {{ order.store_name || '—' }} · {{ order.item_count }} sản phẩm · {{ formatDateTime(order.created_at) }}
+                {{ order.store_name || '—' }} · {{ order.item_count }} sản phẩm còn lại<span v-if="cancelledCount" class="text-rose-500 dark:text-rose-300"> · {{ cancelledCount }} đã huỷ</span> · {{ formatDateTime(order.created_at) }}
               </p>
             </div>
             <div class="flex flex-col items-end gap-2">
@@ -86,16 +134,16 @@ async function submit() {
                 <button
                   v-if="order.can_cancel"
                   class="rounded-md border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                  @click="openCancel('cancel')"
+                  @click="openOrderCancel('cancel')"
                 >
-                  Huỷ đơn
+                  Huỷ cả đơn
                 </button>
                 <button
                   v-if="order.can_request_cancellation"
                   class="btn-secondary text-xs"
-                  @click="openCancel('request')"
+                  @click="openOrderCancel('request')"
                 >
-                  Yêu cầu huỷ
+                  Yêu cầu huỷ cả đơn
                 </button>
               </div>
             </div>
@@ -161,29 +209,68 @@ async function submit() {
 
         <!-- Items -->
         <div class="card overflow-hidden">
-          <div class="border-b border-border bg-muted px-4 py-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-1 border-b border-border bg-muted px-4 py-2.5">
             <h3 class="text-sm font-semibold text-foreground">Sản phẩm trong đơn</h3>
+            <p v-if="itemAction" class="text-xs text-muted-foreground">
+              {{ itemAction === 'cancel' ? 'Bạn có thể huỷ từng sản phẩm hoặc cả đơn.' : 'Bạn có thể yêu cầu huỷ từng sản phẩm hoặc cả đơn.' }}
+            </p>
           </div>
           <div class="divide-y divide-border">
-            <div v-for="(it, idx) in items" :key="idx" class="flex items-center gap-4 px-4 py-3">
+            <div
+              v-for="it in items"
+              :key="itemId(it) ?? `${it.sku_code}-${it.variant_code ?? ''}`"
+              class="flex items-center gap-3 px-4 py-3 sm:gap-4"
+              :class="itemCancelled(it) && 'opacity-60'"
+            >
               <img
                 v-if="it.mockup_url"
                 :src="it.mockup_url"
                 :alt="it.sku_code"
                 loading="lazy"
                 class="h-14 w-14 shrink-0 rounded-md border border-border object-cover"
+                :class="itemCancelled(it) && 'grayscale'"
               />
               <div v-else class="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
                 <UiIcon name="box" :size="22" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="truncate font-medium text-foreground">{{ it.product_name || it.sku_code }}</p>
+                <p class="truncate font-medium text-foreground" :class="itemCancelled(it) && 'line-through'">
+                  {{ it.product_name || it.sku_code }}
+                </p>
                 <p class="text-xs text-muted-foreground">
                   {{ it.sku_code }}<span v-if="it.variant_code"> · {{ it.variant_code }}</span>
                 </p>
+                <!-- Per-item cancellation state -->
+                <span
+                  v-if="itemCancelled(it)"
+                  class="mt-1 inline-flex items-center gap-0.5 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-500/20 dark:text-slate-300"
+                >
+                  <UiIcon name="close" :size="10" /> Đã huỷ
+                </span>
+                <span
+                  v-else-if="itemPending(it)"
+                  class="mt-1 inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                >
+                  <UiIcon name="alert" :size="10" /> Chờ xử lý huỷ
+                </span>
               </div>
               <div class="shrink-0 text-sm font-medium text-foreground">x{{ it.quantity }}</div>
               <UiMockupLink :url="it.mockup_url" small label="Xem mockup" />
+              <!-- Per-item cancel / request action -->
+              <button
+                v-if="itemAction && itemId(it) !== null && !itemCancelled(it) && !itemPending(it)"
+                class="shrink-0 rounded-md border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                @click="openItemCancel(it)"
+              >
+                {{ itemAction === 'cancel' ? 'Huỷ' : 'Yêu cầu huỷ' }}
+              </button>
+              <span
+                v-else-if="itemAction && itemId(it) === null && !itemCancelled(it) && !itemPending(it)"
+                class="shrink-0 text-xs text-amber-600"
+                title="API cần trả id hoặc item_id cho từng dòng sản phẩm"
+              >
+                Thiếu ID sản phẩm
+              </span>
             </div>
             <p v-if="!items.length" class="px-4 py-8 text-center text-sm text-muted-foreground">
               Không có chi tiết sản phẩm.
@@ -193,12 +280,18 @@ async function submit() {
       </template>
     </UiStateBlock>
 
-    <!-- Cancel / request modal -->
-    <UiModal v-model="open" :title="mode === 'cancel' ? 'Huỷ đơn hàng' : 'Yêu cầu huỷ đơn'">
+    <!-- Cancel / request modal (whole order or a single product) -->
+    <UiModal v-model="open" :title="modalTitle">
       <div class="space-y-3">
         <p class="text-sm text-muted-foreground">
-          <template v-if="mode === 'cancel'">Bạn chắc chắn muốn huỷ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>? Thao tác này không thể hoàn tác.</template>
-          <template v-else>Gửi yêu cầu huỷ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>. Vận hành sẽ xem xét và phản hồi.</template>
+          <template v-if="target">
+            <template v-if="mode === 'cancel'">Bạn chắc chắn muốn huỷ sản phẩm <span class="font-medium text-foreground">{{ target.label }}</span> khỏi đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>? Các sản phẩm còn lại vẫn được giữ. Thao tác này không thể hoàn tác.</template>
+            <template v-else>Gửi yêu cầu huỷ sản phẩm <span class="font-medium text-foreground">{{ target.label }}</span> trong đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>. Vận hành sẽ xem xét và phản hồi.</template>
+          </template>
+          <template v-else>
+            <template v-if="mode === 'cancel'">Bạn chắc chắn muốn huỷ toàn bộ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span> (tất cả sản phẩm bên trong)? Thao tác này không thể hoàn tác.</template>
+            <template v-else>Gửi yêu cầu huỷ toàn bộ đơn <span class="font-medium text-foreground">{{ order?.store_order_id }}</span>. Vận hành sẽ xem xét và phản hồi.</template>
+          </template>
         </p>
         <div>
           <label class="label">Lý do (tuỳ chọn)</label>

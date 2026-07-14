@@ -12,12 +12,21 @@ export interface SellerOrderListParams extends ListParams {
 export const sellerViewApi = {
   orders: (params?: SellerOrderListParams) => apiGet<SellerOrder[]>('/api/seller/orders', params),
   order: (id: number | string) => apiGet<SellerOrder>(`/api/seller/orders/${id}`),
-  // Direct cancel of a pending-review order.
+  // Direct cancel of a pending-review order (whole order, every product in it).
   cancel: (id: number | string, reason?: string) =>
     apiPost<SellerOrder>(`/api/seller/orders/${id}/cancel`, { reason }),
-  // Request cancellation of an approved (not-yet-in-production) order.
+  // Request cancellation of an approved (not-yet-in-production) order (whole order).
   requestCancellation: (id: number | string, reason?: string) =>
     apiPost<SellerOrder>(`/api/seller/orders/${id}/cancellation-request`, { reason }),
+  // Direct cancel of a single product inside a still-cancellable (import/review)
+  // order. Leaves the other products untouched. Returns the refreshed order so
+  // the UI reflects the item's new state (and any knock-on order-level change).
+  cancelItem: (orderId: number | string, itemId: number | string, reason?: string) =>
+    apiPost<SellerOrder>(`/api/seller/orders/${orderId}/items/${itemId}/cancel`, { reason }),
+  // Request cancellation of a single product in an approved/in-production order;
+  // ops must approve before it is actually removed.
+  requestItemCancellation: (orderId: number | string, itemId: number | string, reason?: string) =>
+    apiPost<SellerOrder>(`/api/seller/orders/${orderId}/items/${itemId}/cancellation-request`, { reason }),
 }
 
 // Seller self-upload. seller_id is forced server-side to the logged-in seller,

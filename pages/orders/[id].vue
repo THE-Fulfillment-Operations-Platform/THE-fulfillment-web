@@ -9,7 +9,13 @@ const id = route.params.id as string
 
 const { data: order, loading, error, reload } = useApiResource<Order>(() => ordersApi.get(id))
 
-const items = computed<OrderItem[]>(() => order.value?.items ?? [])
+// This is an operational detail view. Cancelled lines remain in the database
+// for audit, but must not appear as work that Design/Production still owns.
+const items = computed<OrderItem[]>(() =>
+  (order.value?.items ?? []).filter(
+    (item) => item.cancellation_status !== 'SELLER_CANCELLED' && item.cancellation_status !== 'APPROVED',
+  ),
+)
 
 // The seller/production status only means something once the order is APPROVED.
 // While it is pending / rejected / cancelled, showing "Đang sản xuất" alongside

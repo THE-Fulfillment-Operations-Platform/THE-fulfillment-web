@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { handoffsApi } from '~/services/api'
 import type { Handoff, HandoffStatus } from '~/types'
-import type { HandoffInput } from '~/services/api'
+import type { HandoffInput, ShipHandoffInput } from '~/services/api'
 import { useApiResource } from '~/composables/useApiResource'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
@@ -72,6 +72,43 @@ async function submit() {
     saving.value = false
   }
 }
+
+// ---- Mark shipped (HANDED_OFF → SHIPPED) -----------------------------------
+// Records the carrier + tracking number so the order can complete and the
+// seller can follow the parcel.
+const shipOpen = ref(false)
+const shipping = ref(false)
+const shipTarget = ref<Handoff | null>(null)
+const shipForm = reactive<ShipHandoffInput>({ carrier: '', tracking_number: '', label_url: '' })
+
+function openShip(h: Handoff) {
+  shipTarget.value = h
+  shipForm.carrier = h.carrier || ''
+  shipForm.tracking_number = h.tracking_number || ''
+  shipForm.label_url = h.label_url || ''
+  shipOpen.value = true
+}
+
+const canShip = computed(() => !!shipForm.carrier.trim() && !!shipForm.tracking_number.trim())
+
+async function submitShip() {
+  if (!shipTarget.value || !canShip.value || shipping.value) return
+  shipping.value = true
+  try {
+    await handoffsApi.markShipped(shipTarget.value.id, {
+      carrier: shipForm.carrier.trim(),
+      tracking_number: shipForm.tracking_number.trim(),
+      label_url: shipForm.label_url?.trim() || undefined,
+    })
+    toast.success('Đã đánh dấu gửi đi')
+    shipOpen.value = false
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    shipping.value = false
+  }
+}
 </script>
 
 <template>
@@ -130,7 +167,16 @@ async function submit() {
                 </td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(h.handed_off_at || h.created_at) }}</td>
                 <td class="table-td text-right">
-                  <UiMockupLink v-if="h.label_url" :url="h.label_url" small label="Label" />
+                  <div class="flex items-center justify-end gap-2">
+                    <UiMockupLink v-if="h.label_url" :url="h.label_url" small label="Label" />
+                    <button
+                      v-if="h.status === 'HANDED_OFF'"
+                      class="text-xs font-medium text-primary hover:underline"
+                      @click="openShip(h)"
+                    >
+                      Đánh dấu đã gửi
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -196,6 +242,34 @@ async function submit() {
         <button class="btn-secondary" @click="open = false">Huỷ</button>
         <button class="btn-primary" :disabled="!canSubmit || saving" @click="submit">
           <UiSpinner v-if="saving" :size="16" /> Tạo handoff
+        </button>
+      </template>
+    </UiModal>
+
+    <!-- Mark shipped -->
+    <UiModal v-model="shipOpen" :title="shipTarget ? `Đánh dấu đã gửi · ${shipTarget.code}` : 'Đánh dấu đã gửi'">
+      <div class="space-y-4">
+        <p class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Nhập đơn vị vận chuyển và mã vận đơn. Kiện sẽ chuyển sang trạng thái
+          <span class="font-medium">Đã gửi đi</span> và seller theo dõi được mã này.
+        </p>
+        <div>
+          <label class="label">Đơn vị vận chuyển <span class="text-destructive">*</span></label>
+          <input v-model="shipForm.carrier" class="input" placeholder="VD: GHN, J&T, DHL…" />
+        </div>
+        <div>
+          <label class="label">Mã vận đơn (tracking) <span class="text-destructive">*</span></label>
+          <input v-model="shipForm.tracking_number" class="input" placeholder="VD: JT0001234567" />
+        </div>
+        <div>
+          <label class="label">Link nhãn/label (tuỳ chọn)</label>
+          <input v-model="shipForm.label_url" class="input" placeholder="https://…" />
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="shipOpen = false">Huỷ</button>
+        <button class="btn-primary" :disabled="!canShip || shipping" @click="submitShip">
+          <UiSpinner v-if="shipping" :size="16" /> Xác nhận đã gửi
         </button>
       </template>
     </UiModal>
