@@ -6,13 +6,13 @@ export interface QcScanInput {
   item_id?: number
 }
 
+// QC là cổng cấp sản phẩm: PASS/FAIL áp cho cả item (mọi NVL), không QC lẻ theo
+// từng batch-item — nên không còn batch_item_id.
 export interface QcPassInput extends QcScanInput {
-  batch_item_id?: number
   note?: string
 }
 
 export interface QcFailInput extends QcScanInput {
-  batch_item_id?: number
   defect_code?: string
   note?: string
 }

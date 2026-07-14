@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
 import { ROLE_LABEL } from '~/utils/enums'
-import { isMockEnabled } from '~/services/http'
 import { useSidebar } from '~/composables/useSidebar'
 
 const auth = useAuthStore()
-const mock = isMockEnabled()
 const { toggle } = useSidebar()
 </script>
 
@@ -24,12 +22,6 @@ const { toggle } = useSidebar()
         BGDecor Fulfillment Operations Platform
       </span>
       <span class="truncate text-sm font-semibold text-foreground md:hidden">BGDecor Fulfillment</span>
-      <span
-        v-if="mock"
-        class="shrink-0 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
-      >
-        MOCK
-      </span>
     </div>
 
     <div class="flex shrink-0 items-center gap-2 sm:gap-3">

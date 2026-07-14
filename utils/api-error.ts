@@ -17,7 +17,6 @@ export class ApiError extends Error {
 const VI_BY_CODE: Record<string, string> = {
   NETWORK: 'Không kết nối được máy chủ. Kiểm tra kết nối mạng hoặc backend có đang chạy không.',
   NO_CLIENT: 'Ứng dụng chưa khởi tạo xong, vui lòng tải lại trang.',
-  MOCK_MISS: 'Chức năng này chưa được hỗ trợ ở chế độ demo (mock).',
   UNAUTHORIZED: 'Phiên đăng nhập đã hết hạn hoặc thông tin đăng nhập không đúng.',
   FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này.',
   NOT_FOUND: 'Không tìm thấy dữ liệu.',
@@ -32,7 +31,15 @@ const VI_BY_PHRASE: Array<[RegExp, string]> = [
     'Email này đã được dùng cho tài khoản khác. Hãy nhập email khác.'],
   [/(seller[ _-]?id).*(not\s*found|invalid|does not exist)|(not\s*found|invalid|does not exist).*(seller[ _-]?id)/i,
     'Seller ID không tồn tại. Hãy nhập đúng ID của seller đã có trong hệ thống.'],
-  [/password/i, 'Mật khẩu không hợp lệ (thường cần tối thiểu 8 ký tự).'],
+  // Login failures (wrong email/password). Must come BEFORE the password rule
+  // below, otherwise a "invalid email or password" 401 gets mistranslated into a
+  // password-length validation message.
+  [/invalid credentials|bad credentials|authentication failed|(incorrect|wrong|invalid)\s+(email|password)|(email|password)[^.]*\b(incorrect|mismatch|does\s*not\s*match|not\s*match)/i,
+    'Sai email hoặc mật khẩu.'],
+  // Password *validation* (create/update user) — too short/weak. Narrow so it
+  // only fires for length/format complaints, not login credential failures.
+  [/password[^.]*(short|least|minimum|at least|char|length|weak|\b8\b)|(short|least|minimum|char|length|weak)[^.]*password/i,
+    'Mật khẩu không hợp lệ (thường cần tối thiểu 8 ký tự).'],
   [/could not create user|create user failed/i,
     'Không tạo được người dùng. Nguyên nhân thường gặp: email đã tồn tại, Seller ID không hợp lệ, hoặc mật khẩu quá ngắn.'],
   [/could not update user|update user failed/i, 'Không cập nhật được người dùng. Vui lòng kiểm tra lại thông tin.'],

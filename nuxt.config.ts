@@ -42,8 +42,6 @@ export default defineNuxtConfig({
     public: {
       // Base URL of the Go/Gin backend. Business routes use the /api prefix.
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8090',
-      // When 'true', services serve local mock data instead of calling the API.
-      useMock: process.env.NUXT_PUBLIC_USE_MOCK || 'false',
     },
   },
 

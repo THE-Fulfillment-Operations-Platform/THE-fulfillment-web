@@ -3,9 +3,12 @@ import { skusApi } from '~/services/api'
 import type { SkuInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
+import { normalizeCode } from '~/utils/code'
+import { mapPool } from '~/utils/async'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
+import { useSelection } from '~/composables/useSelection'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -116,6 +119,51 @@ async function submit() {
   }
 }
 
+// --- Chọn nhiều dòng để thao tác hàng loạt (ẩn/bật/xoá) ---
+const { isSelected, toggle, toggleAll, allSelected, someSelected, count: selectedCount, selectedIds, clear: clearSelection } =
+  useSelection(() => filtered.value)
+
+const bulkBusy = ref(false)
+async function bulkSetActive(active: boolean) {
+  const ids = selectedIds.value
+  if (!ids.length || bulkBusy.value) return
+  bulkBusy.value = true
+  try {
+    const { ok, fail } = await mapPool(ids, 5, (id) => skusApi.update(id, { is_active: active }))
+    const verb = active ? 'bật' : 'ẩn'
+    if (fail === 0) toast.success(`Đã ${verb} ${ok} SKU`)
+    else toast.error(`Đã ${verb} ${ok}, ${fail} mục lỗi`)
+    clearSelection()
+    emit('changed')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+async function bulkRemove() {
+  const ids = selectedIds.value
+  if (!ids.length || bulkBusy.value) return
+  if (
+    !(await useConfirm().confirm({
+      title: 'Xoá nhiều SKU',
+      message: `Xoá ${ids.length} SKU đã chọn? Thao tác không thể hoàn tác.`,
+      tone: 'danger',
+      confirmText: `Xoá ${ids.length} mục`,
+    }))
+  )
+    return
+  bulkBusy.value = true
+  try {
+    const { ok, fail } = await mapPool(ids, 5, (id) => skusApi.remove(id))
+    if (fail === 0) toast.success(`Đã xoá ${ok} SKU`)
+    else if (ok === 0) toast.error(`Không xoá được mục nào (${fail} lỗi)`)
+    else toast.error(`Đã xoá ${ok}, ${fail} mục lỗi`)
+    clearSelection()
+    emit('changed')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
 const togglingId = ref<number | null>(null)
 async function toggleActive(s: Sku) {
   togglingId.value = s.id
@@ -164,11 +212,33 @@ async function remove(s: Sku) {
       <button class="btn-primary shrink-0" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm SKU</button>
     </div>
 
+    <UiBulkBar :count="selectedCount" noun="SKU" @clear="clearSelection">
+      <button class="table-action text-amber-600 disabled:opacity-50 dark:text-amber-400" :disabled="bulkBusy" @click="bulkSetActive(false)">
+        Ẩn
+      </button>
+      <button class="table-action text-emerald-600 disabled:opacity-50 dark:text-emerald-400" :disabled="bulkBusy" @click="bulkSetActive(true)">
+        Bật
+      </button>
+      <button v-if="canDelete" class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400" :disabled="bulkBusy" @click="bulkRemove">
+        <UiSpinner v-if="bulkBusy" :size="14" /> Xoá {{ selectedCount }} mục
+      </button>
+    </UiBulkBar>
+
     <UiStateBlock :loading="loading" :empty="!loading && filtered.length === 0" empty-text="Chưa có SKU nào.">
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-border">
           <thead class="bg-muted">
             <tr>
+              <th class="table-th w-10">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                  :checked="allSelected"
+                  :indeterminate="someSelected"
+                  aria-label="Chọn tất cả"
+                  @change="toggleAll"
+                />
+              </th>
               <th class="table-th">SKU</th>
               <th class="table-th">Tên sản phẩm</th>
               <th class="table-th">Nguyên vật liệu</th>
@@ -177,7 +247,16 @@ async function remove(s: Sku) {
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="s in filtered" :key="s.id" class="hover:bg-muted">
+            <tr v-for="s in filtered" :key="s.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(s.id) ? 'bg-accent/40' : ''">
+              <td class="table-td">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                  :checked="isSelected(s.id)"
+                  :aria-label="`Chọn ${s.code}`"
+                  @change="toggle(s.id)"
+                />
+              </td>
               <td class="table-td font-mono text-xs font-medium text-foreground">{{ s.code }}</td>
               <td class="table-td text-foreground">{{ s.product_name || s.name }}</td>
               <td class="table-td whitespace-normal">

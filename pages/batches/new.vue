@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { designApi, batchesApi } from '~/services/api'
+import { designApi, batchesApi, materialsApi } from '~/services/api'
 import type { MaterialBucket, OrderItem, Priority } from '~/types'
 import { PRIORITY_OPTIONS, PRIORITY } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { itemStoreOrderId } from '~/utils/item'
+import { planBatchSplit, productCount } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 
 const toast = useToastStore()
@@ -23,6 +24,30 @@ const priority = ref<Priority>('NORMAL')
 const dueDate = ref('')
 const note = ref('')
 const creating = ref(false)
+
+// Định mức NVL (material_id → products_per_unit). Cần cho preview chẻ batch mẹ–con;
+// MaterialBucket không mang định mức nên nạp riêng danh sách material.
+const capByMaterial = ref<Map<number, number | null>>(new Map())
+async function loadMaterialCaps() {
+  try {
+    const { data } = await materialsApi.list()
+    capByMaterial.value = new Map((data ?? []).map((m) => [m.id, m.products_per_unit ?? null]))
+  } catch {
+    /* định mức tuỳ chọn — thiếu thì coi như không giới hạn */
+  }
+}
+
+// Định mức của NVL đang chọn (null = không giới hạn).
+const activeCap = computed(() =>
+  activeMaterial.value ? capByMaterial.value.get(activeMaterial.value.material_id) ?? null : null,
+)
+// Các item đang được chọn (giữ nguyên thứ tự hiển thị để chia nhóm ổn định).
+const selectedItems = computed(() => items.value.filter((it) => selectedIds.value.has(it.id)))
+// Tổng sản phẩm = Σ quantity các item đã chọn.
+const selectedProducts = computed(() => productCount(selectedItems.value))
+// Kế hoạch chẻ: mỗi phần tử là 1 batch con. ≤ định mức → đúng 1 nhóm (batch phẳng).
+const splitGroups = computed(() => planBatchSplit(selectedItems.value, activeCap.value))
+const willSplit = computed(() => splitGroups.value.length > 1)
 
 async function loadBuckets() {
   bucketsLoading.value = true
@@ -84,9 +109,11 @@ async function createBatch() {
       note: note.value || undefined,
     })
     const skipped = data.skipped_item_ids?.length ?? 0
-    toast.success(
-      `Đã tạo batch ${data.batch.code}` + (skipped ? ` (bỏ qua ${skipped} item)` : ''),
-    )
+    const children = data.batch.child_batches?.length ?? data.batch.child_count ?? 0
+    const base = children
+      ? `Đã tạo batch mẹ ${data.batch.code} + ${children} batch con`
+      : `Đã tạo batch ${data.batch.code}`
+    toast.success(base + (skipped ? ` (bỏ qua ${skipped} item)` : ''))
     router.push(`/batches/${data.batch.id}`)
   } catch (e) {
     toast.error(errorMessage(e))
@@ -95,7 +122,10 @@ async function createBatch() {
   }
 }
 
-onMounted(loadBuckets)
+onMounted(() => {
+  loadBuckets()
+  loadMaterialCaps()
+})
 </script>
 
 <template>
@@ -176,8 +206,32 @@ onMounted(loadBuckets)
         <h3 class="mb-3 text-sm font-semibold text-foreground">Batch preview</h3>
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between"><dt class="text-muted-foreground">Material</dt><dd class="font-medium">{{ activeMaterial.material_name }}</dd></div>
+          <div class="flex justify-between">
+            <dt class="text-muted-foreground">Định mức</dt>
+            <dd class="font-medium">{{ activeCap ? `${activeCap} sp/đơn vị` : 'Không giới hạn' }}</dd>
+          </div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Số item đã chọn</dt><dd class="font-medium">{{ selectedCount }}</dd></div>
+          <div class="flex justify-between"><dt class="text-muted-foreground">Tổng sản phẩm</dt><dd class="font-medium">{{ selectedProducts }}</dd></div>
         </dl>
+
+        <!-- Kế hoạch chẻ batch mẹ–con -->
+        <div
+          v-if="willSplit"
+          class="mt-3 rounded-lg border border-primary/40 bg-accent p-3 text-xs"
+        >
+          <p class="font-semibold text-primary">
+            Vượt định mức → tạo 1 batch mẹ + {{ splitGroups.length }} batch con
+          </p>
+          <ul class="mt-2 space-y-1 text-muted-foreground">
+            <li v-for="(g, i) in splitGroups" :key="i" class="flex justify-between">
+              <span>Batch con #{{ i + 1 }}</span>
+              <span class="font-medium text-foreground">{{ g.product_count }} sp · {{ g.items.length }} item</span>
+            </li>
+          </ul>
+        </div>
+        <p v-else-if="activeCap && selectedCount > 0" class="mt-3 text-xs text-muted-foreground">
+          Trong định mức → tạo 1 batch phẳng.
+        </p>
 
         <div class="mt-4 space-y-3">
           <div>
@@ -196,7 +250,13 @@ onMounted(loadBuckets)
 
         <button class="btn-primary mt-4 w-full" :disabled="selectedCount === 0 || creating" @click="createBatch">
           <UiSpinner v-if="creating" :size="16" />
-          {{ creating ? 'Đang tạo…' : `CREATE BATCH (${selectedCount})` }}
+          {{
+            creating
+              ? 'Đang tạo…'
+              : willSplit
+                ? `TẠO BATCH MẸ + ${splitGroups.length} CON`
+                : `CREATE BATCH (${selectedCount})`
+          }}
         </button>
       </div>
     </div>

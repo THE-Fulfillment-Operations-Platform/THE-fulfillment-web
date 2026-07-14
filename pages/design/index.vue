@@ -44,6 +44,61 @@ function downloadAsset(url: string, filename?: string) {
   a.remove()
 }
 
+// ---- Bulk ZIP download (design + mockup, one folder per internal code) ------
+const zipOpen = ref(false)
+const zipMode = ref<'all' | 'select'>('all')
+const zipSelected = ref<Set<number>>(new Set())
+const downloadingZip = ref(false)
+
+// Only items that actually have a mockup or design file are worth bundling — the
+// rest would produce empty folders, so we hide them from the picker.
+const downloadableItems = computed(() =>
+  items.value.filter((it) => it.mockup_url || it.design_url),
+)
+
+function openZipDialog() {
+  zipMode.value = 'all'
+  zipSelected.value = new Set()
+  zipOpen.value = true
+}
+
+function toggleZipItem(id: number) {
+  const next = new Set(zipSelected.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  zipSelected.value = next
+}
+
+const allSelected = computed(
+  () =>
+    downloadableItems.value.length > 0 &&
+    downloadableItems.value.every((it) => zipSelected.value.has(it.id)),
+)
+function toggleSelectAll() {
+  zipSelected.value = allSelected.value
+    ? new Set()
+    : new Set(downloadableItems.value.map((it) => it.id))
+}
+
+const canDownloadZip = computed(() =>
+  zipMode.value === 'all' ? downloadableItems.value.length > 0 : zipSelected.value.size > 0,
+)
+
+async function downloadZip() {
+  if (!canDownloadZip.value || downloadingZip.value) return
+  downloadingZip.value = true
+  try {
+    const ids = zipMode.value === 'select' ? Array.from(zipSelected.value) : undefined
+    await designApi.downloadAssetsZip(ids)
+    toast.success('Đang tải file ZIP…')
+    zipOpen.value = false
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingZip.value = false
+  }
+}
+
 async function save() {
   if (!selected.value) return
   saving.value = true
@@ -92,6 +147,9 @@ async function setReady() {
       subtitle="Designer làm file in/cắt, lưu Mockup URL và tạo batch sản xuất"
     >
       <template #actions>
+        <button class="btn-secondary" @click="openZipDialog">
+          <UiIcon name="download" :size="16" /> Tải ZIP design
+        </button>
         <NuxtLink to="/batches/new" class="btn-primary">
           <UiIcon name="plus" :size="16" /> Tạo batch
         </NuxtLink>
@@ -177,7 +235,10 @@ async function setReady() {
           </p>
 
           <div class="space-y-2 rounded-md border border-border bg-slate-50 p-3 dark:bg-slate-900">
-            <p class="text-xs uppercase tracking-wide text-muted-foreground">Asset files</p>
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-xs uppercase tracking-wide text-muted-foreground">Mở file</p>
+              <span class="text-xs text-muted-foreground">Mã nội bộ {{ selected.internal_code }}</span>
+            </div>
             <div class="grid gap-2 sm:grid-cols-2">
               <button
                 class="btn-secondary"
@@ -205,43 +266,8 @@ async function setReady() {
               </button>
             </div>
             <p class="text-xs text-muted-foreground">
-              Nếu file đã có, nhân viên có thể mở ngay để thiết kế đúng mã nội bộ.
-            </p>
-          </div>
-
-          <div class="space-y-3 rounded-md border border-border bg-slate-50 p-3 dark:bg-slate-900">
-            <div class="flex items-center justify-between gap-3">
-              <p class="text-xs uppercase tracking-wide text-muted-foreground">Asset files</p>
-              <span class="text-xs text-muted-foreground">Mã nội bộ {{ selected.internal_code }}</span>
-            </div>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <button
-                class="btn-secondary"
-                :disabled="!validMockupUrl"
-                @click="downloadAsset(form.mockup_url, `${selected.internal_code}-mockup`)">
-                <UiIcon name="download" :size="16" /> Tải mockup
-              </button>
-              <button
-                class="btn-secondary"
-                :disabled="!validDesignUrl"
-                @click="downloadAsset(form.design_url, `${selected.internal_code}-design`)">
-                <UiIcon name="download" :size="16" /> Tải design
-              </button>
-              <button
-                class="btn-secondary"
-                :disabled="!validPrintUrl"
-                @click="downloadAsset(form.print_file_url, `${selected.internal_code}-print`)">
-                <UiIcon name="download" :size="16" /> Tải file in
-              </button>
-              <button
-                class="btn-secondary"
-                :disabled="!validCutUrl"
-                @click="downloadAsset(form.cut_file_url, `${selected.internal_code}-cut`)">
-                <UiIcon name="download" :size="16" /> Tải file cắt
-              </button>
-            </div>
-            <p class="text-xs text-muted-foreground">
-              Các file download được gắn với mã nội bộ hiện tại để tránh nhầm lẫn giữa mockup, design và file sản xuất.
+              Mở nhanh từng file của item đang chọn. Cần tải hàng loạt về máy? Dùng
+              <b>Tải ZIP design</b> ở góc trên.
             </p>
           </div>
 
@@ -264,5 +290,103 @@ async function setReady() {
         </div>
       </div>
     </div>
+
+    <!-- Bulk ZIP download dialog -->
+    <UiModal v-model="zipOpen" title="Tải ZIP file design + mockup">
+      <div class="space-y-4">
+        <p class="text-sm text-muted-foreground">
+          File nén gồm mỗi đơn một thư mục theo <b>mã nội bộ</b>, bên trong là file
+          design và file mockup của đơn đó.
+        </p>
+
+        <div class="space-y-2">
+          <label
+            class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
+            :class="zipMode === 'all' ? 'bg-accent' : 'hover:bg-muted'"
+          >
+            <input
+              v-model="zipMode"
+              type="radio"
+              value="all"
+              class="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-foreground">Tải toàn bộ hàng đợi</span>
+              <span class="block text-muted-foreground">
+                Tất cả đơn đang chờ design có sẵn file mockup/design.
+              </span>
+            </span>
+          </label>
+
+          <label
+            class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
+            :class="zipMode === 'select' ? 'bg-accent' : 'hover:bg-muted'"
+          >
+            <input
+              v-model="zipMode"
+              type="radio"
+              value="select"
+              class="mt-0.5 h-4 w-4 accent-primary"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-foreground">Chọn từng đơn</span>
+              <span class="block text-muted-foreground">
+                Tick những đơn muốn tải bên dưới.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <div v-if="zipMode === 'select'" class="space-y-2">
+          <div class="flex items-center justify-between">
+            <button class="text-xs font-medium text-primary hover:underline" @click="toggleSelectAll">
+              {{ allSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả' }}
+            </button>
+            <span class="text-xs text-muted-foreground">Đã chọn {{ zipSelected.size }}</span>
+          </div>
+          <div class="max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border">
+            <p
+              v-if="downloadableItems.length === 0"
+              class="px-3 py-6 text-center text-sm text-muted-foreground"
+            >
+              Chưa có đơn nào trong hàng đợi có file để tải.
+            </p>
+            <label
+              v-for="it in downloadableItems"
+              :key="it.id"
+              class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted"
+            >
+              <input
+                type="checkbox"
+                class="h-4 w-4 accent-primary"
+                :checked="zipSelected.has(it.id)"
+                @change="toggleZipItem(it.id)"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-foreground">
+                  {{ it.internal_code }}
+                </span>
+                <span class="block truncate text-xs text-muted-foreground">
+                  {{ it.sku_code }} · {{ it.mockup_url ? 'mockup ✓' : 'mockup ✗' }} ·
+                  {{ it.design_url ? 'design ✓' : 'design ✗' }}
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="btn-secondary" @click="zipOpen = false">Huỷ</button>
+        <button
+          class="btn-primary"
+          :disabled="!canDownloadZip || downloadingZip"
+          @click="downloadZip"
+        >
+          <UiSpinner v-if="downloadingZip" :size="16" />
+          <UiIcon v-else name="download" :size="16" /> Tải ZIP
+        </button>
+      </template>
+    </UiModal>
   </div>
 </template>

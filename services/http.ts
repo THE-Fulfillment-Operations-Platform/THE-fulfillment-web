@@ -1,6 +1,5 @@
 import type { ApiEnvelope, ApiMeta } from '~/types'
 import { ApiError } from '~/utils/api-error'
-import { resolveMock } from './mock'
 
 // The configured client is whatever `$fetch.create()` returns. Deriving the type
 // from the global `$fetch` (Nitro-augmented) keeps it in lockstep with the plugin
@@ -15,18 +14,9 @@ type ApiClient = typeof $fetch
 // ---------------------------------------------------------------------------
 
 let _client: ApiClient | null = null
-let _mockEnabled = false
 
 export function setApiClient(client: ApiClient) {
   _client = client
-}
-
-export function setMockEnabled(enabled: boolean) {
-  _mockEnabled = enabled
-}
-
-export function isMockEnabled(): boolean {
-  return _mockEnabled
 }
 
 function client(): ApiClient {
@@ -62,13 +52,6 @@ export async function request<T>(
   url: string,
   opts: RequestOptions = {},
 ): Promise<ApiResult<T>> {
-  // Mock mode: serve from the local fixture resolver when enabled.
-  if (_mockEnabled) {
-    const mocked = await resolveMock<T>(method, url, opts)
-    if (mocked) return mocked
-    throw new ApiError(`Mock chưa hỗ trợ endpoint: ${method} ${url}`, 'MOCK_MISS')
-  }
-
   try {
     const env = await client()<ApiEnvelope<T>>(url, {
       method,
@@ -106,13 +89,9 @@ export async function request<T>(
  * Download a file from an authenticated endpoint (e.g. a CSV export) and trigger
  * a browser save. Uses the same configured client (baseURL + bearer token) as the
  * rest of the service layer, but expects a raw blob response instead of the JSON
- * envelope. Throws a MOCK_MISS ApiError under mock mode (nothing to stream);
- * callers wrap this in try/catch and surface it as a toast.
+ * envelope. Callers wrap this in try/catch and surface it as a toast.
  */
 export async function apiDownload(url: string, filename: string): Promise<void> {
-  if (_mockEnabled) {
-    throw new ApiError('Tải file không khả dụng ở chế độ mock', 'MOCK_MISS')
-  }
   try {
     const blob = await client()<Blob>(url, { method: 'GET', responseType: 'blob' })
     const objectUrl = URL.createObjectURL(blob)

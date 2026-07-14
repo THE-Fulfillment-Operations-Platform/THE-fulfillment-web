@@ -27,6 +27,11 @@ export const INTERNAL_STATUS: Record<InternalStatus, BadgeMeta> = {
 
 export const INTERNAL_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 'CUT', 'QC_PASSED']
 
+// Chặng do BẢNG SẢN XUẤT đặt (theo từng NVL/batch). Không có QC_PASSED: QC là
+// cổng cấp sản phẩm, chỉ thực hiện 1 lần ở trạm QC khi mọi NVL đã sản xuất xong;
+// batch chỉ lên QC_PASSED nhờ roll-up từ item đã QC, không bấm tay trên board.
+export const PRODUCTION_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 'CUT']
+
 // ---- Seller status ---------------------------------------------------------
 export const SELLER_STATUS: Record<SellerStatus, BadgeMeta> = {
   PRODUCTION: { label: 'Đang sản xuất', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },

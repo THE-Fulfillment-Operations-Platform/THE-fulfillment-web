@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
-import { errorMessage } from '~/utils/api-error'
-import { isMockEnabled } from '~/services/http'
+import { ApiError, errorMessage } from '~/utils/api-error'
 
 definePageMeta({ layout: 'auth' })
 
@@ -14,7 +13,6 @@ const email = ref('ops@the.local')
 const password = ref('Password123!')
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
-const mock = isMockEnabled()
 
 const demoAccounts = [
   'owner@the.local',
@@ -37,7 +35,12 @@ async function submit() {
     // Sellers always go to the seller area regardless of redirect target.
     await navigateTo(user.role === 'SELLER' ? '/seller' : redirect)
   } catch (e) {
-    errorMsg.value = errorMessage(e)
+    // During login a 401 always means the email/password combo was rejected —
+    // show that plainly instead of the generic "session expired" copy.
+    errorMsg.value =
+      e instanceof ApiError && (e.code === 'UNAUTHORIZED' || e.status === 401)
+        ? 'Sai email hoặc mật khẩu.'
+        : errorMessage(e)
   } finally {
     submitting.value = false
   }
@@ -89,9 +92,6 @@ async function submit() {
           {{ acc.split('@')[0] }}
         </button>
       </div>
-      <p v-if="mock" class="mt-3 text-[11px] text-amber-600 dark:text-amber-400">
-        Đang chạy chế độ MOCK — dữ liệu cục bộ, không gọi backend.
-      </p>
     </div>
   </div>
 </template>

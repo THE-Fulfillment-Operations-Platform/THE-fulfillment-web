@@ -7,6 +7,9 @@ export interface BatchListParams extends ListParams {
   priority?: string
   date_from?: string
   date_to?: string
+  // Lọc batch con của 1 batch mẹ. Mặc định danh sách chỉ trả batch mẹ + batch
+  // phẳng (ẩn con) để không rối; truyền id mẹ để lấy riêng các con của nó.
+  parent_batch_id?: number
 }
 
 export interface CreateBatchInput {

@@ -184,7 +184,25 @@ function exportBatches() {
             </thead>
             <tbody class="divide-y divide-border">
               <tr v-for="b in rows" :key="b.id" class="hover:bg-muted" :class="{ 'bg-rose-50/40 dark:bg-rose-500/5': isBatchOverdue(b) }">
-                <td class="table-td font-medium text-foreground">{{ b.code }}</td>
+                <td class="table-td font-medium text-foreground">
+                  <div class="flex items-center gap-1.5">
+                    <span>{{ b.code }}</span>
+                    <span
+                      v-if="b.is_parent"
+                      class="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
+                      title="Batch mẹ — gom nhiều batch con theo định mức NVL"
+                    >
+                      Mẹ · {{ b.child_count ?? b.child_batches?.length ?? 0 }} con
+                    </span>
+                    <span
+                      v-else-if="b.parent_batch_id"
+                      class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                      title="Batch con"
+                    >
+                      con
+                    </span>
+                  </div>
+                </td>
                 <td class="table-td">{{ b.material_name || b.material?.name || b.material_code }}</td>
                 <td class="table-td hidden md:table-cell">{{ b.item_count ?? b.items?.length ?? 0 }}</td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>

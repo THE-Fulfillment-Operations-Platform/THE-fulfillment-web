@@ -9,6 +9,9 @@ import { DEFECT_CODE_OPTIONS } from '~/utils/enums'
 // Scan-driven QC station (Wireframe: Scan QC). The operator scans an item code,
 // the screen pulls the canonical mockup + engrave text, and PASS advances the
 // item to QC_PASSED while FAIL logs a defect note for follow-up.
+// QC is a product-level gate: one check per finished product (a product may span
+// several per-material batches). PASS marks the whole product QC-passed at once,
+// and is only allowed once every material part has been produced.
 const toast = useToastStore()
 
 const code = ref('')
@@ -17,11 +20,16 @@ const scanning = ref(false)
 const result = ref<QcScanResult | null>(null)
 const scanError = ref<string | null>(null)
 
-// Manual visual checklist — QC must confirm each before PASS is enabled.
-const checks = reactive({ mockup: false, engrave: false, quality: false })
-const allChecked = computed(() => checks.mockup && checks.engrave && checks.quality)
 // Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
 const alreadyQC = computed(() => result.value?.internal_status === 'QC_PASSED')
+
+// QC là cổng cấp SẢN PHẨM, làm 1 lần: một sản phẩm có thể gồm nhiều NVL (mỗi NVL
+// một batch). PASS/FAIL áp cho cả sản phẩm. Chỉ QC được khi MỌI phần NVL đã đạt
+// 'Đã cắt' (CUT) — phần mới in (PRINTED) hay còn Chờ xử lý (PENDING) thì chưa xong.
+const READY_STATUSES = ['CUT', 'QC_PASSED']
+const parts = computed(() => result.value?.batches ?? [])
+const notReadyParts = computed(() => parts.value.filter((b) => !READY_STATUSES.includes(b.status)))
+const notProducedYet = computed(() => notReadyParts.value.length > 0)
 
 // Mockup preview: convert share links (e.g. Google Drive) to a directly-embeddable
 // URL, and track load failures so a broken/non-image link shows a clean fallback
@@ -36,12 +44,6 @@ const failing = ref(false)
 const defect = reactive({ defect_code: 'PRINT_WRONG', note: '' })
 
 
-function resetChecks() {
-  checks.mockup = false
-  checks.engrave = false
-  checks.quality = false
-}
-
 function focusScan() {
   nextTick(() => scanInput.value?.focus())
 }
@@ -54,7 +56,6 @@ async function scan() {
   try {
     const { data } = await qcApi.scan({ code: value })
     result.value = data
-    resetChecks()
   } catch (e) {
     result.value = null
     scanError.value = errorMessage(e)
@@ -68,12 +69,11 @@ async function scan() {
 function clearStation() {
   result.value = null
   scanError.value = null
-  resetChecks()
   focusScan()
 }
 
 async function pass() {
-  if (!result.value || !allChecked.value || passing.value || alreadyQC.value) return
+  if (!result.value || passing.value || alreadyQC.value) return
   passing.value = true
   try {
     await qcApi.pass({ item_id: result.value.item_id })
@@ -118,7 +118,7 @@ onMounted(focusScan)
   <div>
     <PageHeader
       title="Quét QC"
-      subtitle="Quét mã item → đối chiếu mockup → PASS (Đã QC) hoặc FAIL (ghi lỗi)"
+      subtitle="Quét mã item → đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành."
     />
 
     <!-- Scan bar -->
@@ -237,16 +237,19 @@ onMounted(focusScan)
             </div>
           </dl>
 
-          <div v-if="result.batches?.length" class="mt-4 border-t border-border pt-3">
-            <p class="mb-2 text-xs font-medium text-muted-foreground">Thuộc batch</p>
+          <div v-if="parts.length" class="mt-4 border-t border-border pt-3">
+            <p class="mb-2 text-xs font-medium text-muted-foreground">
+              Các phần NVL của sản phẩm ({{ parts.length }}) — QC 1 lần cho cả sản phẩm
+            </p>
             <div class="flex flex-wrap gap-2">
               <NuxtLink
-                v-for="b in result.batches"
+                v-for="b in parts"
                 :key="b.batch_item_id"
                 :to="`/batches/${b.batch_code.replace('#', '')}`"
                 class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
               >
                 {{ b.batch_code }} · {{ b.material_code }}
+                <UiStatusBadge kind="internal" :value="b.status" />
               </NuxtLink>
             </div>
           </div>
@@ -266,27 +269,29 @@ onMounted(focusScan)
               </p>
             </div>
           </div>
-          <h3 class="mb-3 text-sm font-semibold text-foreground">Checklist đối chiếu</h3>
-          <div class="space-y-2.5">
-            <label class="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2.5 hover:bg-muted">
-              <input v-model="checks.mockup" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
-              <span class="text-sm text-foreground">Thành phẩm khớp với mockup chuẩn</span>
-            </label>
-            <label class="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2.5 hover:bg-muted">
-              <input v-model="checks.engrave" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
-              <span class="text-sm text-foreground">Nội dung khắc đúng từng ký tự</span>
-            </label>
-            <label class="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2.5 hover:bg-muted">
-              <input v-model="checks.quality" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
-              <span class="text-sm text-foreground">Không lỗi in/cắt/vật liệu</span>
-            </label>
+          <p class="mb-3 text-sm text-muted-foreground">
+            Đối chiếu thành phẩm với mockup chuẩn bằng mắt, rồi bấm PASS hoặc ghi lỗi.
+            QC làm <span class="font-medium text-foreground">1 lần cho cả sản phẩm</span> (mọi NVL), không QC lẻ từng NVL.
+          </p>
+
+          <div
+            v-if="notProducedYet && !alreadyQC"
+            class="mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+          >
+            <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
+            <div>
+              <p class="font-semibold">Sản phẩm chưa cắt xong</p>
+              <p class="mt-0.5 text-xs">
+                Còn {{ notReadyParts.length }} phần NVL chưa đạt “Đã cắt” (còn Chờ xử lý hoặc mới in). Cắt xong toàn bộ NVL rồi mới QC được.
+              </p>
+            </div>
           </div>
 
-          <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
-              :disabled="!allChecked || passing || alreadyQC"
-              :title="alreadyQC ? 'Item đã QC rồi' : !allChecked ? 'Phải tích đủ 3 mục checklist' : ''"
+              :disabled="passing || alreadyQC || notProducedYet"
+              :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : '')"
               @click="pass"
             >
               <UiSpinner v-if="passing" :size="16" />

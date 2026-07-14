@@ -3,7 +3,7 @@ import { batchesApi } from '~/services/api'
 import type { Batch, InternalStatus } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { useApiResource } from '~/composables/useApiResource'
-import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
+import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { formatDate } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
@@ -26,6 +26,10 @@ const items = computed(() =>
 const canChangeStatus = computed(() =>
   ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'DESIGNER'].includes(auth.role ?? ''),
 )
+
+// Batch đã QC (roll-up từ item đã QC ở trạm QC) → khoá board, không cho hạ cấp
+// trạng thái sản xuất. QC_PASSED chỉ do trạm QC đặt, 1 lần cho cả sản phẩm.
+const qcLocked = computed(() => batch.value?.status === 'QC_PASSED')
 
 // Production rows for the batch table — mirrors the legacy production template.
 // Reads from the preloaded order item (real API); falls back to the flat fields
@@ -198,8 +202,15 @@ async function printLabels() {
 
 <template>
   <div>
-    <div class="mb-4">
+    <div class="mb-4 flex items-center gap-4">
       <NuxtLink to="/batches" class="text-sm text-primary hover:underline">← Về danh sách batch</NuxtLink>
+      <NuxtLink
+        v-if="batch?.parent_batch_id"
+        :to="`/batches/${batch.parent_batch_id}`"
+        class="text-sm text-primary hover:underline"
+      >
+        ↑ Về batch mẹ
+      </NuxtLink>
     </div>
 
     <UiStateBlock :loading="loading" :error="error" @retry="reload">
@@ -247,24 +258,63 @@ async function printLabels() {
           </div>
 
           <!-- Status control -->
-          <div v-if="canChangeStatus" class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-            <span class="text-xs font-medium text-muted-foreground">Cập nhật trạng thái sản xuất:</span>
-            <button
-              v-for="s in INTERNAL_STATUS_ORDER"
-              :key="s"
-              class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
-              :class="batch.status === s ? 'border-primary bg-accent text-primary' : 'border-border text-foreground hover:bg-muted'"
-              :disabled="updating || batch.status === s"
-              @click="setStatus(s)"
-            >
-              {{ INTERNAL_STATUS[s].label }}
-            </button>
-            <span class="text-[11px] text-muted-foreground">(cascade xuống item)</span>
+          <div v-if="canChangeStatus" class="mt-4 border-t border-border pt-4">
+            <div v-if="qcLocked" class="flex items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+              <UiIcon name="check" :size="16" />
+              Đã QC ở trạm QC — batch hoàn tất, không cần cập nhật trạng thái sản xuất nữa.
+            </div>
+            <div v-else class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-medium text-muted-foreground">Cập nhật trạng thái sản xuất:</span>
+              <button
+                v-for="s in PRODUCTION_STATUS_ORDER"
+                :key="s"
+                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50"
+                :class="batch.status === s ? 'border-primary bg-accent text-primary' : 'border-border text-foreground hover:bg-muted'"
+                :disabled="updating || batch.status === s"
+                @click="setStatus(s)"
+              >
+                {{ INTERNAL_STATUS[s].label }}
+              </button>
+              <span class="text-[11px] text-muted-foreground">(cascade xuống item · QC làm 1 lần ở trạm QC)</span>
+            </div>
           </div>
         </div>
 
-        <!-- Items (production template fields) -->
-        <div class="card overflow-hidden">
+        <!-- Batch mẹ: danh sách batch con -->
+        <div v-if="batch.is_parent" class="card mb-5 overflow-hidden">
+          <div class="border-b border-border bg-muted px-4 py-2.5">
+            <h3 class="text-sm font-semibold text-foreground">
+              Batch con ({{ batch.child_batches?.length ?? batch.child_count ?? 0 }}) — chẻ theo định mức NVL
+            </h3>
+          </div>
+          <UiStateBlock :empty="!(batch.child_batches && batch.child_batches.length)" empty-text="Chưa có batch con.">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-border">
+                <thead class="bg-card">
+                  <tr>
+                    <th class="table-th">Batch con</th>
+                    <th class="table-th">Số item</th>
+                    <th class="table-th">Trạng thái</th>
+                    <th class="table-th"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  <tr v-for="c in batch.child_batches" :key="c.id" class="hover:bg-muted">
+                    <td class="table-td font-medium text-foreground">{{ c.code }}</td>
+                    <td class="table-td">{{ c.item_count ?? c.items?.length ?? 0 }}</td>
+                    <td class="table-td"><UiStatusBadge kind="internal" :value="c.status" /></td>
+                    <td class="table-td text-right">
+                      <NuxtLink :to="`/batches/${c.id}`" class="text-xs font-medium text-primary hover:underline">Open</NuxtLink>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </UiStateBlock>
+        </div>
+
+        <!-- Items (production template fields) — batch mẹ không giữ item trực tiếp -->
+        <div v-if="!batch.is_parent" class="card overflow-hidden">
           <div class="border-b border-border bg-muted px-4 py-2.5">
             <h3 class="text-sm font-semibold text-foreground">Items trong batch (dữ liệu sản xuất)</h3>
           </div>

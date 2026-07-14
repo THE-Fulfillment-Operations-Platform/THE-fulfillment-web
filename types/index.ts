@@ -127,6 +127,10 @@ export interface Material {
   code: string
   name: string
   description?: string
+  // Định mức sản xuất: số sản phẩm tối đa 1 đơn vị NVL (1 tấm/1 lô) làm ra được.
+  // Khi tạo batch mà tổng sản phẩm vượt con số này, hệ thống chẻ batch thành
+  // nhiều batch con (xem Batch.parent_batch_id). null/0/undefined = không giới hạn.
+  products_per_unit?: number | null
 }
 
 export interface SkuMaterial {
@@ -317,10 +321,13 @@ export interface MasterImportMaterialPlan {
 export interface MasterImportSkuPlan {
   code: string
   name: string
+  product_name?: string // tên sản phẩm đọc được (từ cột "Tên sản phẩm"); đại diện = tên đầu
+  product_names?: string[] // tất cả tên khác nhau của SKU này (1 spec có thể gắn nhiều sản phẩm)
   exists: boolean
   material_names: string[]
   status: MasterSkuStatus
   row_count: number
+  is_combo: boolean // built from ≥2 materials (BOM)
 }
 
 export interface MasterImportMappingPlan {
@@ -364,6 +371,50 @@ export interface MasterImportPreview {
   errors: MasterImportRowError[]
   summary: MasterImportSummary
   applied?: MasterImportApplied
+}
+
+// ---- Material quota import (Loại VL + Định mức) ----------------------------
+
+export type MaterialImportAction = 'CREATE' | 'UPDATE' | 'NOCHANGE'
+
+export interface MaterialImportItem {
+  name: string
+  code: string
+  exists: boolean
+  current_quota: number | null
+  quota: number | null
+  current_description: string
+  description: string
+  action: MaterialImportAction
+  row_numbers: number[]
+}
+
+export interface MaterialImportRowError {
+  row_number: number
+  material: string
+  error_code: string
+  message: string
+}
+
+export interface MaterialImportSummary {
+  total_rows: number
+  new_materials: number
+  updates: number
+  unchanged: number
+  error_rows: number
+}
+
+export interface MaterialImportApplied {
+  created: number
+  updated: number
+}
+
+export interface MaterialImportPreview {
+  filename?: string
+  items: MaterialImportItem[]
+  errors: MaterialImportRowError[]
+  summary: MaterialImportSummary
+  applied?: MaterialImportApplied
 }
 
 export interface MasterImportJob {
@@ -430,9 +481,24 @@ export interface Batch {
   item_count?: number
   created_at?: string
   items?: BatchItem[]
+  // ---- Batch mẹ–con (chẻ theo định mức NVL) ----
+  // Một batch "mẹ" gom nhiều batch "con"; mỗi con chứa tối đa `products_per_unit`
+  // sản phẩm của NVL. Batch phẳng (không chẻ) để trống toàn bộ các trường này.
+  is_parent?: boolean
+  // Set trên batch CON, trỏ về id batch mẹ. null/undefined = batch mẹ hoặc batch phẳng.
+  parent_batch_id?: number | null
+  // Thứ tự batch con trong mẹ (1..k) — dùng đặt hậu tố mã & sắp xếp hiển thị.
+  sequence?: number
+  // Số batch con (chỉ có ý nghĩa trên batch mẹ). Backend có thể trả kèm để list
+  // hiển thị "Mẹ (k con)" mà không cần preload cả cây.
+  child_count?: number
+  // Danh sách batch con (batch mẹ preload ở endpoint chi tiết).
+  child_batches?: Batch[]
 }
 
 export interface CreateBatchResult {
+  // Khi NVL có định mức và tổng sản phẩm vượt định mức, `batch` là batch MẸ và
+  // `batch.child_batches` chứa các con. Ngược lại `batch` là batch phẳng như cũ.
   batch: Batch
   skipped_item_ids: number[]
 }

@@ -1,4 +1,4 @@
-import { setApiClient, setMockEnabled } from '~/services/http'
+import { setApiClient } from '~/services/http'
 import { useAuthStore } from '~/stores/auth'
 
 // Creates the single configured ofetch client used by the whole service layer.
@@ -10,11 +10,6 @@ export default defineNuxtPlugin((nuxtApp) => {
   // request/response hooks read and mutate it (not localStorage directly) so
   // in-memory state and persistence never drift apart.
   const auth = useAuthStore()
-
-  // Accept both the string 'true' (build-time default) and boolean true (Nuxt
-  // coerces a runtime NUXT_PUBLIC_USE_MOCK=true env override via destr), so
-  // `NUXT_PUBLIC_USE_MOCK=true npm run dev` actually enables the mock layer.
-  setMockEnabled(String(config.public.useMock) === 'true')
 
   const client = $fetch.create({
     baseURL,

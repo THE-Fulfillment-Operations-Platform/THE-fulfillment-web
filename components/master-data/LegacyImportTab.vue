@@ -109,10 +109,11 @@ const STATUS_LABEL: Record<MasterSkuStatus, string> = {
 }
 
 const SAMPLE_CSV = [
-  'Mã nội bộ,Số tấm,Ngày,Order ID,SKU,Loại VL,Mã ảnh,Số lượng,Đã QC,Tên Khách hàng',
-  'IC001,1,2024-01-01,ORD1,BR A 1.6 kep,Mica trong 3 ly,IMG1,1,x,Alice',
-  'IC002,2,2024-01-02,ORD2,3LWD 12in,Gỗ 5 ly 3 layer,IMG2,1,,Bob',
-  'IC003,3,2024-01-03,ORD3,NEW SKU X,MDF 3ly 80x120,IMG3,1,,Carol',
+  'Tên sản phẩm,SKU,Loại VL,Mã ảnh,Số lượng',
+  'Kệ gỗ treo tường,BR A 1.6 kep,Mica trong 3 ly,IMG1,1',
+  'Thớt gỗ khắc tên,3LWD 12in,Gỗ 5 ly 3 layer,IMG2,1',
+  'Bảng tên để bàn,NEW SKU X,MDF 3ly 80x120,IMG3,1',
+  'Đèn gỗ combo,BR A 2 Gai,Mica trong 3 ly + Mica Hologram,IMG4,1',
 ].join('\n')
 
 function loadSample() {
@@ -142,9 +143,13 @@ async function downloadTemplate() {
     <div class="card h-fit p-5 lg:col-span-1">
       <h3 class="mb-1 text-sm font-semibold text-foreground">Import file vận hành cũ</h3>
       <p class="mb-4 text-xs text-muted-foreground">
-        Hệ thống đọc 2 cột <span class="font-medium text-foreground">SKU</span> và
-        <span class="font-medium text-foreground">Loại VL</span> để tạo Materials, SKUs và mapping.
-        Các cột khác được bỏ qua. Không tự đoán nguyên vật liệu.
+        Hệ thống đọc cột <span class="font-medium text-foreground">SKU</span>,
+        <span class="font-medium text-foreground">Loại VL</span> và
+        <span class="font-medium text-foreground">Tên sản phẩm</span> (tên đọc được, tuỳ chọn) để tạo Materials, SKUs và mapping.
+        Các cột khác được bỏ qua. Không tự đoán nguyên vật liệu. SKU làm từ
+        <span class="font-medium text-foreground">nhiều NVL</span> (combo) thì ghi các NVL trong
+        cùng ô, ngăn cách bằng dấu <span class="font-medium text-foreground">+</span>
+        (vd: <span class="font-mono">Mica trong 3 ly + Mica Hologram</span>).
       </p>
 
       <div class="mb-3 flex gap-1 rounded-xl bg-muted p-1 text-sm">
@@ -260,9 +265,9 @@ async function downloadTemplate() {
         <div v-if="needsReview.length" class="card overflow-hidden border-amber-200/60 dark:border-amber-500/25">
           <div class="border-b border-border bg-amber-50 px-4 py-2.5 dark:bg-amber-500/10">
             <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">
-              Cần review — 1 SKU có nhiều Loại VL khác nhau ({{ needsReview.length }})
+              Cần kiểm tra — các dòng của 1 SKU khai NVL không đồng nhất ({{ needsReview.length }})
             </h3>
-            <p class="text-[11px] text-amber-700/80 dark:text-amber-300/80">Không tự merge. Sẽ tạo SKU nhưng không gán NVL — hãy vào tab “SKU → Material” để xử lý.</p>
+            <p class="text-[11px] text-amber-700/80 dark:text-amber-300/80">Hệ vẫn gộp (union) tất cả NVL và gán cho SKU, nhưng file đang khai khác nhau giữa các dòng — nên rà lại cho đồng nhất.</p>
           </div>
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border">
@@ -316,14 +321,26 @@ async function downloadTemplate() {
           </div>
           <div class="max-h-96 overflow-auto">
             <table class="min-w-full divide-y divide-border">
-              <thead class="sticky top-0 bg-card">
-                <tr><th class="table-th">SKU</th><th class="table-th">Trạng thái</th><th class="table-th">Loại VL (từ file)</th><th class="table-th">Dòng</th></tr>
+              <thead class="sticky top-0 z-10 bg-muted">
+                <tr><th class="table-th">SKU</th><th class="table-th">Tên sản phẩm</th><th class="table-th">Trạng thái</th><th class="table-th">Loại VL (từ file)</th><th class="table-th">Dòng</th></tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-for="k in preview.skus" :key="k.code" class="hover:bg-muted">
                   <td class="table-td font-mono text-xs">
                     {{ k.code }}
                     <span v-if="!k.exists" class="ml-1 rounded bg-indigo-50 px-1 text-[10px] text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300">mới</span>
+                    <span v-if="k.is_combo" class="ml-1 rounded bg-violet-50 px-1 text-[10px] text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" :title="`Combo ${k.material_names.length} NVL`">combo</span>
+                  </td>
+                  <td class="table-td whitespace-normal text-foreground">
+                    <template v-if="k.product_name">
+                      {{ k.product_name }}
+                      <span
+                        v-if="(k.product_names?.length ?? 0) > 1"
+                        class="ml-1 rounded bg-muted px-1 text-[10px] text-muted-foreground"
+                        :title="k.product_names?.join(' · ')"
+                      >+{{ (k.product_names?.length ?? 1) - 1 }} tên khác</span>
+                    </template>
+                    <span v-else class="text-muted-foreground">—</span>
                   </td>
                   <td class="table-td">
                     <span class="inline-flex rounded-md px-2 py-0.5 text-xs font-medium" :class="STATUS_BADGE[k.status]">{{ STATUS_LABEL[k.status] }}</span>
