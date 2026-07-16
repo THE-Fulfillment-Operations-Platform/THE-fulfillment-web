@@ -9,21 +9,10 @@ const auth = useAuthStore()
 const toast = useToastStore()
 const route = useRoute()
 
-const email = ref('ops@the.local')
-const password = ref('Password123!')
+const email = ref('')
+const password = ref('')
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
-
-const demoAccounts = [
-  'owner@the.local',
-  'ops@the.local',
-  'designer@the.local',
-  'production@the.local',
-  'qc@the.local',
-  'packing@the.local',
-  'shipping@the.local',
-  'seller@the.local',
-]
 
 async function submit() {
   submitting.value = true
@@ -76,22 +65,5 @@ async function submit() {
         {{ submitting ? 'Đang đăng nhập…' : 'Đăng nhập' }}
       </button>
     </form>
-
-    <div class="mt-6 border-t border-border pt-4">
-      <p class="mb-2 text-xs font-medium text-muted-foreground">
-        Tài khoản demo (mật khẩu: <code class="rounded bg-muted px-1">Password123!</code>)
-      </p>
-      <div class="flex flex-wrap gap-1.5">
-        <button
-          v-for="acc in demoAccounts"
-          :key="acc"
-          type="button"
-          class="rounded border border-border px-2 py-1 text-[11px] text-foreground hover:bg-muted"
-          @click="email = acc; password = 'Password123!'"
-        >
-          {{ acc.split('@')[0] }}
-        </button>
-      </div>
-    </div>
   </div>
 </template>
