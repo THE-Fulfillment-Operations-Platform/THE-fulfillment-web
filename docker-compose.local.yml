@@ -1,0 +1,30 @@
+# =============================================================================
+# docker-compose.local.yml — OVERRIDE chỉ để VALIDATE trên máy dev
+#
+# KHÔNG tự động nạp (khác docker-compose.override.yml). Dùng tường minh với
+# env validate local (.env.docker.local — tạo từ .env.docker.example, trỏ
+# host.docker.internal + DB throwaway):
+#   createdb the_fulfillment_dockerval   # 1 lần, trong Postgres host
+#   docker compose --env-file .env.docker.local \
+#     -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Chỉ override đúng phần khác production:
+#  • caddy dùng Caddyfile.local (host *.localhost, HTTP, không ACME).
+#  Backend đã tự trỏ host.docker.internal qua .env.docker.local; frontend
+#  build-arg NUXT_PUBLIC_API_BASE_URL cũng lấy từ đó (http://api.localhost).
+# =============================================================================
+
+services:
+  backend:
+    # Cho backend trong container thấy Postgres trên máy host (validate local).
+    # Trên Docker Desktop Mac vốn tự có; thêm dòng này để chắc chắn (và chạy được
+    # cả trên Linux nếu cần). Production KHÔNG cần vì DB là Supabase.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  caddy:
+    volumes:
+      # Mount thêm file local; command dưới trỏ vào file này (bind gốc Caddyfile
+      # vẫn còn nhưng không dùng — tránh xung đột target khi merge compose).
+      - ./Caddyfile.local:/etc/caddy/Caddyfile.local:ro
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.local", "--adapter", "caddyfile"]

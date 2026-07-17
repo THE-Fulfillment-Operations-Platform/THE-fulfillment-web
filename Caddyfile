@@ -1,0 +1,30 @@
+# =============================================================================
+# THE Fulfillment — Caddyfile (production)
+#
+# Caddy tự xin & gia hạn chứng chỉ Let's Encrypt cho 2 domain, tự redirect
+# 80 → 443. Đổi 2 domain dưới đây thành domain thật trước khi deploy.
+#
+# Tên host proxy (frontend / backend) chính là TÊN SERVICE trong docker-compose —
+# Docker DNS tự phân giải trong mạng nội bộ.
+# =============================================================================
+
+# ---- Frontend (dashboard Nuxt) ----
+app.domain.com {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}
+
+# ---- Backend (REST API Go/Gin) ----
+api.domain.com {
+	encode zstd gzip
+
+	# Cho phép upload file import (Excel/CSV) lớn hơn mặc định.
+	request_body {
+		max_size 25MB
+	}
+
+	# Caddy v2 mặc định đã chuyển tiếp X-Forwarded-For / X-Forwarded-Proto và giữ
+	# nguyên Host cho upstream → backend lấy đúng IP client (rate-limit) khi kết
+	# hợp TRUSTED_PROXIES. Không cần header_up thủ công (tránh cảnh báo "thừa").
+	reverse_proxy backend:8080
+}

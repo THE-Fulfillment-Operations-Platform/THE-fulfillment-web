@@ -41,7 +41,11 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       // Base URL of the Go/Gin backend. Business routes use the /api prefix.
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8090',
+      // Empty string ⇒ same-origin (relative) requests, so one build runs behind
+      // any host — LAN IP, Cloudflare tunnel, real domain — with no per-origin
+      // rebuild. Nullish coalescing (not ||) so an explicit "" is preserved and
+      // only an UNSET var falls back to the dev default.
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090',
     },
   },
 

@@ -1,0 +1,30 @@
+# =============================================================================
+# Caddyfile.local — CHỈ để VALIDATE trên máy dev (KHÔNG dùng production)
+#
+# Khác Caddyfile production: dùng host *.localhost qua HTTP (không ACME/TLS),
+# nên không cần domain thật hay chứng chỉ. Route theo Host header y hệt prod:
+#   http://app.localhost → frontend:3000
+#   http://api.localhost → backend:8080
+#
+# Test:
+#   curl --resolve api.localhost:80:127.0.0.1 http://api.localhost/health
+#   curl --resolve app.localhost:80:127.0.0.1 http://app.localhost/
+# =============================================================================
+
+{
+	# Tắt auto-HTTPS: môi trường local không có domain công khai để xin cert.
+	auto_https off
+}
+
+http://app.localhost {
+	encode zstd gzip
+	reverse_proxy frontend:3000
+}
+
+http://api.localhost {
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy backend:8080
+}

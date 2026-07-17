@@ -1,0 +1,117 @@
+# =============================================================================
+# THE Fulfillment — docker-compose PRODUCTION
+#
+# 3 service duy nhất: frontend (Nuxt) · backend (Go/Gin) · caddy (reverse proxy).
+# Database: KHÔNG chạy container Postgres — backend nối thẳng tới Supabase
+# PostgreSQL managed (cấu hình qua file .env.docker).
+#
+# Bố cục thư mục kỳ vọng (2 repo nằm cạnh nhau):
+#   FFM/
+#   ├── THE-fulfillment-web/     ← file compose này + Caddyfile + .env.docker sống ở đây
+#   └── THE-fulfillment-api/     ← backend, build từ ../THE-fulfillment-api
+#
+# Nguồn cấu hình DUY NHẤT: .env.docker (copy từ .env.docker.example, chmod 600).
+# Chạy qua script (đã kèm --env-file .env.docker):
+#   ./scripts/deploy.sh
+# Hoặc thủ công:
+#   docker compose --env-file .env.docker up -d --build
+# =============================================================================
+
+# Anchor dùng lại cho mọi service: log xoay vòng (chặn đầy đĩa) + siết quyền.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ------------------------------------------------------------------ frontend
+  frontend:
+    build:
+      context: .                       # repo web hiện tại
+      dockerfile: Dockerfile
+      args:
+        # URL backend được NHÚNG vào bundle client lúc `nuxt build` (app là SPA).
+        # Lấy từ .env.docker (qua --env-file); đổi sang domain API thật khi deploy.
+        NUXT_PUBLIC_API_BASE_URL: ${NUXT_PUBLIC_API_BASE_URL:-https://api.domain.com}
+    image: fulfillment-frontend:latest
+    restart: unless-stopped
+    environment:
+      # Dấu thời gian log theo giờ VN (Node dùng TZ của container).
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    expose:
+      - "3000"                         # chỉ nội bộ network — KHÔNG publish ra host
+    networks:
+      - fulfillment
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+
+  # ------------------------------------------------------------------- backend
+  backend:
+    build:
+      context: ../THE-fulfillment-api  # repo backend nằm cạnh bên
+      dockerfile: Dockerfile
+    image: fulfillment-backend:latest
+    restart: unless-stopped
+    # Nạp TOÀN BỘ biến môi trường cho backend (Supabase DSN, JWT, CORS, seed, TZ…).
+    # Mặc định .env.docker (production). Khi VALIDATE LOCAL, file .env.docker.local
+    # tự đặt BACKEND_ENV_FILE=.env.docker.local (nạp qua --env-file), nên env_file
+    # trỏ về chính nó — KHÔNG cần tạo .env.docker.
+    # ⚠️ .env.docker production phải đặt PORT=8080 và trỏ DB_* tới Supabase.
+    env_file:
+      - ${BACKEND_ENV_FILE:-.env.docker}
+    expose:
+      - "8080"                         # chỉ nội bộ network — KHÔNG publish ra host
+    networks:
+      - fulfillment
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # busybox wget có sẵn trong image alpine của backend.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # --------------------------------------------------------------------- caddy
+  caddy:
+    image: caddy:2-alpine              # image chính thức
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    environment:
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "80:80"                        # HTTP — ACME challenge + redirect 443
+      - "443:443"                      # HTTPS
+      - "443:443/udp"                  # HTTP/3 (QUIC) trên cùng cổng 443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro   # cấu hình reverse proxy
+      - caddy_data:/data                       # chứng chỉ Let's Encrypt (giữ qua restart)
+      - caddy_config:/config                   # state tự sinh của Caddy
+    networks:
+      - fulfillment
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Admin API nội bộ (localhost:2019) — xác nhận Caddy còn sống.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+# ----------------------------------------------------------------------- network
+networks:
+  fulfillment:
+    driver: bridge                     # 1 bridge network dùng chung; không host network
+
+# ----------------------------------------------------------------------- volumes
+volumes:
+  caddy_data:                          # KHÔNG có volume postgres — DB ở Supabase
+  caddy_config:

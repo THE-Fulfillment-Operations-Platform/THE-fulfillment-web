@@ -21,7 +21,7 @@ export interface ShipHandoffInput {
 }
 
 export const handoffsApi = {
-  list: () => apiGet<Handoff[]>('/api/handoffs'),
+  list: (params?: { page?: number; page_size?: number }) => apiGet<Handoff[]>('/api/handoffs', params),
   create: (body: HandoffInput) => apiPost<Handoff>('/api/handoffs', body),
   // Mark a handed-off package as dispatched — the final leg that moves an order
   // to SHIPPED and records the carrier + tracking the seller can follow.

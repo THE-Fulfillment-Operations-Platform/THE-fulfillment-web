@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ordersApi, itemsApi, batchesApi, notesApi, handoffsApi } from '~/services/api'
-import type { Batch, Note, Order } from '~/types'
+import type { Note, Order } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { formatShort } from '~/utils/format'
 import { entityTypeLabel, reasonCodeLabel } from '~/utils/enums'
@@ -12,44 +12,49 @@ const totalOrders = ref(0)
 const pendingItems = ref(0)
 const attentionCount = ref(0)
 const handoffCount = ref(0)
-const batches = ref<Batch[]>([])
 const recentOrders = ref<Order[]>([])
 const attentionNotes = ref<Note[]>([])
 
+// Batch KPIs come from the server-side totals (page_size:1 + meta.total per
+// status) — the dashboard never has to download the batch objects themselves.
+const BATCH_STATUSES = ['PENDING', 'PRINTED', 'CUT', 'QC_PASSED'] as const
+const batchByStatus = ref<Record<string, number>>({ PENDING: 0, PRINTED: 0, CUT: 0, QC_PASSED: 0 })
 const runningBatches = computed(
-  () => batches.value.filter((b) => b.status !== 'QC_PASSED').length,
+  () => batchByStatus.value.PENDING + batchByStatus.value.PRINTED + batchByStatus.value.CUT,
 )
-const batchByStatus = computed(() => {
-  const counts: Record<string, number> = { PENDING: 0, PRINTED: 0, CUT: 0, QC_PASSED: 0 }
-  for (const b of batches.value) counts[b.status] = (counts[b.status] ?? 0) + 1
-  return counts
-})
 
 async function load() {
   loading.value = true
   error.value = null
   try {
     // allSettled: one KPI a role can't access (e.g. handoffs) must not blank the
-    // whole dashboard — that widget just shows 0 instead.
+    // whole dashboard — that widget just shows 0 instead. Every call here asks
+    // for meta.total with page_size:1 (or a small page for the two lists) so the
+    // dashboard stays a fixed, tiny payload no matter how much data exists.
     const r = await Promise.allSettled([
       ordersApi.list({ page_size: 1 }),
       itemsApi.list({ status: 'PENDING', page_size: 1 }),
-      batchesApi.list({ page_size: 200 }),
       notesApi.list({ required_attention: true, page_size: 1 }),
-      handoffsApi.list(),
+      handoffsApi.list({ page_size: 1 }),
       ordersApi.list({ page_size: 8 }),
       notesApi.list({ required_attention: true, page_size: 6 }),
+      ...BATCH_STATUSES.map((status) => batchesApi.list({ status, page_size: 1 })),
     ])
     const val = <T>(i: number): T | null => (r[i].status === 'fulfilled' ? (r[i] as PromiseFulfilledResult<T>).value : null)
-    const orders = val<any>(0), pend = val<any>(1), batchList = val<any>(2)
-    const attn = val<any>(3), handoffs = val<any>(4), recent = val<any>(5), attnList = val<any>(6)
+    const orders = val<any>(0), pend = val<any>(1), attn = val<any>(2)
+    const handoffs = val<any>(3), recent = val<any>(4), attnList = val<any>(5)
     totalOrders.value = orders?.meta?.total ?? orders?.data?.length ?? 0
     pendingItems.value = pend?.meta?.total ?? pend?.data?.length ?? 0
-    batches.value = batchList?.data ?? []
     attentionCount.value = attn?.meta?.total ?? attn?.data?.length ?? 0
-    handoffCount.value = handoffs?.data?.length ?? 0
+    handoffCount.value = handoffs?.meta?.total ?? handoffs?.data?.length ?? 0
     recentOrders.value = recent?.data ?? []
     attentionNotes.value = attnList?.data ?? []
+    const counts: Record<string, number> = { PENDING: 0, PRINTED: 0, CUT: 0, QC_PASSED: 0 }
+    BATCH_STATUSES.forEach((status, i) => {
+      const res = val<any>(6 + i)
+      counts[status] = res?.meta?.total ?? 0
+    })
+    batchByStatus.value = counts
   } catch (e) {
     error.value = errorMessage(e)
   } finally {

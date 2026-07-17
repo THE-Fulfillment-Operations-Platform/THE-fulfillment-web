@@ -11,7 +11,7 @@ export interface UserInput {
 }
 
 export const usersApi = {
-  list: () => apiGet<User[]>('/api/users'),
+  list: (params?: { page?: number; page_size?: number }) => apiGet<User[]>('/api/users', params),
   get: (id: number | string) => apiGet<User>(`/api/users/${id}`),
   create: (body: UserInput) => apiPost<User>('/api/users', body),
   update: (id: number | string, body: Partial<UserInput>) => apiPut<User>(`/api/users/${id}`, body),
@@ -19,5 +19,7 @@ export const usersApi = {
 }
 
 export const auditApi = {
-  list: () => apiGet<AuditLog[]>('/api/audit-logs'),
+  // Audit logs grow fastest of all tables — always page server-side instead of
+  // pulling the whole trail into the browser.
+  list: (params?: { page?: number; page_size?: number }) => apiGet<AuditLog[]>('/api/audit-logs', params),
 }

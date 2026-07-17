@@ -11,8 +11,16 @@ import { ROLE_LABEL } from '~/utils/enums'
 // accounts and assign roles. Passwords are write-only — edit leaves it blank to
 // keep the current one.
 const toast = useToastStore()
-const { data, loading, error, reload } = useApiResource<User[]>(() => usersApi.list())
+const pager = reactive({ page: 1, page_size: 20 })
+const { data, meta, loading, error, reload } = useApiResource<User[]>(() =>
+  usersApi.list({ page: pager.page, page_size: pager.page_size }),
+)
 const users = computed(() => data.value ?? [])
+
+function changePage(p: number) {
+  pager.page = p
+  reload()
+}
 
 const open = ref(false)
 const editing = ref<User | null>(null)
@@ -225,6 +233,7 @@ const ROLE_BADGE: Record<Role, string> = {
             </tbody>
           </table>
         </div>
+        <UiPagination :meta="meta" @change="changePage" />
       </UiStateBlock>
     </div>
 

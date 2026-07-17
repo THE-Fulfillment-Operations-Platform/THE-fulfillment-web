@@ -67,6 +67,25 @@ function reloadAll() {
 }
 onMounted(reloadAll)
 
+// Targeted reloads: a change in one tab only refetches the list(s) it can
+// actually affect, instead of re-downloading the whole catalog three times.
+// Materials edits also refresh SKUs (mapping rows embed material data); the
+// legacy import seeds both materials and SKUs.
+function reloadMaterials() {
+  loadMaterials()
+  loadSkus()
+}
+function reloadSkus() {
+  loadSkus()
+}
+function reloadSellers() {
+  loadSellers()
+}
+function reloadImported() {
+  loadMaterials()
+  loadSkus()
+}
+
 const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s.materials.length)).length)
 </script>
 
@@ -107,28 +126,28 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
       v-if="tab === 'materials'"
       :materials="materials"
       :loading="loadingMaterials"
-      @changed="reloadAll"
+      @changed="reloadMaterials"
     />
     <MasterDataSkusTab
       v-else-if="tab === 'skus'"
       :skus="skus"
       :materials="materials"
       :loading="loadingSkus"
-      @changed="reloadAll"
+      @changed="reloadSkus"
     />
     <MasterDataMappingTab
       v-else-if="tab === 'mapping'"
       :skus="skus"
       :materials="materials"
       :loading="loadingSkus"
-      @changed="reloadAll"
+      @changed="reloadSkus"
     />
     <MasterDataSellersTab
       v-else-if="tab === 'sellers'"
       :sellers="sellers"
       :loading="loadingSellers"
-      @changed="reloadAll"
+      @changed="reloadSellers"
     />
-    <MasterDataLegacyImportTab v-else @committed="reloadAll" />
+    <MasterDataLegacyImportTab v-else @committed="reloadImported" />
   </div>
 </template>

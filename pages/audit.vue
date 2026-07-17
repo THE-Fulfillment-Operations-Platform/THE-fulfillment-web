@@ -7,9 +7,22 @@ import { exportCsv } from '~/utils/csv'
 import { useToastStore } from '~/stores/toast'
 
 // Audit log viewer (Wireframe: Users/Audit). Read-only trail of mutating actions
-// across the system. The endpoint returns the full recent set; we filter client
-// side for quick triage.
-const { data, loading, error, reload } = useApiResource<AuditLog[]>(() => auditApi.list())
+// across the system. The trail grows with every action, so it is paged
+// server-side; the quick filter narrows the loaded page.
+const pager = reactive({ page: 1, page_size: 50 })
+const { data, meta, loading, error, reload } = useApiResource<AuditLog[]>(() =>
+  auditApi.list({ page: pager.page, page_size: pager.page_size }),
+)
+
+function changePage(p: number) {
+  pager.page = p
+  reload()
+}
+function changePageSize(size: number) {
+  pager.page_size = size
+  pager.page = 1
+  reload()
+}
 
 const query = ref('')
 const logs = computed(() => {
@@ -71,7 +84,7 @@ function actionClass(action: string): string {
         <input
           v-model="query"
           class="input pl-9"
-          placeholder="Lọc theo hành động, email, đối tượng…"
+          placeholder="Lọc nhanh trong trang hiện tại (hành động, email, đối tượng…)"
         />
       </div>
     </div>
@@ -115,6 +128,12 @@ function actionClass(action: string): string {
             </tbody>
           </table>
         </div>
+        <UiPagination
+          :meta="meta"
+          :page-size="pager.page_size"
+          @change="changePage"
+          @update:page-size="changePageSize"
+        />
       </UiStateBlock>
     </div>
   </div>

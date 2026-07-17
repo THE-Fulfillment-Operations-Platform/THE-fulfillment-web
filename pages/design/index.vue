@@ -7,8 +7,16 @@ import { isValidUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 
 const toast = useToastStore()
-const { data, loading, error, reload } = useApiResource<OrderItem[]>(() => designApi.queue())
+const pager = reactive({ page: 1, page_size: 50 })
+const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
+  designApi.queue({ page: pager.page, page_size: pager.page_size }),
+)
 const items = computed(() => data.value ?? [])
+
+function changePage(p: number) {
+  pager.page = p
+  reload()
+}
 
 const selected = ref<OrderItem | null>(null)
 const form = reactive({ mockup_url: '', print_file_url: '', cut_file_url: '', design_url: '' })
@@ -196,6 +204,7 @@ async function setReady() {
               </tbody>
             </table>
           </div>
+          <UiPagination :meta="meta" @change="changePage" />
         </UiStateBlock>
       </div>
 

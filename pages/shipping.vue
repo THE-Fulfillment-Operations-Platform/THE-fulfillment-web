@@ -11,8 +11,16 @@ import { useToastStore } from '~/stores/toast'
 // for dispatch. The create form mirrors the HandoffInput the backend accepts —
 // carrier/tracking are populated by the SHIPPED stage, not at handoff time.
 const toast = useToastStore()
-const { data, loading, error, reload } = useApiResource<Handoff[]>(() => handoffsApi.list())
+const pager = reactive({ page: 1, page_size: 20 })
+const { data, meta, loading, error, reload } = useApiResource<Handoff[]>(() =>
+  handoffsApi.list({ page: pager.page, page_size: pager.page_size }),
+)
 const handoffs = computed(() => data.value ?? [])
+
+function changePage(p: number) {
+  pager.page = p
+  reload()
+}
 
 const HANDOFF_STATUS: Record<HandoffStatus, { label: string; classes: string }> = {
   HANDED_OFF: { label: 'Đã bàn giao THE', classes: 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' },
@@ -182,6 +190,7 @@ async function submitShip() {
             </tbody>
           </table>
         </div>
+        <UiPagination :meta="meta" @change="changePage" />
       </UiStateBlock>
     </div>
 

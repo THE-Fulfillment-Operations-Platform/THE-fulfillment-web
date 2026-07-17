@@ -168,7 +168,11 @@ async function printLabels() {
 
   printingLabels.value = true
   try {
-    const { code } = batch.value
+    const { code, created_at } = batch.value
+    // Ngày trên tem = ngày tạo batch sản xuất; batch cũ thiếu created_at thì lấy ngày in.
+    const labelDate = created_at
+      ? formatDate(created_at)
+      : new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const QRCode = (await import('qrcode')).default
     const labels = await Promise.all(
       prodRows.value.map(async (r) => {
@@ -185,6 +189,7 @@ async function printLabels() {
               <div class="meta">
                 <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
                 <div class="code">${esc(r.internal_code || '—')}</div>
+                <div class="sub">SL: ${esc(r.quantity || '—')} · Ngày: ${esc(labelDate)}</div>
                 <div class="desc">${esc(r.qc_description || '')}</div>
               </div>
             </div>

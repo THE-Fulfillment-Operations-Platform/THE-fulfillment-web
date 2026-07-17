@@ -1,0 +1,34 @@
+# =============================================================================
+# docker-compose.server.yml — OVERRIDE cho DEPLOY SERVER NỘI BỘ (Supabase + IP)
+#
+# Dùng CHUNG với docker-compose.yml gốc. DB là SUPABASE (đám mây) — cấu hình
+# qua .env.docker (DB_* trỏ Supabase). Bản này CHỈ đổi Caddy để truy cập bằng
+# IP máy chủ (http://<IP>), không domain/HTTPS.
+#
+# Chạy (kèm .env.docker đã điền secrets thật + DB_* Supabase):
+#   docker compose --env-file .env.docker \
+#     -f docker-compose.yml -f docker-compose.server.yml up -d --build
+#
+# .env.docker cần đặt:
+#   DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME → Supabase, DB_SSLMODE=require
+#   NUXT_PUBLIC_API_BASE_URL=http://<IP server>
+#   CORS_ALLOWED_ORIGINS=http://<IP server>
+# =============================================================================
+
+services:
+  # --------------------------------------------------------------- frontend
+  frontend:
+    build:
+      args:
+        # Rỗng = same-origin: FE gọi API tương đối (/api/...) nên chạy được trên
+        # MỌI host (IP LAN, Cloudflare tunnel, domain) mà không cần build lại theo
+        # từng địa chỉ, và không dính mixed-content khi phục vụ qua HTTPS.
+        NUXT_PUBLIC_API_BASE_URL: ""
+
+  # ------------------------------------------------------------------ caddy
+  caddy:
+    volumes:
+      # Mount thêm file server; command dưới trỏ vào file này (bind gốc
+      # Caddyfile vẫn còn nhưng không dùng — tránh xung đột target khi merge).
+      - ./Caddyfile.server:/etc/caddy/Caddyfile.server:ro
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile.server", "--adapter", "caddyfile"]

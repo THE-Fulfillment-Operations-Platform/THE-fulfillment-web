@@ -2,7 +2,7 @@ import { apiGet, apiDownload } from '../http'
 import type { OrderItem, MaterialBucket } from '~/types'
 
 export const designApi = {
-  queue: () => apiGet<OrderItem[]>('/api/design-queue'),
+  queue: (params?: { page?: number; page_size?: number }) => apiGet<OrderItem[]>('/api/design-queue', params),
   materialBuckets: () => apiGet<MaterialBucket[]>('/api/design-queue/material-buckets'),
   materialItems: (materialId: number | string) =>
     apiGet<OrderItem[]>(`/api/design-queue/material/${materialId}/items`),

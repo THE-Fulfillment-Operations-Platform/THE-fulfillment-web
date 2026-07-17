@@ -1,0 +1,45 @@
+# ---- Nuxt / build artifacts (được build lại bên trong image) ----
+.nuxt
+.output
+.data
+dist
+
+# ---- Dependencies (cài lại bằng `npm ci` trong image) ----
+node_modules
+**/node_modules
+
+# ---- Git & CI ----
+.git
+.gitignore
+.github
+.gitlab-ci.yml
+
+# ---- Env & secrets (KHÔNG đưa vào image) ----
+.env
+.env.*
+!.env.example
+
+# ---- Editor / IDE / OS ----
+.vscode
+.idea
+.fleet
+.DS_Store
+**/.DS_Store
+
+# ---- Docker ----
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# ---- Logs & temp ----
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tmp
+
+# ---- Docs & meta (không cần cho runtime) ----
+docs
+*.md
+.claude
