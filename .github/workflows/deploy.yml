@@ -1,0 +1,40 @@
+name: Deploy to VPS
+
+# Tự chạy mỗi khi push lên nhánh main
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # cho phép bấm chạy tay trong tab Actions
+
+# Không cho 2 lần deploy chồng lên nhau
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lấy code
+        uses: actions/checkout@v4
+
+      - name: Chuẩn bị khóa SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Đẩy code lên VPS (giữ .env.docker trên server)
+        run: |
+          rsync -az --delete \
+            --exclude='.git' --exclude='.github' \
+            --exclude='.env' --exclude='.env.docker' --exclude='.env.docker.local' \
+            --exclude='node_modules' --exclude='.output' --exclude='.nuxt' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            ./ root@${{ secrets.VPS_HOST }}:/root/FFM/THE-fulfillment-web/
+
+      - name: Build lại & khởi động trên VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key root@${{ secrets.VPS_HOST }} \
+            'cd /root/FFM/THE-fulfillment-web && docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.server.yml up -d --build'
