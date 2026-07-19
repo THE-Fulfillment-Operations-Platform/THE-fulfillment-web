@@ -1,42 +1,30 @@
 # =============================================================================
-# Caddyfile.server — TRUY CẬP NỘI BỘ BẰNG IP (không domain, HTTP)
+# Caddyfile.server — PRODUCTION: subdomain + HTTPS (Let's Encrypt tự động)
+# Truy cập: https://fulfillment.bacgiangdecor.com
 #
-# Dùng khi server chạy trong mạng LAN/Wi-Fi công ty, mở app bằng IP máy chủ
-# (ví dụ http://172.16.1.23). KHÔNG domain, KHÔNG HTTPS/ACME.
-#
-# Cùng 1 origin cho cả frontend lẫn API (same-origin → không dính CORS):
-#   http://<IP>/            → frontend (Nuxt SPA)  :3000
-#   http://<IP>/api/*       → backend (Go/Gin)     :8080
-#   http://<IP>/health      → backend healthcheck  :8080
-#
-# Tên host proxy (frontend/backend) = TÊN SERVICE trong docker-compose,
-# Docker DNS tự phân giải trong mạng nội bộ của stack.
+# Same-origin: FE gọi /api/* tương đối → không CORS, KHÔNG cần rebuild FE.
+# Caddy tự xin cert HTTPS (ACME) khi domain đã trỏ DNS về IP VPS và port 80/443 mở.
+# Deploy qua docker-compose.server.yml (CI mount file này làm config Caddy).
 # =============================================================================
 
-{
-	# Không có domain công khai để xin chứng chỉ → tắt auto-HTTPS.
-	auto_https off
-}
+fulfillment.bacgiangdecor.com {
+    encode zstd gzip
 
-# Lắng nghe HTTP cổng 80 cho MỌI host (khớp cả khi gõ bằng IP).
-:80 {
-	encode zstd gzip
+    # Cho phép upload file import (Excel/CSV) lớn.
+    request_body {
+        max_size 25MB
+    }
 
-	# Cho phép upload file import (Excel/CSV) lớn hơn mặc định.
-	request_body {
-		max_size 25MB
-	}
+    # --- Backend: giữ nguyên path /api/... và /health ---
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+    handle /health {
+        reverse_proxy backend:8080
+    }
 
-	# --- Backend: giữ nguyên path /api/... và /health ---
-	handle /api/* {
-		reverse_proxy backend:8080
-	}
-	handle /health {
-		reverse_proxy backend:8080
-	}
-
-	# --- Frontend: mọi thứ còn lại ---
-	handle {
-		reverse_proxy frontend:3000
-	}
+    # --- Frontend: mọi thứ còn lại ---
+    handle {
+        reverse_proxy frontend:3000
+    }
 }
