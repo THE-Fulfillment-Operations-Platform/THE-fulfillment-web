@@ -6,6 +6,7 @@ import { errorMessage } from '~/utils/api-error'
 import { itemStoreOrderId } from '~/utils/item'
 import { planBatchSplit, productCount } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
+import { useConfirm } from '~/composables/useConfirm'
 
 const toast = useToastStore()
 const router = useRouter()
@@ -19,6 +20,11 @@ const items = ref<OrderItem[]>([])
 const itemsLoading = ref(false)
 const itemsError = ref<string | null>(null)
 const selectedIds = ref<Set<number>>(new Set())
+// Sắp xếp theo SKU (server-side). null = chưa sắp; luân phiên null → asc → desc.
+const skuSort = ref<'asc' | 'desc' | null>(null)
+const skuSortIcon = computed(() =>
+  skuSort.value === 'asc' ? '↑' : skuSort.value === 'desc' ? '↓' : '↕',
+)
 
 const priority = ref<Priority>('NORMAL')
 const dueDate = ref('')
@@ -62,20 +68,36 @@ async function loadBuckets() {
   }
 }
 
-async function selectMaterial(b: MaterialBucket) {
-  activeMaterial.value = b
-  selectedIds.value = new Set()
+// Nạp item của NVL đang chọn theo sort hiện tại. Không đụng tới selectedIds:
+// lựa chọn keyed theo id nên các dòng đã tick vẫn được giữ khi re-sort.
+async function fetchItems() {
+  const b = activeMaterial.value
+  if (!b) return
   itemsLoading.value = true
   itemsError.value = null
-  items.value = []
   try {
-    const { data } = await designApi.materialItems(b.material_id)
+    const params = skuSort.value ? { sort: 'sku', order: skuSort.value } : undefined
+    const { data } = await designApi.materialItems(b.material_id, params)
     items.value = data ?? []
   } catch (e) {
     itemsError.value = errorMessage(e)
   } finally {
     itemsLoading.value = false
   }
+}
+
+async function selectMaterial(b: MaterialBucket) {
+  activeMaterial.value = b
+  selectedIds.value = new Set()
+  skuSort.value = null
+  items.value = []
+  await fetchItems()
+}
+
+// Đổi NVL khác → reset chọn/sort; cùng NVL (re-sort/retry) → giữ nguyên lựa chọn.
+function toggleSkuSort() {
+  skuSort.value = skuSort.value === null ? 'asc' : skuSort.value === 'asc' ? 'desc' : null
+  fetchItems()
 }
 
 function toggle(id: number) {
@@ -98,7 +120,28 @@ const selectedCount = computed(() => selectedIds.value.size)
 const priorityOptions = PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label }))
 
 async function createBatch() {
-  if (!activeMaterial.value || selectedCount.value === 0) return
+  if (!activeMaterial.value || selectedCount.value === 0 || creating.value) return
+
+  // Xác nhận trước khi tạo — tóm tắt NVL, số item, tổng sản phẩm, và SKU.
+  const skuCodes = Array.from(
+    new Set(selectedItems.value.map((it) => it.sku_code).filter(Boolean)),
+  )
+  const skuSummary = skuCodes.length <= 3 ? skuCodes.join(', ') : `${skuCodes.length} SKU`
+  const message =
+    `Batch NVL: ${activeMaterial.value.material_name} (${activeMaterial.value.material_code})\n` +
+    `Số item đã chọn: ${selectedCount.value}\n` +
+    `Tổng sản phẩm: ${selectedProducts.value}\n` +
+    `SKU: ${skuSummary}` +
+    (willSplit.value ? `\nSẽ tạo 1 batch mẹ + ${splitGroups.value.length} batch con.` : '')
+
+  const ok = await useConfirm().confirm({
+    title: 'Tạo Batch',
+    message,
+    tone: 'primary',
+    confirmText: 'Tạo Batch',
+  })
+  if (!ok) return
+
   creating.value = true
   try {
     const { data } = await batchesApi.create({
@@ -172,7 +215,7 @@ onMounted(() => {
           :error="itemsError"
           :empty="!itemsLoading && !itemsError && items.length === 0"
           empty-text="Không còn item design-ready cho material này."
-          @retry="() => selectMaterial(activeMaterial!)"
+          @retry="fetchItems"
         >
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border">
@@ -181,7 +224,17 @@ onMounted(() => {
                   <th class="table-th w-10"></th>
                   <th class="table-th">Item</th>
                   <th class="table-th">Store Order</th>
-                  <th class="table-th">SKU</th>
+                  <th class="table-th">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 font-medium uppercase tracking-wide hover:text-primary"
+                      :aria-label="`Sắp xếp theo SKU (${skuSort ?? 'không'})`"
+                      @click="toggleSkuSort"
+                    >
+                      SKU
+                      <span class="text-xs leading-none" :class="skuSort ? 'text-primary' : 'text-muted-foreground'">{{ skuSortIcon }}</span>
+                    </button>
+                  </th>
                   <th class="table-th">SL</th>
                 </tr>
               </thead>
@@ -240,7 +293,7 @@ onMounted(() => {
           </div>
           <div>
             <label class="label">Due date</label>
-            <input v-model="dueDate" type="date" class="input" />
+            <UiDatePicker v-model="dueDate" aria-label="Due date" />
           </div>
           <div>
             <label class="label">Ghi chú</label>

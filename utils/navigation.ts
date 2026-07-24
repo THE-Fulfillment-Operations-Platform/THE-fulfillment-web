@@ -35,7 +35,7 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Xuất kho / Bàn giao', to: '/shipping', icon: 'shipping', roles: ['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING'] },
   { label: 'Ghi chú / Cần xử lý', to: '/notes', icon: 'notes', roles: ALL_INTERNAL },
   { label: 'Người dùng', to: '/users', icon: 'users', roles: ['OWNER', 'ADMIN'] },
-  { label: 'Nhật ký hệ thống', to: '/audit', icon: 'audit', roles: ['OWNER', 'ADMIN'] },
+  { label: 'Nhật ký hoạt động', to: '/audit', icon: 'audit', roles: ['OWNER', 'ADMIN'] },
   { label: 'Cài đặt', to: '/settings', icon: 'alert', roles: ['OWNER'] },
 ]
 

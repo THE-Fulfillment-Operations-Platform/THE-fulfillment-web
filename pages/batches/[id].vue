@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { batchesApi } from '~/services/api'
-import type { Batch, InternalStatus } from '~/types'
+import type { Batch, BatchLink, BatchLinkKind, InternalStatus } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { useApiResource } from '~/composables/useApiResource'
 import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
-import { formatDate } from '~/utils/format'
+import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
@@ -64,6 +64,10 @@ interface ProdRow {
 const prodRows = computed<ProdRow[]>(() =>
   items.value.map((bi) => {
     const oi = bi.order_item
+    // BatchLink is the canonical production link shared by every row. Keep the
+    // old per-item URL as a fallback for legacy batches that have no shared link.
+    const sharedPrintUrl = batchLink('PRINT')?.url
+    const sharedCutUrl = batchLink('CUT')?.url
     return {
       internal_code: oi?.internal_code ?? bi.item_code ?? '—',
       sku_code: oi?.sku_code ?? bi.sku_code ?? '—',
@@ -75,25 +79,44 @@ const prodRows = computed<ProdRow[]>(() =>
       design_url: oi?.design_url ?? '',
       mockup_url: oi?.mockup_url ?? bi.mockup_url ?? '',
       production_file_name: oi?.production_file_name ?? '',
-      print_file_url: oi?.print_file_url ?? bi.print_file_url ?? '',
-      cut_file_url: oi?.cut_file_url ?? bi.cut_file_url ?? '',
+      print_file_url: sharedPrintUrl || oi?.print_file_url || bi.print_file_url || '',
+      cut_file_url: sharedCutUrl || oi?.cut_file_url || bi.cut_file_url || '',
       status: bi.status,
     }
   }),
 )
 
-const updating = ref(false)
+// Chặng đang chờ server xác nhận (null = rảnh). Giữ chính status thay vì cờ
+// boolean để nút vừa bấm hiện spinner đúng chỗ và màn hình chờ gọi tên chặng.
+const pendingStatus = ref<InternalStatus | null>(null)
+const updating = computed(() => pendingStatus.value !== null)
+// 0 = đang gọi PATCH (BE cascade xuống item), 1 = đang áp dữ liệu trả về.
+const busyStep = ref(0)
+const busySubtitle = computed(() => {
+  if (!batch.value) return ''
+  return batch.value.is_parent
+    ? `Batch mẹ ${batch.value.code} — cập nhật lan sang các batch con.`
+    : `Batch ${batch.value.code} · ${items.value.length} item cập nhật theo.`
+})
+
 async function setStatus(status: InternalStatus) {
-  if (!batch.value) return
-  updating.value = true
+  if (!batch.value || updating.value) return
+  pendingStatus.value = status
+  busyStep.value = 0
   try {
-    await batchesApi.setStatus(batch.value.id, status)
+    const { data: updated } = await batchesApi.setStatus(batch.value.id, status)
+    // PATCH trả về đúng payload của GET /batches/:id (BE dùng chung FindByID sau
+    // khi commit) nên gán thẳng. Gọi reload() ở đây là tốn thêm một vòng ~0.5s
+    // chỉ để lấy lại y hệt dữ liệu vừa nhận.
+    batch.value = updated
+    busyStep.value = 1
     toast.success(`Đã cập nhật batch → ${INTERNAL_STATUS[status].label}`)
-    await reload()
   } catch (e) {
     toast.error(errorMessage(e))
+    // Chỉ khi lỗi mới cần hỏi lại server: có thể BE đã đổi một phần trước khi hỏng.
+    await reload()
   } finally {
-    updating.value = false
+    pendingStatus.value = null
   }
 }
 
@@ -151,6 +174,105 @@ async function downloadBatchAssets() {
     toast.error(errorMessage(e))
   } finally {
     downloadingZip.value = false
+  }
+}
+
+// Tải riêng file Design gốc (front/back, KHÔNG kèm mockup) — tách khỏi bundle đầy đủ.
+const downloadingDesignZip = ref(false)
+async function downloadBatchDesign() {
+  if (!batch.value || downloadingDesignZip.value) return
+  downloadingDesignZip.value = true
+  try {
+    await batchesApi.downloadDesignZip(batch.value.id, batch.value.code)
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingDesignZip.value = false
+  }
+}
+
+// ---- Link sản xuất theo Batch (Print/Cut) ----------------------------------
+// Link dùng chung cho cả batch (nhập 1 lần, mọi design trong batch dùng chung).
+// Chỉ OWNER/ADMIN/OPS/DESIGNER được thêm/sửa — BE guard giống hệt.
+const LINK_LABELS: Record<BatchLinkKind, string> = { PRINT: 'Link in', CUT: 'Link cắt' }
+const canEditLinks = computed(() =>
+  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? ''),
+)
+
+function batchLink(kind: BatchLinkKind): BatchLink | undefined {
+  return batch.value?.links?.find((l) => l.kind === kind)
+}
+const linkRows = computed<{ kind: BatchLinkKind; label: string; link: BatchLink | undefined }[]>(() => [
+  { kind: 'PRINT', label: LINK_LABELS.PRINT, link: batchLink('PRINT') },
+  { kind: 'CUT', label: LINK_LABELS.CUT, link: batchLink('CUT') },
+])
+
+// Entering fabrication needs both shared files: nobody can have printed or cut
+// without them, and the backend refuses the transition. Mirrored here so the buttons
+// explain themselves instead of failing on click. Parent batches hold no items and
+// carry no links, so the rule doesn't apply to them (backend skips them too).
+const missingProductionLinks = computed(() => {
+  if (batch.value?.is_parent) return []
+  return linkRows.value.filter((r) => !r.link).map((r) => r.label.toLowerCase())
+})
+function statusNeedsLinks(s: InternalStatus) {
+  return s === 'PRINTED' || s === 'CUT'
+}
+function statusBlockedReason(s: InternalStatus) {
+  if (!statusNeedsLinks(s) || !missingProductionLinks.value.length) return ''
+  return `Batch chưa có ${missingProductionLinks.value.join(' và ')} — thêm link sản xuất dùng chung trước.`
+}
+
+const linkModalOpen = ref(false)
+const linkModalKind = ref<BatchLinkKind>('PRINT')
+const linkUrl = ref('')
+const savingLink = ref(false)
+// Link hiện có của kind đang mở — quyết định "Thêm" vs "Sửa/thay thế".
+const editingLink = computed(() => batchLink(linkModalKind.value))
+const normalizedLinkUrl = computed(() => linkUrl.value.trim())
+const linkUrlValid = computed(() => isValidUrl(normalizedLinkUrl.value))
+const linkUnchanged = computed(() => normalizedLinkUrl.value === (editingLink.value?.url ?? ''))
+
+function openLinkModal(kind: BatchLinkKind) {
+  linkModalKind.value = kind
+  linkUrl.value = batchLink(kind)?.url ?? ''
+  linkModalOpen.value = true
+}
+
+async function saveLink() {
+  if (!batch.value || savingLink.value) return
+  const url = normalizedLinkUrl.value
+  if (!linkUrlValid.value) {
+    toast.error('Link không hợp lệ — cần URL bắt đầu bằng http:// hoặc https://')
+    return
+  }
+  const label = LINK_LABELS[linkModalKind.value].toLowerCase()
+  // Nhập lại khi đã có link → thay thế link cũ, xác nhận trước.
+  if (editingLink.value) {
+    const ok = await useConfirm().confirm({
+      title: `Thay thế ${label}`,
+      message: `Batch đã có ${label}. Lưu link mới sẽ thay thế link hiện tại. Tiếp tục?`,
+      tone: 'warning',
+      confirmText: 'Thay thế',
+    })
+    if (!ok) return
+  }
+  savingLink.value = true
+  try {
+    const { data: saved } = await batchesApi.setLink(batch.value.id, linkModalKind.value, url)
+    // Update immediately so all item rows switch to the shared link without a
+    // visible stale interval; reload still refreshes updater/timestamps from BE.
+    batch.value.links = [
+      ...(batch.value.links ?? []).filter((link) => link.kind !== saved.kind),
+      saved,
+    ]
+    toast.success(`Đã lưu ${label}`)
+    linkModalOpen.value = false
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    savingLink.value = false
   }
 }
 
@@ -246,7 +368,9 @@ async function printLabels() {
       </NuxtLink>
     </div>
 
-    <UiStateBlock :loading="loading" :error="error" @retry="reload">
+    <!-- Chỉ blank cả trang ở lần tải đầu; reload sau thao tác giữ nguyên nội dung
+         (màn hình chờ ở trên đã báo trạng thái rồi) nên không bị nháy trắng. -->
+    <UiStateBlock :loading="loading && !batch" :error="error" @retry="reload">
       <template v-if="batch">
         <!-- Header -->
         <div class="card mb-5 p-5">
@@ -278,6 +402,10 @@ async function printLabels() {
                 <UiSpinner v-if="downloadingZip" :size="16" />
                 <UiIcon v-else name="box" :size="16" /> Download ZIP
               </button>
+              <button class="btn-secondary" :disabled="downloadingDesignZip" @click="downloadBatchDesign">
+                <UiSpinner v-if="downloadingDesignZip" :size="16" />
+                <UiIcon v-else name="download" :size="16" /> Tải Design (ZIP)
+              </button>
             </div>
           </div>
 
@@ -301,21 +429,75 @@ async function printLabels() {
               <button
                 v-for="s in PRODUCTION_STATUS_ORDER"
                 :key="s"
-                class="rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed"
-                :class="batch.status === s
-                  ? 'border-primary bg-accent text-primary'
-                  : isPastStep(s)
-                    ? (isOwner ? 'border-dashed border-border text-muted-foreground hover:bg-muted' : 'border-border text-muted-foreground opacity-40')
-                    : 'border-border text-foreground hover:bg-muted'"
-                :disabled="updating || batch.status === s || (isPastStep(s) && !isOwner)"
-                :title="isPastStep(s) ? (isOwner ? 'Chặng đã qua — bấm để hạ về (sửa nhầm)' : 'Chặng đã qua — sản xuất chỉ tiến, không lùi') : ''"
+                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed"
+                :class="[
+                  batch.status === s
+                    ? 'border-primary bg-accent text-primary'
+                    : isPastStep(s)
+                      ? (isOwner ? 'border-dashed border-border text-muted-foreground hover:bg-muted' : 'border-border text-muted-foreground opacity-40')
+                      : 'border-border text-foreground hover:bg-muted',
+                  pendingStatus === s ? 'border-primary bg-accent text-primary' : '',
+                  updating && pendingStatus !== s ? 'opacity-50' : '',
+                ]"
+                :disabled="updating || batch.status === s || (isPastStep(s) && !isOwner) || Boolean(statusBlockedReason(s))"
+                :title="statusBlockedReason(s) || (isPastStep(s) ? (isOwner ? 'Chặng đã qua — bấm để hạ về (sửa nhầm)' : 'Chặng đã qua — sản xuất chỉ tiến, không lùi') : '')"
                 @click="chooseStatus(s)"
               >
+                <UiSpinner v-if="pendingStatus === s" :size="12" />
                 {{ INTERNAL_STATUS[s].label }}
               </button>
               <span class="text-[11px] text-muted-foreground">
                 (cascade xuống item · QC làm 1 lần ở trạm QC{{ isOwner ? ' · OWNER được hạ để sửa nhầm' : '' }})
               </span>
+            </div>
+            <p
+              v-if="!qcLocked && missingProductionLinks.length"
+              class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400"
+            >
+              Chưa thêm {{ missingProductionLinks.join(' và ') }} — cần đủ cả hai link mới chuyển được
+              sang “Đã in” / “Đã cắt”.
+            </p>
+          </div>
+        </div>
+
+        <!-- Link sản xuất theo Batch (Print/Cut) — nhập 1 lần, dùng chung cả batch -->
+        <div v-if="!batch.is_parent" class="card mb-5 p-5">
+          <div class="mb-3">
+            <h3 class="text-sm font-semibold text-foreground">Link sản xuất dùng chung</h3>
+            <p class="mt-1 text-xs text-muted-foreground">
+              Lưu một lần và áp dụng cho toàn bộ {{ items.length }} item trong batch, gồm bảng bên dưới, file Excel và ZIP sản xuất.
+            </p>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div v-for="row in linkRows" :key="row.kind" class="rounded-lg border border-border p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-foreground">{{ row.label }}</p>
+                  <a
+                    v-if="row.link"
+                    :href="row.link.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="mt-1 block truncate text-sm text-primary hover:underline"
+                    :title="row.link.url"
+                  >
+                    {{ row.link.url }}
+                  </a>
+                  <p v-else class="mt-1 text-sm text-muted-foreground">Chưa có</p>
+                  <p v-if="row.link" class="mt-1 text-xs text-muted-foreground">
+                    Người cập nhật: {{ row.link.updated_by?.full_name || row.link.updated_by?.email || '—' }}
+                    <span v-if="row.link.link_updated_at"> · {{ formatDateTime(row.link.link_updated_at) }}</span>
+                  </p>
+                </div>
+                <button
+                  v-if="canEditLinks"
+                  class="btn-secondary shrink-0"
+                  @click="openLinkModal(row.kind)"
+                >
+                  <UiIcon :name="row.link ? 'link' : 'plus'" :size="16" />
+                  {{ row.link ? 'Sửa link' : 'Thêm link' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -416,5 +598,52 @@ async function printLabels() {
         </p>
       </template>
     </UiStateBlock>
+
+    <!-- Màn hình chờ khi đổi trạng thái: PATCH cascade xuống từng item nên hay
+         mất vài giây — che thao tác lại để không ai bấm chồng chặng khác. -->
+    <UiBusyOverlay
+      :open="updating"
+      icon="batches"
+      :title="pendingStatus ? `Đang chuyển batch sang “${INTERNAL_STATUS[pendingStatus].label}”` : 'Đang cập nhật batch…'"
+      :subtitle="busySubtitle"
+      :steps="['Ghi trạng thái & cascade xuống item', 'Cập nhật lại bảng']"
+      :active-step="busyStep"
+    />
+
+    <!-- Thêm/Sửa link sản xuất (Print/Cut) -->
+    <UiModal
+      v-model="linkModalOpen"
+      :title="editingLink ? `Sửa ${LINK_LABELS[linkModalKind]}` : `Thêm ${LINK_LABELS[linkModalKind]}`"
+    >
+      <div class="space-y-3">
+        <div>
+          <label class="label">{{ LINK_LABELS[linkModalKind] }} (URL)</label>
+          <input
+            v-model="linkUrl"
+            class="input"
+            :class="linkUrl && !linkUrlValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''"
+            placeholder="https://…"
+            autocomplete="url"
+            @keyup.enter="saveLink"
+          />
+          <p v-if="linkUrl && !linkUrlValid" class="mt-1 text-xs text-red-600 dark:text-red-400">
+            Link phải bắt đầu bằng http:// hoặc https://
+          </p>
+        </div>
+        <p v-if="editingLink" class="text-xs text-amber-600 dark:text-amber-400">
+          Batch đã có {{ LINK_LABELS[linkModalKind].toLowerCase() }}. Lưu link mới sẽ thay thế link hiện tại.
+        </p>
+        <p class="text-[11px] text-muted-foreground">
+          Link dùng chung cho cả batch (nhập 1 lần). Cần URL bắt đầu bằng http:// hoặc https://.
+        </p>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="linkModalOpen = false">Huỷ</button>
+        <button class="btn-primary" :disabled="savingLink || !linkUrlValid || linkUnchanged" @click="saveLink">
+          <UiSpinner v-if="savingLink" :size="16" />
+          {{ editingLink ? 'Thay thế' : 'Lưu link' }}
+        </button>
+      </template>
+    </UiModal>
   </div>
 </template>

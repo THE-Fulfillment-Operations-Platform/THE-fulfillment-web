@@ -12,6 +12,9 @@ interface SelectOption {
   value: SelectValue
   label: string
   disabled?: boolean
+  // Secondary text pinned to the right of the row (counts, units…). Kept out of
+  // `label` so it lines up in a column instead of trailing labels of every width.
+  hint?: string
 }
 
 const props = withDefaults(
@@ -192,12 +195,17 @@ onBeforeUnmount(detach)
       <span class="truncate" :class="displayLabel ? 'text-foreground' : 'text-muted-foreground'">
         {{ displayLabel || placeholder }}
       </span>
-      <UiIcon
-        name="chevron-down"
-        :size="16"
-        class="shrink-0 text-muted-foreground transition-transform duration-150"
-        :class="{ 'rotate-180': open }"
-      />
+      <span class="ml-auto flex shrink-0 items-center gap-1.5">
+        <span v-if="selected?.hint" class="text-xs tabular-nums text-muted-foreground">
+          {{ selected.hint }}
+        </span>
+        <UiIcon
+          name="chevron-down"
+          :size="16"
+          class="text-muted-foreground transition-transform duration-150"
+          :class="{ 'rotate-180': open }"
+        />
+      </span>
     </button>
 
     <Teleport to="body">
@@ -225,7 +233,19 @@ onBeforeUnmount(detach)
             @mousemove="activeIndex = i"
           >
             <span class="truncate">{{ o.label }}</span>
-            <UiIcon v-if="o.value === modelValue" name="check" :size="15" class="shrink-0 text-primary" />
+            <span class="ml-auto flex shrink-0 items-center gap-1.5">
+              <span
+                v-if="o.hint"
+                class="text-xs tabular-nums"
+                :class="o.value === modelValue ? 'text-primary/70' : 'text-muted-foreground'"
+              >
+                {{ o.hint }}
+              </span>
+              <!-- The tick is swapped for an equal-width spacer so hints stay in
+                   one column instead of jumping when the row is selected. -->
+              <UiIcon v-if="o.value === modelValue" name="check" :size="15" class="text-primary" />
+              <span v-else class="block w-[15px]" aria-hidden="true" />
+            </span>
           </li>
           <li v-if="!options.length" class="px-2.5 py-2 text-xs text-muted-foreground">Không có lựa chọn</li>
         </ul>

@@ -9,6 +9,7 @@ import type {
   ReviewStatus,
   CancellationStatus,
   EntityType,
+  TrackingStatus,
 } from '~/types'
 
 export interface BadgeMeta {
@@ -90,6 +91,23 @@ export const NOTE_STATUS: Record<NoteStatus, BadgeMeta> = {
   WAITING: { label: 'Chờ', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
   RESOLVED: { label: 'Đã xử lý', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
 }
+
+// ---- Tracking status -------------------------------------------------------
+export const TRACKING_STATUS: Record<TrackingStatus, BadgeMeta> = {
+  NONE: { label: 'Chưa có', classes: 'bg-muted text-muted-foreground' },
+  PENDING: { label: 'Chờ lấy hàng', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  PRE_TRANSIT: { label: 'Chuẩn bị vận chuyển', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
+  IN_TRANSIT: { label: 'Đang vận chuyển', classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
+  DELIVERED: { label: 'Đã giao', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  UNDELIVERED: { label: 'Giao không thành công', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
+  EXCEPTION: { label: 'Sự cố', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  EXPIRED: { label: 'Hết hạn theo dõi', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+  CANCELLED: { label: 'Đã huỷ vận chuyển', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+}
+
+export const TRACKING_STATUS_OPTIONS: { value: TrackingStatus; label: string }[] = (
+  Object.keys(TRACKING_STATUS) as TrackingStatus[]
+).map((k) => ({ value: k, label: TRACKING_STATUS[k].label }))
 
 // ---- Roles -----------------------------------------------------------------
 export const ROLE_LABEL: Record<Role, string> = {

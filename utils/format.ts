@@ -1,4 +1,10 @@
-/** Format an RFC3339 timestamp for display. Returns '—' when empty/invalid. */
+// Business timezone. Dates are formatted in this zone (not the viewer's browser
+// zone) so a created-at / order-date never drifts by a day between UTC storage and
+// a machine in another timezone — the "STT trong ngày" calendar day must match the
+// server's business day. Mirrors DB_TIMEZONE on the backend.
+export const APP_TZ = 'Asia/Ho_Chi_Minh'
+
+/** Format an RFC3339 timestamp for display (business timezone). Returns '—' when empty/invalid. */
 export function formatDateTime(value?: string | null): string {
   if (!value) return '—'
   const d = new Date(value)
@@ -9,6 +15,7 @@ export function formatDateTime(value?: string | null): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: APP_TZ,
   })
 }
 
@@ -20,10 +27,11 @@ export function formatDate(value?: string | null): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    timeZone: APP_TZ,
   })
 }
 
-/** Relative-ish short timestamp used in dense tables. */
+/** Relative-ish short timestamp used in dense tables (business timezone). */
 export function formatShort(value?: string | null): string {
   if (!value) return '—'
   const d = new Date(value)
@@ -33,6 +41,7 @@ export function formatShort(value?: string | null): string {
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: APP_TZ,
   })
 }
 

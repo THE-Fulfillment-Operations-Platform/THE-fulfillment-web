@@ -109,6 +109,9 @@ export function parseCsv(text: string): Record<string, string>[] {
   })
 }
 
+// Keep in sync with the backend orderImportTemplateHeaders (import_service.go).
+// "Design" (single column) is replaced by "Front Design" + "Back Design"; the
+// backend still accepts an old "Design" column as the front side for compatibility.
 export const IMPORT_COLUMNS = [
   'StoreOrderID',
   'Account',
@@ -119,7 +122,8 @@ export const IMPORT_COLUMNS = [
   'VariantCode',
   'SKU',
   'Mã ảnh',
-  'Design',
+  'Front Design',
+  'Back Design',
   'Mockup',
   'EngraveText',
   'ShippingName',
@@ -138,8 +142,8 @@ export const IMPORT_COLUMNS = [
 export function importTemplateCsv(): string {
   const header = IMPORT_COLUMNS.join(',')
   const sample = [
-    'Etsy-9001,acc-001,Etsy-Demo,Standard,1,Personalized Wood Sign,VAR-1,WOOD-01,IMG-9001,design-a,https://mockups.example.com/etsy-9001-1.png,Hello,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,First order',
-    'Etsy-9001,acc-001,Etsy-Demo,Standard,2,Mica Plate,VAR-2,MICA-02,IMG-9002,design-b,https://mockups.example.com/etsy-9001-2.png,,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,',
+    'Etsy-9001,acc-001,Etsy-Demo,Standard,1,Personalized Wood Sign,VAR-1,WOOD-01,IMG-9001,https://designs.example.com/9001-front.png,,https://mockups.example.com/etsy-9001-1.png,Hello,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,First order',
+    'Etsy-9001,acc-001,Etsy-Demo,Standard,2,Mica Plate,VAR-2,MICA-02,IMG-9002,https://designs.example.com/9002-front.png,https://designs.example.com/9002-back.png,https://mockups.example.com/etsy-9001-2.png,,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,',
   ]
   return [header, ...sample].join('\n')
 }

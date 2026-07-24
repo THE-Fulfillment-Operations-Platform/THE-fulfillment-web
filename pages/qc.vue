@@ -23,6 +23,9 @@ const scanError = ref<string | null>(null)
 // Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
 const alreadyQC = computed(() => result.value?.internal_status === 'QC_PASSED')
 
+// Tên sản phẩm hiển thị: ưu tiên product_name, fallback về sku_product_name.
+const productName = computed(() => result.value?.product_name || result.value?.sku_product_name || '')
+
 // QC là cổng cấp SẢN PHẨM, làm 1 lần: một sản phẩm có thể gồm nhiều NVL (mỗi NVL
 // một batch). PASS/FAIL áp cho cả sản phẩm. Chỉ QC được khi MỌI phần NVL đã đạt
 // 'Đã cắt' (CUT) — phần mới in (PRINTED) hay còn Chờ xử lý (PENDING) thì chưa xong.
@@ -194,48 +197,70 @@ onMounted(focusScan)
             <UiStatusBadge kind="internal" :value="result.internal_status" />
           </div>
 
+          <!-- Tên sản phẩm (ưu tiên product_name, fallback tên SKU) -->
+          <p v-if="productName" class="mt-4 text-base font-semibold leading-snug text-foreground">
+            {{ productName }}
+          </p>
+
+          <!-- Thông tin cấu trúc để QC đối chiếu với hàng thực tế.
+               Các trường quan trọng luôn hiển thị ngay, bỏ qua trường trống. -->
           <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            <div>
-              <dt class="text-xs text-muted-foreground">SKU</dt>
-              <dd class="font-medium text-foreground">{{ result.sku_code }}</dd>
+            <div v-if="result.sku_code">
+              <dt class="label">SKU</dt>
+              <dd class="font-mono font-medium text-foreground">{{ result.sku_code }}</dd>
             </div>
-            <div>
-              <dt class="text-xs text-muted-foreground">Loại VL</dt>
-              <dd class="text-foreground">{{ result.material_name || '—' }}</dd>
+            <div v-if="result.variant_code">
+              <dt class="label">Phân loại</dt>
+              <dd class="font-medium text-foreground">{{ result.variant_code }}</dd>
             </div>
-            <div>
-              <dt class="text-xs text-muted-foreground">Sản phẩm</dt>
-              <dd class="text-foreground">{{ result.product_name || '—' }}</dd>
+            <div v-if="result.quantity != null">
+              <dt class="label">Số lượng</dt>
+              <dd class="font-medium text-foreground">{{ result.quantity }}</dd>
             </div>
-            <div>
-              <dt class="text-xs text-muted-foreground">Số lượng</dt>
-              <dd class="font-medium text-foreground">{{ result.quantity ?? '—' }}</dd>
+            <div v-if="result.material_name">
+              <dt class="label">Loại VL</dt>
+              <dd class="text-foreground">{{ result.material_name }}</dd>
             </div>
-            <div>
-              <dt class="text-xs text-muted-foreground">Mã ảnh</dt>
-              <dd class="text-foreground">{{ result.image_code || '—' }}</dd>
-            </div>
-            <div>
-              <dt class="text-xs text-muted-foreground">File in / cắt</dt>
-              <dd class="flex items-center gap-3 text-xs">
-                <a v-if="result.print_file_url" :href="result.print_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> In</a>
-                <span v-else class="text-muted-foreground">In ✗</span>
-                <a v-if="result.cut_file_url" :href="result.cut_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Cắt</a>
-                <span v-else class="text-muted-foreground">Cắt ✗</span>
-                <a v-if="result.design_url" :href="result.design_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Link ảnh</a>
-              </dd>
-            </div>
-            <div v-if="result.qc_description" class="col-span-2">
-              <dt class="text-xs text-muted-foreground">Mô tả SP để QC</dt>
-              <dd class="rounded-md bg-muted px-3 py-2 text-sm text-foreground">{{ result.qc_description }}</dd>
-            </div>
-            <div class="col-span-2">
-              <dt class="text-xs text-muted-foreground">Nội dung khắc (engrave)</dt>
-              <dd class="rounded-md bg-amber-50 px-3 py-2 font-mono text-base font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                {{ result.engrave_text || '— (không có) —' }}
-              </dd>
+            <div v-if="result.image_code">
+              <dt class="label">Mã ảnh</dt>
+              <dd class="font-mono text-foreground">{{ result.image_code }}</dd>
             </div>
           </dl>
+
+          <!-- Nội dung khắc — nổi bật để QC đối chiếu chính xác từng ký tự -->
+          <div v-if="result.engrave_text" class="mt-3">
+            <p class="label">Nội dung khắc</p>
+            <p class="rounded-md bg-amber-50 px-3 py-2 font-mono text-base font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200 whitespace-pre-line break-words">
+              {{ result.engrave_text }}
+            </p>
+          </div>
+
+          <!-- Mô tả có thể dài → gói trong details để không phá layout.
+               Mô tả QC mở sẵn (thao tác chính), mô tả catalog thu gọn. -->
+          <details v-if="result.qc_description" class="mt-3 rounded-md border border-border bg-muted px-3 py-2" open>
+            <summary class="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+              Mô tả SP để QC
+            </summary>
+            <p class="mt-2 whitespace-pre-line break-words text-sm text-foreground">{{ result.qc_description }}</p>
+          </details>
+          <details v-if="result.sku_description" class="mt-3 rounded-md border border-border bg-muted px-3 py-2">
+            <summary class="cursor-pointer select-none text-xs font-medium text-muted-foreground">
+              Mô tả sản phẩm (catalog)
+            </summary>
+            <p class="mt-2 whitespace-pre-line break-words text-sm text-foreground">{{ result.sku_description }}</p>
+          </details>
+
+          <!-- File in/cắt & link design — hiển thị link nào có, bỏ qua link trống -->
+          <div class="mt-4 border-t border-border pt-3">
+            <p class="label">File &amp; Design</p>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <a v-if="result.design_url" :href="result.design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Design (mặt trước)</a>
+              <a v-if="result.back_design_url" :href="result.back_design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Design (mặt sau)</a>
+              <UiMockupLink :url="result.mockup_url" small label="Mockup" />
+              <a v-if="result.print_file_url" :href="result.print_file_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> File in</a>
+              <a v-if="result.cut_file_url" :href="result.cut_file_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> File cắt</a>
+            </div>
+          </div>
 
           <div v-if="parts.length" class="mt-4 border-t border-border pt-3">
             <p class="mb-2 text-xs font-medium text-muted-foreground">

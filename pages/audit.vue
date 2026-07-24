@@ -4,6 +4,7 @@ import type { AuditLog } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDateTime } from '~/utils/format'
 import { exportCsv } from '~/utils/csv'
+import { auditActionLabel, auditActionClasses, auditEntityLabel, auditSummary } from '~/utils/audit'
 import { useToastStore } from '~/stores/toast'
 
 // Audit log viewer (Wireframe: Users/Audit). Read-only trail of mutating actions
@@ -24,17 +25,36 @@ function changePageSize(size: number) {
   reload()
 }
 
+// Every row is projected to its plain-Vietnamese form once, then filtered — so
+// the quick filter matches what the reader actually sees ("kiểm hàng") as well
+// as the raw code underneath ("QC_FAIL"), which is what devs paste from logs.
+interface AuditRow extends AuditLog {
+  actionText: string
+  actionClasses: string
+  entityText: string
+  summaryText: string
+}
+
+const rows = computed<AuditRow[]>(() =>
+  (data.value ?? []).map((l) => ({
+    ...l,
+    actionText: auditActionLabel(l.action),
+    actionClasses: auditActionClasses(l.action),
+    entityText: auditEntityLabel(l.entity_type, l.entity_id),
+    summaryText: auditSummary(l.summary),
+  })),
+)
+
 const query = ref('')
 const logs = computed(() => {
-  const all = data.value ?? []
+  const all = rows.value
   const q = query.value.trim().toLowerCase()
   if (!q) return all
-  return all.filter(
-    (l) =>
-      l.action.toLowerCase().includes(q) ||
-      l.actor_email.toLowerCase().includes(q) ||
-      (l.summary ?? '').toLowerCase().includes(q) ||
-      (l.entity_type ?? '').toLowerCase().includes(q),
+  return all.filter((l) =>
+    [l.actionText, l.action, l.actor_email, l.summaryText, l.summary ?? '', l.entityText]
+      .join(' ')
+      .toLowerCase()
+      .includes(q),
   )
 })
 
@@ -47,27 +67,20 @@ function exportLogs() {
   }
   exportCsv(`audit-logs-${new Date().toISOString().slice(0, 10)}`, rows, [
     { label: 'Thời gian', value: (l) => formatDateTime(l.created_at) },
-    { label: 'Hành động', value: 'action' },
+    { label: 'Hành động', value: 'actionText' },
     { label: 'Người thực hiện', value: 'actor_email' },
-    { label: 'Đối tượng', value: (l) => (l.entity_type ? `${l.entity_type}${l.entity_id ? ' #' + l.entity_id : ''}` : '') },
-    { label: 'Tóm tắt', value: 'summary' },
+    { label: 'Đối tượng', value: 'entityText' },
+    { label: 'Tóm tắt', value: 'summaryText' },
+    // Raw code kept last so a support ticket can still quote the exact action.
+    { label: 'Mã hệ thống', value: 'action' },
   ])
   toast.success(`Đã xuất ${rows.length} dòng CSV.`)
-}
-
-// Colour the action verb so create/update/delete read at a glance.
-function actionClass(action: string): string {
-  const a = action.toLowerCase()
-  if (a.includes('create') || a.includes('login')) return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-  if (a.includes('delete') || a.includes('fail')) return 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300'
-  if (a.includes('update') || a.includes('status') || a.includes('patch')) return 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
-  return 'bg-muted text-foreground'
 }
 </script>
 
 <template>
   <div>
-    <PageHeader title="Audit Logs" subtitle="Nhật ký các thao tác thay đổi dữ liệu trong hệ thống">
+    <PageHeader title="Nhật ký hoạt động" subtitle="Ai đã làm gì, lúc nào — ghi lại mọi thay đổi trong hệ thống">
       <template #actions>
         <button class="btn-secondary" :disabled="!logs.length" @click="exportLogs">
           <UiIcon name="upload" :size="16" /> Xuất CSV
@@ -84,7 +97,7 @@ function actionClass(action: string): string {
         <input
           v-model="query"
           class="input pl-9"
-          placeholder="Lọc nhanh trong trang hiện tại (hành động, email, đối tượng…)"
+          placeholder="Tìm nhanh trong trang này (việc đã làm, người làm, mã đơn…)"
         />
       </div>
     </div>
@@ -94,7 +107,7 @@ function actionClass(action: string): string {
         :loading="loading"
         :error="error"
         :empty="!loading && !error && logs.length === 0"
-        empty-text="Không có bản ghi audit nào."
+        empty-text="Chưa có hoạt động nào được ghi lại."
         skeleton
         :skeleton-rows="10"
         @retry="reload"
@@ -114,16 +127,18 @@ function actionClass(action: string): string {
               <tr v-for="(l, idx) in logs" :key="idx" class="hover:bg-muted">
                 <td class="table-td whitespace-nowrap text-xs text-muted-foreground">{{ formatDateTime(l.created_at) }}</td>
                 <td class="table-td">
-                  <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="actionClass(l.action)">
-                    {{ l.action }}
+                  <!-- Plain-Vietnamese verb; the raw code stays on hover for support. -->
+                  <span
+                    class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+                    :class="l.actionClasses"
+                    :title="l.action"
+                  >
+                    {{ l.actionText }}
                   </span>
                 </td>
                 <td class="table-td text-foreground">{{ l.actor_email }}</td>
-                <td class="table-td text-xs text-muted-foreground">
-                  <span v-if="l.entity_type">{{ l.entity_type }}<span v-if="l.entity_id"> #{{ l.entity_id }}</span></span>
-                  <span v-else>—</span>
-                </td>
-                <td class="table-td max-w-md truncate text-foreground">{{ l.summary }}</td>
+                <td class="table-td whitespace-nowrap text-xs text-muted-foreground">{{ l.entityText }}</td>
+                <td class="table-td max-w-md truncate text-foreground" :title="l.summaryText">{{ l.summaryText }}</td>
               </tr>
             </tbody>
           </table>

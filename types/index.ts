@@ -56,6 +56,24 @@ export type PackageStatus = 'OPEN' | 'PACKED'
 
 export type HandoffStatus = 'HANDED_OFF' | 'SHIPPED'
 
+/** Shipment tracking status on an order (manual entry today, provider-sync later). */
+export type TrackingStatus =
+  | 'NONE'
+  | 'PENDING'
+  | 'PRE_TRANSIT'
+  | 'IN_TRANSIT'
+  | 'DELIVERED'
+  | 'UNDELIVERED'
+  | 'EXCEPTION'
+  | 'EXPIRED'
+  | 'CANCELLED'
+
+/** Which physical side of a product a design belongs to. */
+export type DesignSide = 'SINGLE' | 'FRONT' | 'BACK'
+
+/** Kind of production link attached to a whole batch. */
+export type BatchLinkKind = 'PRINT' | 'CUT'
+
 // ---- API envelope ----------------------------------------------------------
 
 export interface ApiMeta {
@@ -181,6 +199,7 @@ export interface OrderItem {
   print_file_url?: string
   cut_file_url?: string
   design_url?: string
+  back_design_url?: string
   // Production-ready fields (legacy production-template columns).
   image_code?: string
   qc_description?: string
@@ -232,6 +251,15 @@ export interface Order {
   // Computed by list endpoints: true when this StoreOrderID is shared by more than
   // one order for the same seller (a repeated store order id, not just many items).
   store_order_dup?: boolean
+  // "STT trong ngày": stable per-day order number assigned at creation (business tz).
+  order_date?: string
+  daily_seq?: number
+  // Tracking (manual entry today; provider sync later).
+  tracking_number?: string
+  tracking_status?: TrackingStatus
+  tracking_carrier?: string
+  tracking_url?: string
+  tracking_updated_at?: string | null
   created_at: string
   items?: OrderItem[]
   seller?: Seller
@@ -250,6 +278,8 @@ export interface ImportRow {
   SKU?: string
   'Mã ảnh'?: string
   Design?: string
+  'Front Design'?: string
+  'Back Design'?: string
   Mockup?: string
   EngraveText?: string
   ShippingName?: string
@@ -494,6 +524,18 @@ export interface Batch {
   child_count?: number
   // Danh sách batch con (batch mẹ preload ở endpoint chi tiết).
   child_batches?: Batch[]
+  // Print/Cut links attached to the whole batch (entered once, shared by designs).
+  links?: BatchLink[]
+}
+
+export interface BatchLink {
+  id: number
+  batch_id: number
+  kind: BatchLinkKind
+  url: string
+  updated_by_id?: number | null
+  updated_by?: User | null
+  link_updated_at?: string
 }
 
 export interface CreateBatchResult {
@@ -519,12 +561,16 @@ export interface QcScanResult {
   store_order_id: string
   sku_code: string
   product_name: string
+  variant_code?: string
   quantity?: number
   material_name?: string
   qc_description?: string
+  sku_description?: string
+  sku_product_name?: string
   image_code?: string
   engrave_text?: string
   design_url?: string
+  back_design_url?: string
   mockup_url: string
   print_file_url?: string
   cut_file_url?: string

@@ -358,7 +358,7 @@ async function remove(n: Note) {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Hạn xử lý</label>
-            <input v-model="form.due_date" type="date" class="input" />
+            <UiDatePicker v-model="form.due_date" aria-label="Hạn xử lý" />
           </div>
           <div class="flex items-end">
             <label class="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2">

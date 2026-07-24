@@ -8,6 +8,10 @@ export default defineNuxtConfig({
   // HMR/reload rõ rệt. Bật lại (enabled: true) khi cần debug bằng devtools.
   devtools: { enabled: false },
 
+  // Port dev cố định 3001 (backend giữ 8081). Đặt ở đây — không chỉ ở cờ
+  // --port trong package.json — để `nuxt dev` chạy trần cũng ra đúng port.
+  devServer: { port: 3001 },
+
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 
   css: ['~/assets/css/main.css'],

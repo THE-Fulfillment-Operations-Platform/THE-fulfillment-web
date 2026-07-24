@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPatch, apiDownload } from '../http'
-import type { Batch, CreateBatchResult, InternalStatus, Priority, ListParams } from '~/types'
+import type { Batch, BatchLink, BatchLinkKind, CreateBatchResult, InternalStatus, Priority, ListParams } from '~/types'
 
 export interface BatchListParams extends ListParams {
   material_id?: number
@@ -26,6 +26,9 @@ export const batchesApi = {
   create: (body: CreateBatchInput) => apiPost<CreateBatchResult>('/api/batches', body),
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),
+  // Attach/replace the batch's print or cut link (entered once, shared by designs).
+  setLink: (id: number | string, kind: BatchLinkKind, url: string) =>
+    apiPatch<BatchLink>(`/api/batches/${id}/links`, { kind, url }),
   // Download the legacy-compatible production template as a real .xlsx workbook
   // (columns split cleanly in Excel on any locale, unlike a comma CSV).
   exportProductionTemplate: (id: number | string, code?: string) =>
@@ -33,10 +36,17 @@ export const batchesApi = {
       `/api/batches/${id}/production-template.xlsx`,
       `production-${(code ?? String(id)).replace('#', '')}.xlsx`,
     ),
-  // Download all asset files for the batch as a ZIP bundle.
+  // Download all asset files for the batch as a ZIP bundle (design+mockup+print+cut).
   downloadAssetsZip: (id: number | string, code?: string) =>
     apiDownload(
       `/api/batches/${id}/assets.zip`,
       `batch-${(code ?? String(id)).replace('#', '')}-assets.zip`,
+    ),
+  // Download ONLY the original design files (front/back, no mockup) named
+  // STT_SKU_QUANTITY[_SIDE].EXT, bundled as Batch_<code>.zip.
+  downloadDesignZip: (id: number | string, code?: string) =>
+    apiDownload(
+      `/api/batches/${id}/assets.zip?assets=design`,
+      `Batch_${(code ?? String(id)).replace('#', '')}.zip`,
     ),
 }
