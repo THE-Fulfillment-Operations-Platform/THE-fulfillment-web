@@ -65,5 +65,15 @@ async function submit() {
         {{ submitting ? 'Đang đăng nhập…' : 'Đăng nhập' }}
       </button>
     </form>
+
+    <!-- Lối vào hướng dẫn cài app: đặt ở màn đăng nhập vì đây là trang mọi nhân
+         viên đều nhìn thấy khi mở hệ thống lần đầu trên điện thoại. -->
+    <NuxtLink
+      to="/install"
+      class="mt-5 flex items-center justify-center gap-2 border-t border-border pt-4 text-sm text-primary hover:underline"
+    >
+      <UiIcon name="download" :size="16" />
+      Cài app vào màn hình chính điện thoại
+    </NuxtLink>
   </div>
 </template>

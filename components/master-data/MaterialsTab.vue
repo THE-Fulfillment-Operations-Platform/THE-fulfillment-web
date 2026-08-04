@@ -4,11 +4,11 @@ import type { MaterialInput } from '~/services/api'
 import type { Material } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
-import { mapPool } from '~/utils/async'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
+import { useClientPager } from '~/composables/useClientPager'
 import MaterialQuotaImport from './MaterialQuotaImport.vue'
 
 const props = defineProps<{ materials: Material[]; loading?: boolean }>()
@@ -32,6 +32,10 @@ const filtered = computed(() => {
       (m.description ?? '').toLowerCase().includes(q),
   )
 })
+
+// Bảng master data có thể vài trăm dòng — phân trang phía client (dữ liệu đã tải
+// sẵn) kèm ô chọn số dòng, giống các màn phân trang phía server.
+const { paged, meta, pageSize, setPage, setPageSize } = useClientPager(() => filtered.value)
 
 const open = ref(false)
 const importOpen = ref(false)
@@ -118,12 +122,26 @@ async function bulkRemove() {
     return
   bulkBusy.value = true
   try {
-    const { ok, fail } = await mapPool(ids, 5, (id) => materialsApi.remove(id))
-    if (fail === 0) toast.success(`Đã xoá ${ok} nguyên vật liệu`)
-    else if (ok === 0) toast.error(`Không xoá được mục nào (${fail} lỗi — có thể đang được SKU sử dụng)`)
-    else toast.error(`Đã xoá ${ok}, ${fail} mục lỗi (có thể đang được SKU sử dụng)`)
+    // MỘT request cho cả lô: server xoá bằng vài câu lệnh theo lô. Gửi từng id một
+    // (kiểu cũ) tốn 1 round-trip + 3 câu SQL cho mỗi NVL — 200 dòng là chờ hàng phút.
+    const { data } = await materialsApi.bulkRemove(ids)
+    const ok = data?.deleted_ids.length ?? 0
+    const skipped = data?.skipped ?? []
+    if (!skipped.length) toast.success(`Đã xoá ${ok} nguyên vật liệu`)
+    else {
+      // Nêu đúng lý do server trả về (đang được SKU dùng / thuộc batch), kèm vài mã
+      // cụ thể để còn biết đường xử lý.
+      const reasons = [...new Set(skipped.map((s) => s.reason))].join(', ')
+      const names = skipped.slice(0, 3).map((s) => s.code || s.id).join(', ')
+      const more = skipped.length > 3 ? `… +${skipped.length - 3}` : ''
+      const detail = `${skipped.length} mục bỏ qua (${reasons}): ${names}${more}`
+      if (ok) toast.error(`Đã xoá ${ok}, ${detail}`)
+      else toast.error(`Không xoá được mục nào — ${detail}`)
+    }
     clearSelection()
     emit('changed')
+  } catch (e) {
+    toast.error(errorMessage(e))
   } finally {
     bulkBusy.value = false
   }
@@ -201,7 +219,7 @@ async function remove(m: Material) {
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="m in filtered" :key="m.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(m.id) ? 'bg-accent/40' : ''">
+            <tr v-for="m in paged" :key="m.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(m.id) ? 'bg-accent/40' : ''">
               <td v-if="canDelete" class="table-td">
                 <input
                   type="checkbox"
@@ -236,6 +254,14 @@ async function remove(m: Material) {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="px-4">
+        <UiPagination
+          :meta="meta"
+          :page-size="pageSize"
+          @change="setPage"
+          @update:page-size="setPageSize"
+        />
       </div>
     </UiStateBlock>
 

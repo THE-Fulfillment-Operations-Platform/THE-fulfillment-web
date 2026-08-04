@@ -15,6 +15,22 @@ export function itemStoreOrderDup(it: OrderItem): boolean {
   return it.store_order_dup ?? it.order?.store_order_dup ?? false
 }
 
+/** Dòng đã bị huỷ hẳn: seller tự huỷ, hoặc Ops đã duyệt yêu cầu huỷ.
+ *  REQUESTED chưa tính — hàng vẫn đang chạy cho tới khi có người duyệt. */
+export function itemCancelled(it: OrderItem): boolean {
+  return it.cancellation_status === 'SELLER_CANCELLED' || it.cancellation_status === 'APPROVED'
+}
+
+/** Các dòng còn sống của một đơn (bỏ dòng đã huỷ). */
+export function liveItems(items?: OrderItem[]): OrderItem[] {
+  return (items ?? []).filter((it) => !itemCancelled(it))
+}
+
+/** Tổng số sản phẩm thực sự nằm trong kiện — cộng quantity của các dòng còn sống. */
+export function liveItemQty(items?: OrderItem[]): number {
+  return liveItems(items).reduce((sum, it) => sum + (it.quantity ?? 0), 0)
+}
+
 export function itemMaterial(it: OrderItem): string {
   if (it.material_name) return it.material_name
   if (it.material_code) return it.material_code

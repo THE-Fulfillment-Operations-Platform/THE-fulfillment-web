@@ -11,6 +11,22 @@ export interface OrderListParams extends ListParams {
   date_to?: string
   sort?: string // sku | created_at | quantity | stt
   order?: 'asc' | 'desc'
+  /**
+   * Customer-support lookup. `search` is the one-box form: it matches the store
+   * order id, our internal code, the tracking number and the recipient's name,
+   * phone or email. The narrower fields below are for when the operator knows
+   * which identifier they are holding.
+   */
+  search?: string
+  internal_code?: string
+  tracking_number?: string
+  shipping_name?: string
+  shipping_phone?: string
+  tracking_status?: TrackingStatus
+  /** false = the CS work queue: orders still waiting for a tracking number. */
+  has_tracking?: boolean
+  /** true = đơn đã gửi cho THE — tập của màn Hành trình đơn hàng. */
+  handed_over?: boolean
 }
 
 export interface DirectOrderInput {
@@ -65,7 +81,6 @@ export interface UpdateOrderInput {
 export interface UpdateTrackingInput {
   tracking_number?: string
   tracking_status?: TrackingStatus
-  tracking_carrier?: string
   tracking_url?: string
 }
 

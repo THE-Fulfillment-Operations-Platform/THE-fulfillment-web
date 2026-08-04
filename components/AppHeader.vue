@@ -2,9 +2,13 @@
 import { useAuthStore } from '~/stores/auth'
 import { ROLE_LABEL } from '~/utils/enums'
 import { useSidebar } from '~/composables/useSidebar'
+import { usePwaInstall } from '~/composables/usePwaInstall'
 
 const auth = useAuthStore()
 const { toggle } = useSidebar()
+
+// Lối tắt tới hướng dẫn cài app — ẩn khi đang chạy trong app đã cài.
+const { installed } = usePwaInstall()
 </script>
 
 <template>
@@ -29,6 +33,15 @@ const { toggle } = useSidebar()
         <p class="truncate text-sm font-medium text-foreground">{{ auth.fullName }}</p>
         <p class="truncate text-xs text-muted-foreground">{{ auth.role ? ROLE_LABEL[auth.role] : '' }}</p>
       </div>
+      <NuxtLink
+        v-if="!installed"
+        to="/install"
+        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
+        title="Cài app vào màn hình chính"
+        aria-label="Cài app vào màn hình chính"
+      >
+        <UiIcon name="download" :size="18" />
+      </NuxtLink>
       <ThemeToggle />
       <button
         class="btn-secondary h-10 px-2.5 sm:h-auto sm:py-1.5"

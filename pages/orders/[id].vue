@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { ordersApi } from '~/services/api'
+import { ordersApi, trackingApi } from '~/services/api'
 import type { UpdateOrderInput, EditOrderItemInput, UpdateTrackingInput } from '~/services/api'
-import type { Order, OrderItem, Role, TrackingStatus } from '~/types'
+import type { Order, OrderItem, OrderTrackingEvent, Role, TrackingStatus } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
-import { TRACKING_STATUS_OPTIONS } from '~/utils/enums'
+import {
+  TRACKING_STATUS_OPTIONS,
+  cancelStageLabel,
+  isHandedOver,
+  orderStatusBadge,
+  orderInternalStatus,
+} from '~/utils/enums'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -50,21 +57,27 @@ const timeline = computed(() => {
   ]
 })
 
-const shippingRows = computed(() => {
+// Trường lõi của người nhận LUÔN hiện, trống thì '—'. Lọc bỏ trường trống như
+// bản cũ khiến ops không phân biệt được "seller không up" với "màn này không
+// hiện" — mà thiếu Địa chỉ 2 / ZIP là đơn bị hãng trả về. IOSS thì ngược lại,
+// chỉ đơn EU mới có nên chỉ hiện khi có.
+const shippingRows = computed<[string, string][]>(() => {
   const o = order.value
   if (!o) return []
-  return [
-    ['Người nhận', o.shipping_name],
-    ['Địa chỉ 1', o.shipping_address1],
-    ['Địa chỉ 2', o.shipping_address2],
-    ['Thành phố', o.shipping_city],
-    ['Tỉnh/Bang', o.shipping_province],
-    ['Mã bưu chính', o.shipping_zip],
-    ['Quốc gia', o.shipping_country],
-    ['Điện thoại', o.shipping_phone],
-    ['Email', o.shipping_email],
-    ['IOSS', o.ioss],
-  ].filter(([, v]) => v) as [string, string][]
+  const dash = (v?: string) => (v ?? '').trim() || '—'
+  const rows: [string, string][] = [
+    ['Người nhận', dash(o.shipping_name)],
+    ['Địa chỉ 1', dash(o.shipping_address1)],
+    ['Địa chỉ 2', dash(o.shipping_address2)],
+    ['Thành phố', dash(o.shipping_city)],
+    ['Tỉnh/Bang', dash(o.shipping_province)],
+    ['Mã bưu chính', dash(o.shipping_zip)],
+    ['Quốc gia', dash(o.shipping_country)],
+    ['Điện thoại', dash(o.shipping_phone)],
+    ['Email', dash(o.shipping_email)],
+  ]
+  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
+  return rows
 })
 
 // ---- Role gating (UX only — the backend enforces the real guard) -----------
@@ -180,6 +193,17 @@ const cancelOpen = ref(false)
 const cancelReason = ref('')
 const cancelling = ref(false)
 
+// Huỷ đơn đã có công sản xuất thì khách vẫn bị tính tiền — nói ra trong hộp
+// thoại, vì người bấm ở đây là vận hành chứ không phải người trả tiền. Cùng một
+// luật với bên seller; BE mới là nơi chốt con số ghi vào đơn.
+const cancelWillBill = computed(() => {
+  const o = order.value
+  if (!o) return false
+  // Đã đóng gói / bàn giao / gửi đi thì hàng chắc chắn đã làm xong.
+  if (o.seller_status !== 'PRODUCTION') return true
+  return items.value.some((it) => it.internal_status !== 'PENDING' || (it.batch_items?.length ?? 0) > 0)
+})
+
 function openCancel() {
   cancelReason.value = ''
   cancelOpen.value = true
@@ -200,6 +224,9 @@ async function submitCancel() {
     toast.success('Đã huỷ đơn')
     cancelOpen.value = false
     await reload()
+    // Huỷ một đơn đang chờ duyệt là bớt một việc trong hàng chờ; nếu đơn đó còn
+    // yêu cầu huỷ chưa xử lý thì bớt cả ở badge kia.
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -223,6 +250,7 @@ async function onDelete() {
   try {
     await ordersApi.remove(o.id)
     toast.success('Đã xoá đơn')
+    void refreshActionCounts()
     await navigateTo('/orders')
   } catch (e) {
     toast.error(errorMessage(e))
@@ -237,14 +265,15 @@ const showTracking = computed(
 const trackingStatusOptions = TRACKING_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 const trackingOpen = ref(false)
 const savingTracking = ref(false)
+// Không có ô "đơn vị vận chuyển": THE là đơn vị vận chuyển đứng tên với seller,
+// nên tên hãng thật không được nhập ở đâu cả — nhập được là sẽ có ngày lọt ra
+// màn seller.
 const trackingForm = reactive<{
   tracking_number: string
-  tracking_carrier: string
   tracking_status: TrackingStatus
   tracking_url: string
 }>({
   tracking_number: '',
-  tracking_carrier: '',
   tracking_status: 'NONE',
   tracking_url: '',
 })
@@ -253,7 +282,6 @@ function openTracking() {
   const o = order.value
   if (!o) return
   trackingForm.tracking_number = o.tracking_number ?? ''
-  trackingForm.tracking_carrier = o.tracking_carrier ?? ''
   trackingForm.tracking_status = o.tracking_status ?? 'NONE'
   trackingForm.tracking_url = o.tracking_url ?? ''
   trackingOpen.value = true
@@ -267,7 +295,6 @@ async function submitTracking() {
   try {
     const body: UpdateTrackingInput = {
       tracking_number: trackingForm.tracking_number,
-      tracking_carrier: trackingForm.tracking_carrier,
       tracking_status: trackingForm.tracking_status,
       tracking_url: trackingForm.tracking_url,
     }
@@ -275,10 +302,64 @@ async function submitTracking() {
     toast.success('Đã cập nhật tracking')
     trackingOpen.value = false
     await reload()
+    await loadJourney()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
     savingTracking.value = false
+  }
+}
+
+// ---- Shipment journey (24hTrack) -------------------------------------------
+// The journey is stored on our side by the provider sync, so opening an order
+// never calls the provider — only the explicit "Đồng bộ" button does.
+const journey = ref<OrderTrackingEvent[]>([])
+const journeyEnabled = ref(false)
+const journeyLoading = ref(false)
+const syncingTracking = ref(false)
+
+// Hành trình chỉ bắt đầu sau khi kiện hàng được bàn giao cho THE (màn Đóng gói).
+// Trước đó kiện chưa tồn tại với hãng vận chuyển nên không có gì để tra.
+const handedOver = computed(() => isHandedOver(order.value?.seller_status))
+
+// Trạng thái hiển thị ở header, theo luật chung (xem orderStatusBadge). Đây là
+// màn NỘI BỘ nên có truyền khâu sản xuất: người trong xưởng đọc "Đã cắt", còn
+// seller mở đơn đó chỉ đọc "Đang sản xuất". Từ lúc bàn giao trở đi hai bên nhìn
+// thấy y hệt nhau.
+const headerStatus = computed(() =>
+  orderStatusBadge(order.value ?? {}, orderInternalStatus(items.value)),
+)
+
+async function loadJourney() {
+  journeyLoading.value = true
+  try {
+    const { data } = await trackingApi.events(id)
+    journey.value = data?.events ?? []
+    journeyEnabled.value = !!data?.enabled
+  } catch {
+    // A missing journey must never break the order screen; the tracking card
+    // still shows the status we already hold.
+    journey.value = []
+  } finally {
+    journeyLoading.value = false
+  }
+}
+onMounted(loadJourney)
+
+// Pulls this one order from the provider. For an order with no tracking number
+// it also asks 24hTrack whether a parcel is registered under its store order id.
+async function syncTracking() {
+  if (syncingTracking.value) return
+  syncingTracking.value = true
+  try {
+    await trackingApi.syncOrder(id)
+    await reload()
+    await loadJourney()
+    toast.success('Đã đồng bộ với 24hTrack')
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    syncingTracking.value = false
   }
 }
 </script>
@@ -311,8 +392,25 @@ async function submitTracking() {
             <div class="flex flex-col items-end gap-1">
               <UiStatusBadge v-if="order.review_status && order.review_status !== 'APPROVED'" kind="review" :value="order.review_status" />
               <UiStatusBadge v-if="order.cancellation_status === 'REQUESTED'" kind="cancellation" :value="order.cancellation_status" />
-              <!-- Production status is only meaningful once approved. -->
-              <UiStatusBadge v-if="inProduction" kind="seller" :value="order.seller_status" />
+              <!-- Đơn huỷ mà vẫn phải xuất hoá đơn: dán ngay cạnh trạng thái, kèm
+                   khâu bị huỷ, để kế toán không phải tra lại lịch sử. -->
+              <span
+                v-if="order.cancel_billable"
+                class="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                title="Đơn bị huỷ sau khi đã sản xuất — vẫn tính tiền khách"
+              >
+                Huỷ · vẫn tính tiền
+                <span class="font-normal opacity-80">({{ cancelStageLabel(order.cancel_stage) }})</span>
+              </span>
+              <!-- Production status is only meaningful once approved. Đi qua
+                   orderStatusBadge nên khi kiện đã lên đường, badge này nói
+                   đúng chỗ kiện đang đứng ("Đang vận chuyển") thay vì dừng ở
+                   "Đã gửi đi" trong khi khối Tracking ngay dưới nói khác. -->
+              <UiStatusBadge
+                v-if="inProduction"
+                :kind="headerStatus.kind"
+                :value="headerStatus.value"
+              />
             </div>
           </div>
 
@@ -456,17 +554,42 @@ async function submitTracking() {
             <div class="card p-4">
               <div class="mb-3 flex items-center justify-between gap-2">
                 <h3 class="text-sm font-semibold text-foreground">Vận chuyển / Tracking</h3>
-                <button
-                  v-if="canEditTracking"
-                  class="text-xs font-medium text-primary hover:underline"
-                  @click="openTracking"
-                >
-                  Cập nhật
-                </button>
+                <div class="flex items-center gap-3">
+                  <button
+                    v-if="canEditTracking && journeyEnabled"
+                    class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                    :disabled="syncingTracking || !handedOver"
+                    :title="
+                      handedOver
+                        ? 'Lấy trạng thái và hành trình mới nhất'
+                        : 'Đơn chưa bàn giao cho THE nên chưa có hành trình'
+                    "
+                    @click="syncTracking"
+                  >
+                    <UiSpinner v-if="syncingTracking" :size="12" />
+                    Tra tracking
+                  </button>
+                  <button
+                    v-if="canEditTracking"
+                    class="text-xs font-medium text-primary hover:underline"
+                    @click="openTracking"
+                  >
+                    Cập nhật
+                  </button>
+                </div>
               </div>
               <template v-if="showTracking">
                 <dl class="space-y-2 text-sm">
-                  <div class="flex items-center justify-between gap-3">
+                  <!-- Chỉ hiện khi badge ở header ĐANG KHÔNG nói chính điều này.
+                       Đơn bình thường: header đã là "Đang vận chuyển", lặp lại ở
+                       đây chỉ khiến người đọc tưởng có hai trạng thái. Đơn bị
+                       huỷ/từ chối: header bị trạng thái duyệt chiếm chỗ, lúc đó
+                       dòng này là nơi DUY NHẤT nói kiện hàng đang ở đâu — bỏ hẳn
+                       là mất dấu một kiện vẫn đang bay. -->
+                  <div
+                    v-if="headerStatus.kind !== 'tracking'"
+                    class="flex items-center justify-between gap-3"
+                  >
                     <dt class="shrink-0 text-muted-foreground">Trạng thái</dt>
                     <dd><UiStatusBadge kind="tracking" :value="order.tracking_status" /></dd>
                   </div>
@@ -474,9 +597,13 @@ async function submitTracking() {
                     <dt class="shrink-0 text-muted-foreground">Mã vận đơn</dt>
                     <dd class="text-right font-mono font-medium text-foreground">{{ order.tracking_number }}</dd>
                   </div>
-                  <div v-if="order.tracking_carrier" class="flex justify-between gap-3">
-                    <dt class="shrink-0 text-muted-foreground">Đơn vị</dt>
-                    <dd class="text-right font-medium text-foreground">{{ order.tracking_carrier }}</dd>
+                  <div v-if="order.tracking_detail" class="flex justify-between gap-3">
+                    <dt class="shrink-0 text-muted-foreground">Chi tiết</dt>
+                    <dd class="text-right text-foreground">{{ order.tracking_detail }}</dd>
+                  </div>
+                  <div v-if="order.tracking_location" class="flex justify-between gap-3">
+                    <dt class="shrink-0 text-muted-foreground">Vị trí</dt>
+                    <dd class="text-right text-foreground">{{ order.tracking_location }}</dd>
                   </div>
                 </dl>
                 <a
@@ -491,8 +618,66 @@ async function submitTracking() {
                 <p v-if="order.tracking_updated_at" class="mt-3 text-xs text-muted-foreground">
                   Cập nhật lúc {{ formatDateTime(order.tracking_updated_at) }}
                 </p>
+                <p v-if="order.tracking_sync_error" class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                  24hTrack: {{ order.tracking_sync_error }}
+                </p>
               </template>
-              <p v-else class="text-sm text-muted-foreground">Chưa có thông tin tracking.</p>
+              <template v-else>
+                <p class="text-sm text-muted-foreground">Chưa có thông tin tracking.</p>
+                <!-- Without a tracking number the sync becomes a lookup: it asks
+                     24hTrack whether a parcel is tagged with this store order id. -->
+                <button
+                  v-if="canEditTracking && journeyEnabled"
+                  class="btn-secondary mt-3 w-full"
+                  :disabled="syncingTracking || !handedOver"
+                  :title="
+                    handedOver
+                      ? 'Tra xem đã có mã vận đơn nào gắn với mã đơn này chưa'
+                      : 'Đơn chưa bàn giao cho THE nên chưa có hành trình'
+                  "
+                  @click="syncTracking"
+                >
+                  <UiSpinner v-if="syncingTracking" :size="16" />
+                  Tra tracking
+                </button>
+                <p v-if="canEditTracking && journeyEnabled && !handedOver" class="mt-2 text-xs text-muted-foreground">
+                  Hành trình bắt đầu được lấy sau khi bàn giao cho THE ở màn Đóng gói.
+                </p>
+              </template>
+            </div>
+
+            <!-- Shipment journey, mirrored from 24hTrack by the periodic sync -->
+            <div v-if="journey.length || journeyLoading" class="card p-4">
+              <h3 class="mb-3 text-sm font-semibold text-foreground">Hành trình đơn hàng</h3>
+              <div v-if="journeyLoading && !journey.length" class="flex justify-center py-4">
+                <UiSpinner :size="20" />
+              </div>
+              <ol v-else class="space-y-3">
+                <li
+                  v-for="(ev, idx) in journey"
+                  :key="ev.id"
+                  class="relative pl-5 text-sm"
+                >
+                  <!-- Dot + connector: the newest scan is the highlighted one. -->
+                  <span
+                    class="absolute left-0 top-1.5 h-2 w-2 rounded-full"
+                    :class="idx === 0 ? 'bg-primary' : 'bg-border'"
+                  />
+                  <span
+                    v-if="idx < journey.length - 1"
+                    class="absolute left-[3px] top-3.5 h-[calc(100%+0.25rem)] w-px bg-border"
+                  />
+                  <p :class="idx === 0 ? 'font-medium text-foreground' : 'text-foreground'">
+                    {{ ev.description || '—' }}
+                  </p>
+                  <p class="mt-0.5 text-xs text-muted-foreground">
+                    <!-- raw_date is shown verbatim: scans report local facility
+                         time with no timezone, so reformatting would invent one. -->
+                    {{ ev.raw_date || (ev.event_at ? formatDateTime(ev.event_at) : '') }}
+                    <span v-if="ev.location"> · {{ ev.location }}</span>
+                  </p>
+                </li>
+              </ol>
             </div>
 
             <NuxtLink
@@ -603,6 +788,18 @@ async function submitTracking() {
         <!-- Cancel order (YC7) -->
         <UiModal v-model="cancelOpen" title="Huỷ đơn">
           <div class="space-y-3">
+            <div
+              v-if="cancelWillBill"
+              class="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
+              <div>
+                <p class="font-semibold">Đơn đã vào sản xuất — huỷ vẫn tính tiền khách</p>
+                <p class="mt-0.5 text-xs text-amber-700/90 dark:text-amber-300/90">
+                  Toàn bộ sản phẩm trong đơn sẽ bị rút khỏi design, batch, QC và đóng gói.
+                </p>
+              </div>
+            </div>
             <p class="text-sm text-muted-foreground">
               Nhập lý do huỷ đơn <span class="font-medium text-foreground">{{ order.internal_code }}</span>. Lý do là bắt buộc.
             </p>
@@ -631,11 +828,9 @@ async function submitTracking() {
               <input v-model="trackingForm.tracking_number" class="input" placeholder="VD: LP123456789VN" />
             </div>
             <div>
-              <label class="label">Đơn vị vận chuyển</label>
-              <input v-model="trackingForm.tracking_carrier" class="input" placeholder="VD: USPS, GHN…" />
-            </div>
-            <div>
-              <label class="label">Link tracking</label>
+              <!-- Link nội bộ, KHÔNG gửi sang màn seller: nó dẫn tới trang của
+                   nhà cung cấp tracking, mở ra là thấy hãng vận chuyển thật. -->
+              <label class="label">Link tracking (nội bộ)</label>
               <input v-model="trackingForm.tracking_url" class="input" placeholder="https://…" />
             </div>
           </div>

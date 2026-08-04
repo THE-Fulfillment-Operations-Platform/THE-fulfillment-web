@@ -22,6 +22,14 @@ function changePage(p: number) {
   reload()
 }
 
+// Đổi số dòng/trang thì phải về trang 1: trang hiện tại có thể không còn tồn tại
+// ở kích thước mới.
+function changePageSize(size: number) {
+  pager.page_size = size
+  pager.page = 1
+  reload()
+}
+
 const open = ref(false)
 const editing = ref<User | null>(null)
 const saving = ref(false)
@@ -164,6 +172,7 @@ const ROLE_BADGE: Record<Role, string> = {
   QC: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   PACKING: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
   SHIPPING: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
+  CS: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
   SELLER: 'bg-muted text-foreground',
 }
 </script>
@@ -233,7 +242,12 @@ const ROLE_BADGE: Record<Role, string> = {
             </tbody>
           </table>
         </div>
-        <UiPagination :meta="meta" @change="changePage" />
+        <UiPagination
+          :meta="meta"
+          :page-size="pager.page_size"
+          @change="changePage"
+          @update:page-size="changePageSize"
+        />
       </UiStateBlock>
     </div>
 

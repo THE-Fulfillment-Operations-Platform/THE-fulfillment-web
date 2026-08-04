@@ -60,6 +60,9 @@ interface ProdRow {
   print_file_url: string
   cut_file_url: string
   status: InternalStatus
+  // Đơn gốc — chỉ dùng cho tem QR (mã đơn của store + tên người nhận hàng).
+  store_order_id: string
+  shipping_name: string
 }
 const prodRows = computed<ProdRow[]>(() =>
   items.value.map((bi) => {
@@ -82,6 +85,10 @@ const prodRows = computed<ProdRow[]>(() =>
       print_file_url: sharedPrintUrl || oi?.print_file_url || bi.print_file_url || '',
       cut_file_url: sharedCutUrl || oi?.cut_file_url || bi.cut_file_url || '',
       status: bi.status,
+      // Batch detail preload kèm order_item.order; hai nhánh sau là dự phòng cho
+      // các shape phẳng (list endpoint / mock) không có object order lồng bên trong.
+      store_order_id: oi?.order?.store_order_id || oi?.store_order_id || bi.store_order_id || '',
+      shipping_name: oi?.order?.shipping_name ?? '',
     }
   }),
 )
@@ -154,15 +161,6 @@ async function exportProduction() {
 
 const HTML_ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 const esc = (s: string | number) => String(s ?? '').replace(/[&<>"']/g, (c) => HTML_ESC[c])
-
-// Google Drive share links (…/file/d/ID/view, open?id=ID, uc?id=ID) don't render
-// in <img>; rewrite to the public thumbnail endpoint so the design preview shows.
-// Other URLs are returned as-is (assumed direct image links).
-function toImageSrc(url: string): string {
-  if (!url) return ''
-  const m = url.match(/\/file\/d\/([\w-]+)/) || url.match(/[?&]id=([\w-]+)/)
-  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w600` : url
-}
 
 const downloadingZip = ref(false)
 async function downloadBatchAssets() {
@@ -303,7 +301,6 @@ async function printLabels() {
         try {
           qr = await QRCode.toDataURL(payload, { margin: 1, width: 240 })
         } catch { /* QR optional — fall through to text-only label */ }
-        const img = toImageSrc(r.design_url)
         return `
           <div class="label">
             <div class="top">
@@ -312,10 +309,13 @@ async function printLabels() {
                 <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
                 <div class="code">${esc(r.internal_code || '—')}</div>
                 <div class="sub">SL: ${esc(r.quantity || '—')} · Ngày: ${esc(labelDate)}</div>
-                <div class="desc">${esc(r.qc_description || '')}</div>
               </div>
             </div>
-            ${img ? `<img class="design" src="${esc(img)}" alt="design" onerror="this.style.display='none'" />` : ''}
+            <div class="info">
+              <div class="row"><span class="key">Order:</span> ${esc(r.store_order_id || '—')}</div>
+              <div class="row"><span class="key">Người nhận:</span> ${esc(r.shipping_name || '—')}</div>
+              ${r.qc_description ? `<div class="desc">${esc(r.qc_description)}</div>` : ''}
+            </div>
           </div>`
       }),
     )
@@ -329,9 +329,12 @@ async function printLabels() {
         .meta { min-width: 0; }
         .sub { font-size: 12px; color: #666; }
         .code { font-size: 20px; font-weight: bold; margin-top: 4px; word-break: break-all; }
+        /* Order + người nhận chạy hết chiều ngang tem (không bị QR ép hẹp) nên tên
+           dài vẫn đọc được; xuống dòng thay vì cắt cụt. */
+        .info { margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 8px; }
+        .row { font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
+        .key { color: #666; }
         .desc { font-size: 11px; color: #888; margin-top: 4px; }
-        .design { display: block; width: 100%; max-height: 180px; object-fit: contain; margin-top: 12px;
-          border-top: 1px dashed #ddd; padding-top: 12px; }
         @media print { .label { border-color: #999; } }
       </style></head>
       <body>${labels.join('')}
@@ -340,7 +343,7 @@ async function printLabels() {
           var printed = false;
           function go() { if (!printed) { printed = true; window.print(); } }
           window.addEventListener('load', go);
-          setTimeout(go, 3000); // fallback if a design image never loads
+          setTimeout(go, 1000); // fallback nếu sự kiện load không bắn (QR là data URL, có sẵn)
         })();
       <\/script></body></html>`
     w.document.open()

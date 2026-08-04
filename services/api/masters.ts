@@ -1,5 +1,13 @@
 import { apiGet, apiPost, apiPut, apiDelete, apiDownload } from '../http'
-import type { Seller, Store, Material, Sku, MaterialImportPreview } from '~/types'
+import type {
+  Seller,
+  Store,
+  Material,
+  Sku,
+  MaterialImportPreview,
+  MaterialDeleteResult,
+  SkuDeleteResult,
+} from '~/types'
 
 // ---- Catalog input payloads ------------------------------------------------
 export interface MaterialInput {
@@ -18,11 +26,12 @@ export interface SkuMaterialInput {
 }
 
 // Một dòng của file import định mức: tên NVL + định mức (null = không giới hạn)
-// + mô tả (tuỳ chọn).
+// + mô tả (tuỳ chọn). row_number giữ lại số dòng trong file để báo lỗi cho đúng.
 export interface MaterialQuotaRowInput {
   material: string
   quota: number | null
   description?: string
+  row_number?: number
 }
 
 export interface SkuInput {
@@ -63,6 +72,11 @@ export const materialsApi = {
   create: (body: MaterialInput) => apiPost<Material>('/api/materials', body),
   update: (id: number | string, body: Partial<MaterialInput>) => apiPut<Material>(`/api/materials/${id}`, body),
   remove: (id: number | string) => apiDelete<unknown>(`/api/materials/${id}`),
+  // Xoá nhiều NVL trong MỘT request. Xoá từng id một tốn 1 round-trip + 3 câu SQL
+  // mỗi NVL — vài trăm dòng là chờ hàng phút. NVL còn được SKU/batch dùng sẽ nằm
+  // trong `skipped` kèm lý do, không bị xoá.
+  bulkRemove: (ids: number[]) =>
+    apiPost<MaterialDeleteResult>('/api/materials/bulk-delete', { ids }),
   // Import định mức NVL (OWNER-only). File 2 cột: Loại VL + Định mức.
   importPreviewFile: (file: File) => {
     const fd = new FormData()
@@ -82,4 +96,9 @@ export const skusApi = {
   create: (body: SkuInput) => apiPost<Sku>('/api/skus', body),
   update: (id: number | string, body: Partial<SkuInput>) => apiPut<Sku>(`/api/skus/${id}`, body),
   remove: (id: number | string) => apiDelete<unknown>(`/api/skus/${id}`),
+  // Xoá / ẩn-bật nhiều SKU trong MỘT request (xem materialsApi.bulkRemove). SKU
+  // đang có đơn hàng dùng nằm trong `skipped` kèm lý do, không bị xoá.
+  bulkRemove: (ids: number[]) => apiPost<SkuDeleteResult>('/api/skus/bulk-delete', { ids }),
+  bulkSetActive: (ids: number[], isActive: boolean) =>
+    apiPost<{ updated: number }>('/api/skus/bulk-active', { ids, is_active: isActive }),
 }

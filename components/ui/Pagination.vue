@@ -10,7 +10,7 @@ const props = withDefaults(
     pageSize?: number | null
     pageSizes?: number[]
   }>(),
-  { meta: null, pageSize: null, pageSizes: () => [20, 50, 100, 200] },
+  { meta: null, pageSize: null, pageSizes: () => [5, 20, 50, 100, 200] },
 )
 const emit = defineEmits<{
   (e: 'change', page: number): void

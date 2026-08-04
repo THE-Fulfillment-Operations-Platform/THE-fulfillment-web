@@ -1,12 +1,28 @@
 <script setup lang="ts">
 import { itemsApi } from '~/services/api'
 import type { OrderItem } from '~/types'
-import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, REVIEW_STATUS, DESIGN_STATUS, badgeFrom } from '~/utils/enums'
+import {
+  INTERNAL_STATUS,
+  INTERNAL_STATUS_ORDER,
+  REVIEW_STATUS,
+  DESIGN_STATUS,
+  SELLER_STATUS,
+  TRACKING_STATUS,
+  badgeFrom,
+  cancelStageLabel,
+  isHandedOver,
+  orderStatusBadge,
+  type StatusBadgeRef,
+} from '~/utils/enums'
 import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
 import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
 import { formatDate, formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
+import { useRowLink } from '~/composables/useRowLink'
+
+// Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
+const { rowLinkAttrs } = useRowLink()
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
@@ -64,10 +80,17 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   }),
 )
 
-// STT trong ngày = the parent order's per-day sequence (stable across pages).
+// STT trong ngày là số của ĐƠN trong ngày, mà bảng này liệt kê SẢN PHẨM: một đơn
+// 3 sản phẩm sẽ chiếm 3 dòng. Hiện trần số đơn thì cột đọc ra "1, 1, 1, 2, 3" —
+// trông như đánh số sai. Nên với đơn nhiều dòng, thêm vị trí dòng: 1.1, 1.2, 1.3.
+// Đơn 1 sản phẩm giữ nguyên "2", "3" cho gọn.
 function itemStt(it: OrderItem): string {
   const seq = it.order?.daily_seq
-  return seq && seq > 0 ? String(seq) : '—'
+  if (!seq || seq <= 0) return '—'
+  // Tổng số dòng của đơn nằm sẵn trong mã nội bộ dạng "100001_2/3".
+  const total = Number(it.internal_code?.split('/')[1] ?? 1)
+  const line = it.line_no ?? Number(it.internal_code?.split('_')[1]?.split('/')[0] ?? 0)
+  return total > 1 && line > 0 ? `${seq}.${line}` : String(seq)
 }
 function itemCreatedAt(it: OrderItem): string | undefined {
   return it.order?.created_at
@@ -138,12 +161,17 @@ function changePageSize(size: number) {
 
 const items = computed(() => data.value ?? [])
 
-// A rejected/cancelled/pending order shouldn't read as a production status —
-// surface its review state instead of the (misleading) internal_status.
-function itemStatus(it: OrderItem): { kind: 'review' | 'internal'; value: string } {
-  const rv = it.order?.review_status
-  if (rv && rv !== 'APPROVED') return { kind: 'review', value: rv }
-  return { kind: 'internal', value: it.internal_status }
+// Trạng thái hiển thị là chặng NGOÀI CÙNG mà sản phẩm đã tới, theo đúng thứ tự
+// vòng đời của đơn:
+//
+//   chưa duyệt → sản xuất/QC (theo từng sản phẩm) → đã gửi THE → hành trình kiện
+//
+// Vì thế khi đơn đã rời xưởng thì cột này chuyển sang phần vận chuyển: để nguyên
+// "Đã QC" sẽ khiến một đơn đang trên đường giao trông như vẫn còn nằm ở xưởng.
+// Trạng thái sản xuất lúc đó không mất — nó là điều kiện để gửi được, nên đã hàm
+// ý trong "Đã gửi đi".
+function itemStatus(it: OrderItem): StatusBadgeRef {
+  return orderStatusBadge(it.order ?? {}, it.internal_status)
 }
 function itemDead(it: OrderItem): boolean {
   const rv = it.order?.review_status
@@ -151,11 +179,16 @@ function itemDead(it: OrderItem): boolean {
 }
 
 const toast = useToastStore()
+const STATUS_LABEL_MAPS = {
+  review: REVIEW_STATUS,
+  internal: INTERNAL_STATUS,
+  seller: SELLER_STATUS,
+  tracking: TRACKING_STATUS,
+} as const
+
 function statusLabel(it: OrderItem): string {
   const s = itemStatus(it)
-  return s.kind === 'review'
-    ? badgeFrom(REVIEW_STATUS, s.value as never).label
-    : badgeFrom(INTERNAL_STATUS, s.value as never).label
+  return badgeFrom(STATUS_LABEL_MAPS[s.kind] as never, s.value as never).label
 }
 function exportItems() {
   const rows = items.value
@@ -178,6 +211,7 @@ function exportItems() {
     { label: 'Batch', value: (it) => itemBatchLabel(it) },
     { label: 'Ngày tạo', value: (it) => formatDate(itemCreatedAt(it)) },
     { label: 'Trạng thái', value: (it) => statusLabel(it) },
+    { label: 'Mã vận đơn', value: (it) => it.order?.tracking_number ?? '' },
   ])
   toast.success(`Đã xuất ${rows.length} dòng CSV.`)
 }
@@ -292,19 +326,28 @@ function exportItems() {
                 </th>
                 <th class="table-th">Trạng thái</th>
                 <th class="table-th hidden md:table-cell">Tracking</th>
-                <th class="table-th"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
               <tr
                 v-for="it in items"
                 :key="it.id"
+                v-bind="rowLinkAttrs(itemOrderId(it) ? `/orders/${itemOrderId(it)}` : null)"
                 class="hover:bg-muted"
                 :class="{ 'opacity-55': itemDead(it), 'bg-rose-50/60 dark:bg-rose-500/10': itemStoreOrderDup(it) }"
               >
                 <td class="table-td font-semibold tabular-nums text-foreground" :title="`STT trong ngày ${formatDate(itemCreatedAt(it))}`">{{ itemStt(it) }}</td>
                 <td class="table-td font-medium text-foreground">
                   {{ it.internal_code }}
+                  <!-- Sản phẩm từng QC fail: nói ngay đang ở lần sản xuất thứ mấy,
+                       để không ai tưởng đơn "biến mất" khi nó rời batch cũ. -->
+                  <span
+                    v-if="(it.rework_count ?? 0) > 0"
+                    class="ml-1.5 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                    :title="`QC fail ${it.rework_count} lần — đang làm lại (lần sản xuất thứ ${(it.rework_count ?? 0) + 1})`"
+                  >
+                    Làm lại ×{{ it.rework_count }}
+                  </span>
                   <span
                     v-if="itemStoreOrderDup(it)"
                     class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
@@ -331,24 +374,32 @@ function exportItems() {
                     >
                       <UiIcon name="alert" :size="10" /> Yêu cầu huỷ
                     </span>
+                    <!-- Đơn đã huỷ nhưng vẫn phải xuất hoá đơn: dòng bị làm mờ vì
+                         hết việc, nên phần tiền phải tự nói ra. -->
+                    <span
+                      v-if="it.order?.cancel_billable"
+                      class="inline-flex rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                      :title="`Huỷ ở khâu ${cancelStageLabel(it.order?.cancel_stage)} — vẫn tính tiền khách`"
+                    >
+                      Vẫn tính tiền
+                    </span>
                   </div>
                 </td>
+                <!-- Mã vận đơn nằm trên ĐƠN nên mọi sản phẩm cùng một đơn hiện
+                     cùng một mã. Cột này in ra chính con số CS đã gắn — trạng
+                     thái kiện hàng đã có ở cột Trạng thái bên cạnh. -->
                 <td class="table-td hidden md:table-cell">
-                  <UiStatusBadge
-                    v-if="it.order?.tracking_status && it.order.tracking_status !== 'NONE'"
-                    kind="tracking"
-                    :value="it.order.tracking_status"
-                  />
-                  <span v-else class="text-xs text-muted-foreground">—</span>
-                </td>
-                <td class="table-td text-right">
-                  <NuxtLink
-                    v-if="itemOrderId(it)"
-                    :to="`/orders/${itemOrderId(it)}`"
-                    class="text-xs font-medium text-primary hover:underline"
+                  <span v-if="it.order?.tracking_number" class="font-mono text-xs text-foreground">
+                    {{ it.order.tracking_number }}
+                  </span>
+                  <span
+                    v-else-if="isHandedOver(it.order?.seller_status)"
+                    class="text-xs text-amber-600 dark:text-amber-400"
+                    title="Đơn đã gửi cho THE, CS chưa gắn mã vận đơn"
                   >
-                    Chi tiết
-                  </NuxtLink>
+                    chờ gắn mã
+                  </span>
+                  <span v-else class="text-xs text-muted-foreground">—</span>
                 </td>
               </tr>
             </tbody>

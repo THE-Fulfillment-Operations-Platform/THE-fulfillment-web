@@ -34,6 +34,9 @@ services:
         # URL backend được NHÚNG vào bundle client lúc `nuxt build` (app là SPA).
         # Lấy từ .env.docker (qua --env-file); đổi sang domain API thật khi deploy.
         NUXT_PUBLIC_API_BASE_URL: ${NUXT_PUBLIC_API_BASE_URL:-https://api.domain.com}
+        # Domain công khai cho mã QR cài app (/install) — phải là địa chỉ người
+        # dùng gõ được từ điện thoại, không phải localhost.
+        NUXT_PUBLIC_APP_BASE_URL: ${NUXT_PUBLIC_APP_BASE_URL:-https://fulfillment.bacgiangdecor.com}
     image: fulfillment-frontend:latest
     restart: unless-stopped
     environment:

@@ -4,14 +4,19 @@ import type { SkuInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
-import { mapPool } from '~/utils/async'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
+import { useClientPager } from '~/composables/useClientPager'
+import SkuImportDialog from './SkuImportDialog.vue'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
-const emit = defineEmits<{ (e: 'changed'): void }>()
+const emit = defineEmits<{ (e: 'changed'): void; (e: 'imported'): void }>()
+
+// Import Excel vận hành cũ — trước đây là tab riêng, nay là hộp thoại ngay cạnh
+// nút "Thêm SKU" vì đây chính là đường tạo SKU hàng loạt.
+const importOpen = ref(false)
 
 const toast = useToastStore()
 const auth = useAuthStore()
@@ -29,6 +34,10 @@ const filtered = computed(() => {
       (s.materials ?? []).some((m) => (m.material?.name ?? '').toLowerCase().includes(q)),
   )
 })
+
+// Bảng master data có thể vài trăm dòng — phân trang phía client (dữ liệu đã tải
+// sẵn) kèm ô chọn số dòng, giống các màn phân trang phía server.
+const { paged, meta, pageSize, setPage, setPageSize } = useClientPager(() => filtered.value)
 
 function materialNames(s: Sku): string[] {
   return (s.materials ?? []).map((m) => m.material?.name ?? m.material?.code ?? `#${m.material_id}`)
@@ -129,12 +138,15 @@ async function bulkSetActive(active: boolean) {
   if (!ids.length || bulkBusy.value) return
   bulkBusy.value = true
   try {
-    const { ok, fail } = await mapPool(ids, 5, (id) => skusApi.update(id, { is_active: active }))
+    // MỘT request: server đổi cờ bằng một câu UPDATE ... WHERE id IN (...). Gửi
+    // từng id (kiểu cũ) tốn 1 round-trip + 1 lần lưu cả SKU cho mỗi dòng.
+    const { data } = await skusApi.bulkSetActive(ids, active)
     const verb = active ? 'bật' : 'ẩn'
-    if (fail === 0) toast.success(`Đã ${verb} ${ok} SKU`)
-    else toast.error(`Đã ${verb} ${ok}, ${fail} mục lỗi`)
+    toast.success(`Đã ${verb} ${data?.updated ?? ids.length} SKU`)
     clearSelection()
     emit('changed')
+  } catch (e) {
+    toast.error(errorMessage(e))
   } finally {
     bulkBusy.value = false
   }
@@ -153,12 +165,23 @@ async function bulkRemove() {
     return
   bulkBusy.value = true
   try {
-    const { ok, fail } = await mapPool(ids, 5, (id) => skusApi.remove(id))
-    if (fail === 0) toast.success(`Đã xoá ${ok} SKU`)
-    else if (ok === 0) toast.error(`Không xoá được mục nào (${fail} lỗi)`)
-    else toast.error(`Đã xoá ${ok}, ${fail} mục lỗi`)
+    const { data } = await skusApi.bulkRemove(ids)
+    const ok = data?.deleted_ids.length ?? 0
+    const skipped = data?.skipped ?? []
+    if (!skipped.length) toast.success(`Đã xoá ${ok} SKU`)
+    else {
+      // Lý do thật từ server (SKU đang có đơn hàng dùng) + vài mã cụ thể.
+      const reasons = [...new Set(skipped.map((s) => s.reason))].join(', ')
+      const names = skipped.slice(0, 3).map((s) => s.code || s.id).join(', ')
+      const more = skipped.length > 3 ? `… +${skipped.length - 3}` : ''
+      const detail = `${skipped.length} mục bỏ qua (${reasons}): ${names}${more}`
+      if (ok) toast.error(`Đã xoá ${ok}, ${detail}`)
+      else toast.error(`Không xoá được mục nào — ${detail}`)
+    }
     clearSelection()
     emit('changed')
+  } catch (e) {
+    toast.error(errorMessage(e))
   } finally {
     bulkBusy.value = false
   }
@@ -209,7 +232,12 @@ async function remove(s: Sku) {
         <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input v-model="search" class="input pl-9" placeholder="Tìm theo SKU / tên / nguyên vật liệu…" />
       </div>
-      <button class="btn-primary shrink-0" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm SKU</button>
+      <div class="flex shrink-0 gap-2">
+        <button class="btn-secondary" @click="importOpen = true">
+          <UiIcon name="upload" :size="16" /> Import Excel
+        </button>
+        <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm SKU</button>
+      </div>
     </div>
 
     <UiBulkBar :count="selectedCount" noun="SKU" @clear="clearSelection">
@@ -247,7 +275,7 @@ async function remove(s: Sku) {
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="s in filtered" :key="s.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(s.id) ? 'bg-accent/40' : ''">
+            <tr v-for="s in paged" :key="s.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(s.id) ? 'bg-accent/40' : ''">
               <td class="table-td">
                 <input
                   type="checkbox"
@@ -307,6 +335,14 @@ async function remove(s: Sku) {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="px-4">
+        <UiPagination
+          :meta="meta"
+          :page-size="pageSize"
+          @change="setPage"
+          @update:page-size="setPageSize"
+        />
       </div>
     </UiStateBlock>
 
@@ -381,5 +417,9 @@ async function remove(s: Sku) {
         </button>
       </template>
     </UiModal>
+
+    <!-- Import tạo cả NVL lẫn SKU nên báo riêng ('imported'), để trang cha nạp
+         lại cả hai danh sách chứ không chỉ SKU. -->
+    <SkuImportDialog v-model="importOpen" @imported="emit('imported')" />
   </div>
 </template>

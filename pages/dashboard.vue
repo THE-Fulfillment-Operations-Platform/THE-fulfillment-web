@@ -3,7 +3,12 @@ import { ordersApi, itemsApi, batchesApi, notesApi, handoffsApi } from '~/servic
 import type { Note, Order } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { formatShort } from '~/utils/format'
-import { entityTypeLabel, reasonCodeLabel } from '~/utils/enums'
+import {
+  entityTypeLabel,
+  reasonCodeLabel,
+  orderStatusBadge,
+  orderInternalStatus,
+} from '~/utils/enums'
 
 const loading = ref(true)
 const error = ref<string | null>(null)
@@ -13,6 +18,9 @@ const pendingItems = ref(0)
 const attentionCount = ref(0)
 const handoffCount = ref(0)
 const recentOrders = ref<Order[]>([])
+// Dashboard là màn nội bộ nên truyền khâu sản xuất vào; danh sách đơn có kèm
+// items (backend preload) nên cuộn được lên cấp đơn mà không cần gọi thêm.
+const rowStatus = (o: Order) => orderStatusBadge(o, orderInternalStatus(o.items))
 const attentionNotes = ref<Note[]>([])
 
 // Batch KPIs come from the server-side totals (page_size:1 + meta.total per
@@ -119,7 +127,13 @@ onMounted(load)
                 <span class="ml-2 text-muted-foreground">{{ o.store_order_id }}</span>
               </div>
               <div class="flex shrink-0 items-center gap-2 sm:gap-3">
-                <UiStatusBadge kind="seller" :value="o.seller_status" />
+                <!-- Màn nội bộ: hiện khâu sản xuất khi hàng còn ở xưởng, và
+                     chuyển sang trạng thái vận chuyển khi kiện đã lên đường —
+                     không dừng ở khâu cuối cùng có người trong xưởng bấm. -->
+                <UiStatusBadge
+                  :kind="rowStatus(o).kind"
+                  :value="rowStatus(o).value"
+                />
                 <span class="hidden text-xs text-muted-foreground sm:inline">{{ formatShort(o.created_at) }}</span>
               </div>
             </NuxtLink>

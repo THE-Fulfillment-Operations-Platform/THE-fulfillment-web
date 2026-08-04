@@ -5,7 +5,10 @@ import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
 
 const { data, loading, error, reload } = useApiResource<Batch[]>(() =>
-  batchesApi.list({ page_size: 200 }),
+  // Bảng sản xuất chỉ hiện batch còn việc: batch mà toàn bộ hàng đã bị huỷ ở QC
+  // không còn gì để in/cắt (hàng được làm lại ở batch mới) nên không được chiếm
+  // chỗ trên bảng.
+  batchesApi.list({ page_size: 200, open: true }),
 )
 
 const columns = computed(() => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { qcApi } from '~/services/api'
 import type { QcScanResult } from '~/types'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
@@ -41,10 +42,15 @@ const mockupSrc = computed(() => toDisplayImageUrl(result.value?.mockup_url))
 const mockupError = ref(false)
 watch(() => result.value?.mockup_url, () => { mockupError.value = false })
 
-const passing = ref(false)
 const failOpen = ref(false)
 const failing = ref(false)
-const defect = reactive({ defect_code: 'PRINT_WRONG', note: '' })
+const defect = reactive({
+  defect_code: 'PRINT_WRONG',
+  note: '',
+  // Phần NVL bị lỗi (combo phải chọn) và nơi trả sản phẩm về để làm lại.
+  batch_item_id: null as number | null,
+  rework_route: 'PRODUCTION' as 'PRODUCTION' | 'DESIGN',
+})
 
 
 function focusScan() {
@@ -75,38 +81,92 @@ function clearStation() {
   focusScan()
 }
 
-async function pass() {
-  if (!result.value || passing.value || alreadyQC.value) return
-  passing.value = true
-  try {
-    await qcApi.pass({ item_id: result.value.item_id })
-    toast.success(`${result.value.item_code} đã QC PASS → Đã QC`)
-    clearStation()
-  } catch (e) {
-    toast.error(errorMessage(e))
-  } finally {
-    passing.value = false
-  }
+// Trạm QC là một vòng lặp tay: quét → soi mockup → PASS → quét cái tiếp theo. Bắt
+// người QC đứng đợi server ghi xong mới cho quét mã sau là buộc cả xưởng chạy theo
+// tốc độ đường truyền — mỗi sản phẩm mất thêm cả giây chỉ để nhìn cái spinner.
+//
+// Nên PASS nhả trạm ra NGAY rồi ghi ở nền. Việc này an toàn vì mọi điều kiện chặn
+// (đã QC rồi, còn NVL chưa cắt) đã được kiểm ngay lúc quét và hiện trên màn; phần
+// còn lại là ghi xuống DB. Nếu ghi hỏng thật thì toast đỏ nêu ĐÍCH DANH mã item để
+// quét lại — không nuốt lỗi.
+const pending = ref<string[]>([])
+
+function pass() {
+  const item = result.value
+  if (!item || alreadyQC.value || notProducedYet.value) return
+  clearStation() // nhả trạm trước, quét mã tiếp theo được luôn
+
+  pending.value.push(item.item_code)
+  qcApi
+    .pass({ item_id: item.item_id })
+    .then(() => toast.success(`${item.item_code} đã QC PASS → Đã QC`))
+    .catch((e) =>
+      toast.error(`${item.item_code}: CHƯA lưu được QC PASS — ${errorMessage(e)}. Quét lại mã này.`),
+    )
+    .finally(() => {
+      const i = pending.value.indexOf(item.item_code)
+      if (i !== -1) pending.value.splice(i, 1)
+    })
 }
+
+// Lỗi thuộc về FILE design thì in lại y hệt sẽ hỏng y hệt — mặc định trả về khâu
+// thiết kế. Các lỗi còn lại là lỗi làm, chỉ cần làm lại sản xuất. Người QC vẫn
+// đổi được nếu thực tế khác.
+const DESIGN_DEFECTS = ['ENGRAVE_WRONG', 'WRONG_MOCKUP']
+const routeOptions = [
+  { value: 'PRODUCTION', label: 'Làm lại sản xuất (file design giữ nguyên)' },
+  { value: 'DESIGN', label: 'Trả về Chờ thiết kế (phải sửa file trước)' },
+]
+// Các phần NVL còn hiệu lực của sản phẩm — combo phải chỉ rõ phần nào hỏng.
+const failableParts = computed(() => result.value?.batches ?? [])
+const partOptions = computed(() =>
+  failableParts.value.map((b) => ({
+    value: b.batch_item_id,
+    label: `${b.material_code} · ${b.batch_code}`,
+  })),
+)
 
 function openFail() {
   defect.defect_code = 'PRINT_WRONG'
   defect.note = ''
+  defect.rework_route = 'PRODUCTION'
+  // Một NVL thì khỏi bắt chọn; combo để trống buộc người QC chỉ đúng phần hỏng.
+  defect.batch_item_id = failableParts.value.length === 1 ? failableParts.value[0].batch_item_id : null
   failOpen.value = true
 }
+
+// Đổi loại lỗi thì gợi ý lại hướng xử lý cho khớp.
+watch(
+  () => defect.defect_code,
+  (code) => {
+    defect.rework_route = DESIGN_DEFECTS.includes(code) ? 'DESIGN' : 'PRODUCTION'
+  },
+)
 
 async function submitFail() {
   if (!result.value || failing.value) return
   failing.value = true
   try {
-    await qcApi.fail({
+    const code = result.value.item_code
+    const { data } = await qcApi.fail({
       item_id: result.value.item_id,
       defect_code: defect.defect_code,
       note: defect.note || undefined,
+      batch_item_id: defect.batch_item_id ?? undefined,
+      rework_route: defect.rework_route,
     })
-    toast.error(`${result.value.item_code} đã ghi nhận lỗi QC — tạo note theo dõi`)
+    // Nói rõ sản phẩm đã đi đâu — người QC không phải đoán bước tiếp theo.
+    toast.error(
+      data?.route === 'DESIGN'
+        ? `${code}: đã huỷ phần hỏng, trả về Chờ thiết kế để sửa file (lần sản xuất ${data?.attempt ?? 1})`
+        : `${code}: đã huỷ phần hỏng, trả về danh sách chờ gom batch làm lại (lần sản xuất ${data?.attempt ?? 1})`,
+    )
     failOpen.value = false
     clearStation()
+    // QC fail sinh một note "cần xử lý" ở backend, tức badge "Ghi chú / Cần xử lý"
+    // vừa TĂNG. Không bắn tín hiệu thì trạm QC báo lỗi xong mà sidebar vẫn im, và
+    // người phụ trách note không biết có việc mới cho tới lần poll sau.
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -146,6 +206,11 @@ onMounted(focusScan)
       </form>
       <p v-if="scanError" class="mt-3 rounded-md bg-red-50 dark:bg-rose-500/10 px-3 py-2 text-sm text-red-700 dark:text-rose-300">
         {{ scanError }}
+      </p>
+      <!-- PASS ghi ở nền nên trạm trống ngay; dòng này để việc đang chạy không vô hình. -->
+      <p v-if="pending.length" class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <UiSpinner :size="14" />
+        Đang lưu QC PASS: <span class="font-mono">{{ pending.join(', ') }}</span>
       </p>
     </div>
 
@@ -315,12 +380,11 @@ onMounted(focusScan)
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
-              :disabled="passing || alreadyQC || notProducedYet"
+              :disabled="alreadyQC || notProducedYet"
               :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : '')"
               @click="pass"
             >
-              <UiSpinner v-if="passing" :size="16" />
-              <UiIcon v-else name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
+              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
             </button>
             <button class="btn-danger" :disabled="failing || alreadyQC" :title="alreadyQC ? 'Item đã QC rồi' : ''" @click="openFail">
               <UiIcon name="alert" :size="16" /> FAIL — Ghi lỗi
@@ -335,11 +399,32 @@ onMounted(focusScan)
     <UiModal v-model="failOpen" title="Ghi nhận lỗi QC">
       <div class="space-y-3">
         <p class="text-sm text-foreground">
-          Item <span class="font-mono font-semibold">{{ result?.item_code }}</span> sẽ bị đánh dấu lỗi và tạo note theo dõi cho bộ phận liên quan.
+          Item <span class="font-mono font-semibold">{{ result?.item_code }}</span>: phần đã sản xuất
+          sẽ bị huỷ (vẫn lưu ở batch cũ để truy vết), hệ thống mở note theo dõi và trả sản phẩm về để
+          làm lại.
         </p>
         <div>
           <label class="label">Loại lỗi</label>
           <UiSelect v-model="defect.defect_code" :options="DEFECT_CODE_OPTIONS" aria-label="Loại lỗi" />
+        </div>
+        <div v-if="partOptions.length > 1">
+          <label class="label">Phần NVL bị lỗi</label>
+          <UiSelect
+            v-model="defect.batch_item_id"
+            :options="partOptions"
+            placeholder="Chọn phần bị lỗi…"
+            aria-label="Phần NVL bị lỗi"
+          />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            Sản phẩm combo: chỉ phần được chọn bị huỷ và làm lại, phần đạt giữ nguyên.
+          </p>
+        </div>
+        <div>
+          <label class="label">Trả về đâu để làm lại</label>
+          <UiSelect v-model="defect.rework_route" :options="routeOptions" aria-label="Hướng xử lý" />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            Lỗi từ file design thì phải sửa file trước, nếu không lần in lại sẽ hỏng y hệt.
+          </p>
         </div>
         <div>
           <label class="label">Ghi chú (tuỳ chọn)</label>

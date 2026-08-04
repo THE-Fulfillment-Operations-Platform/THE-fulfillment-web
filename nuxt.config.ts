@@ -14,6 +14,23 @@ export default defineNuxtConfig({
 
   modules: ['@nuxtjs/tailwindcss', '@pinia/nuxt'],
 
+  // BẮT BUỘC giữ nguyên — nếu bỏ, dev server rơi vào vòng lặp vô tận và ngốn
+  // 100% CPU liên tục (mỗi lần reload trang mất 9–15 giây).
+  //
+  // Vòng lặp: @nuxtjs/tailwindcss móc `pages:extend` → gọi lại loadConfigs() +
+  // updateTemplates() → Nuxt bắn `app:templates` → resolvePagesRoutes() →
+  // `pages:extend` → lặp lại mãi. Mỗi vòng quét lại toàn bộ pages/ và deep-merge
+  // lại config Tailwind bằng defu (~60% CPU) nên event loop của Node bị đói,
+  // MỌI request dev (kể cả file tĩnh) phải xếp hàng vài giây.
+  //
+  // - strictScanContentPaths: đổi handler `pages:extend` sang nhánh chỉ nạp lại
+  //   khi SỐ file page/component đổi → vòng lặp đứt sau lần đầu.
+  // - viewer: tắt tailwind-config-viewer (/_tailwind/) — không dùng, chỉ tốn RAM.
+  tailwindcss: {
+    experimental: { strictScanContentPaths: true },
+    viewer: false,
+  },
+
   css: ['~/assets/css/main.css'],
 
   app: {
@@ -21,13 +38,24 @@ export default defineNuxtConfig({
       title: 'BGDecor Fulfillment',
       meta: [
         { charset: 'utf-8' },
-        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        // viewport-fit=cover: khi chạy dạng app đã cài (standalone) trên iPhone
+        // tai thỏ, nội dung mới phủ hết màn hình thay vì chừa 2 dải đen.
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'description', content: 'BGDecor Fulfillment Operations Platform' },
+        // --- PWA ---
+        { name: 'theme-color', content: '#4e5fa8' },
+        { name: 'mobile-web-app-capable', content: 'yes' },
+        // iOS chưa đọc manifest: 3 thẻ apple-* dưới đây mới là thứ quyết định
+        // app mở toàn màn hình (không thanh địa chỉ) và tên hiện dưới icon.
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+        { name: 'apple-mobile-web-app-title', content: 'BGDecor FFM' },
       ],
       link: [
         { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
         { rel: 'icon', type: 'image/png', sizes: '64x64', href: '/favicon.png' },
         { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+        { rel: 'manifest', href: '/manifest.webmanifest' },
       ],
       htmlAttrs: { lang: 'vi' },
       // No-flash theme boot: runs synchronously in <head> before first paint, so
@@ -50,6 +78,13 @@ export default defineNuxtConfig({
       // rebuild. Nullish coalescing (not ||) so an explicit "" is preserved and
       // only an UNSET var falls back to the dev default.
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8090',
+
+      // Địa chỉ CÔNG KHAI của hệ thống, dùng cho những thứ rời khỏi trình duyệt:
+      // mã QR cài app và tờ QR in dán ở xưởng (/install). Cố tình KHÔNG lấy
+      // window.location.origin — in từ máy dev sẽ ra http://localhost:3001 và
+      // điện thoại quét vào không tới đâu. Đổi bằng NUXT_PUBLIC_APP_BASE_URL
+      // lúc build nếu domain thay đổi.
+      appBaseUrl: process.env.NUXT_PUBLIC_APP_BASE_URL ?? 'https://fulfillment.bacgiangdecor.com',
     },
   },
 

@@ -34,6 +34,10 @@ FROM base AS builder
 #   docker build --build-arg NUXT_PUBLIC_API_BASE_URL=https://api.example.com -t fulfillment-web .
 ARG NUXT_PUBLIC_API_BASE_URL=http://localhost:8090
 ENV NUXT_PUBLIC_API_BASE_URL=$NUXT_PUBLIC_API_BASE_URL
+# Domain công khai, dùng cho mã QR cài app ở /install (link phải là địa chỉ thật
+# vì QR được in ra giấy và quét bằng điện thoại).
+ARG NUXT_PUBLIC_APP_BASE_URL=https://fulfillment.bacgiangdecor.com
+ENV NUXT_PUBLIC_APP_BASE_URL=$NUXT_PUBLIC_APP_BASE_URL
 ENV NODE_ENV=production
 
 COPY --from=deps /app/node_modules ./node_modules

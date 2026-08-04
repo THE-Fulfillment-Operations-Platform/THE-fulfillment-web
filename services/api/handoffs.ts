@@ -15,21 +15,29 @@ export interface HandoffInput {
 }
 
 export interface ShipHandoffInput {
-  carrier: string
   tracking_number: string
   label_url?: string
+}
+
+/** Kết quả một lượt gửi hàng hàng loạt cho THE. */
+export interface ShipToCarrierResult {
+  shipped: Array<{ order_id: number; internal_code: string; handoff_code: string }>
+  /** Đơn bị bỏ qua kèm lý do — một đơn chưa xong không được làm hỏng cả lượt gửi. */
+  skipped: Array<{ order_id: number; internal_code: string; reason: string }>
 }
 
 export const handoffsApi = {
   list: (params?: { page?: number; page_size?: number }) => apiGet<Handoff[]>('/api/handoffs', params),
   create: (body: HandoffInput) => apiPost<Handoff>('/api/handoffs', body),
   // Mark a handed-off package as dispatched — the final leg that moves an order
-  // to SHIPPED and records the carrier + tracking the seller can follow.
+  // to SHIPPED and records the tracking number the seller can follow.
   //
-  // Backend contract (to be implemented server-side; the data model in
-  // types/Handoff already carries carrier/tracking_number/label_url/status):
-  //   POST /api/handoffs/:id/ship  { carrier, tracking_number, label_url? }
+  //   POST /api/handoffs/:id/ship  { tracking_number, label_url? }
   //   → transitions status HANDED_OFF → SHIPPED and returns the updated Handoff.
   markShipped: (id: number | string, body: ShipHandoffInput) =>
     apiPost<Handoff>(`/api/handoffs/${id}/ship`, body),
+  // Gửi nhiều đơn đã QC xong cho THE trong một thao tác. Đây là bước kết thúc
+  // luồng sản xuất và mở đầu luồng vận chuyển — không cần quét đóng gói.
+  shipToCarrier: (orderIds: number[]) =>
+    apiPost<ShipToCarrierResult>('/api/orders/ship-to-carrier', { order_ids: orderIds }),
 }

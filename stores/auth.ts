@@ -27,6 +27,10 @@ export const useAuthStore = defineStore('auth', {
     /** Landing route after login, based on role. */
     homeRoute(): string {
       if (this.user?.role === 'SELLER') return '/seller'
+      // CS lands on their work queue — the orders already sent to THE that still
+      // need a tracking number — not on the free-text lookup, which is what they
+      // reach for only when a customer calls.
+      if (this.user?.role === 'CS') return '/journeys'
       return '/dashboard'
     },
   },

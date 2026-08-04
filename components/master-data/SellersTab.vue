@@ -5,6 +5,7 @@ import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
+import { useClientPager } from '~/composables/useClientPager'
 
 // Seller (gian hàng) management. A Seller is the business entity that owns a
 // batch of orders; a SELLER-role user account is then linked to it by id. This
@@ -33,6 +34,10 @@ const filtered = computed(() => {
       (s.contact_phone ?? '').toLowerCase().includes(q),
   )
 })
+
+// Bảng master data có thể vài trăm dòng — phân trang phía client (dữ liệu đã tải
+// sẵn) kèm ô chọn số dòng, giống các màn phân trang phía server.
+const { paged, meta, pageSize, setPage, setPageSize } = useClientPager(() => filtered.value)
 
 interface SellerForm {
   code: string
@@ -157,7 +162,7 @@ async function remove(s: Seller) {
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="s in filtered" :key="s.id" class="hover:bg-muted">
+            <tr v-for="s in paged" :key="s.id" class="hover:bg-muted">
               <td class="table-td font-mono text-xs text-muted-foreground">#{{ s.id }}</td>
               <td class="table-td font-mono text-xs text-foreground">{{ s.code }}</td>
               <td class="table-td font-medium text-foreground">{{ s.name }}</td>
@@ -191,6 +196,14 @@ async function remove(s: Seller) {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="px-4">
+        <UiPagination
+          :meta="meta"
+          :page-size="pageSize"
+          @change="setPage"
+          @update:page-size="setPageSize"
+        />
       </div>
     </UiStateBlock>
 

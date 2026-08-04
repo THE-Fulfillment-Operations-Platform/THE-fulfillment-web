@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { designApi, itemsApi } from '~/services/api'
-import type { Batch, Material, MaterialBucket, OrderItem } from '~/types'
+import type { Batch, Material, MaterialBucket, OrderItem, SKUBucket } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
 import { useConfirm } from '~/composables/useConfirm'
@@ -15,8 +15,7 @@ const filters = reactive({
   batch: '',
   appliedBatch: '',
   material: '' as '' | number,
-  sort: 'batch' as 'batch' | 'created_at',
-  order: 'asc' as 'asc' | 'desc',
+  sku: '',
 })
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   designApi.queue({
@@ -24,8 +23,11 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     page_size: pager.page_size,
     batch: filters.appliedBatch || undefined,
     material_id: filters.material === '' ? undefined : filters.material,
-    sort: filters.sort,
-    order: filters.order,
+    sku: filters.sku || undefined,
+    // Batch order is the queue's working order (oldest batch first); the SKU and
+    // NVL dropdowns narrow it rather than reorder it.
+    sort: 'batch',
+    order: 'asc',
   }),
 )
 const items = computed(() => data.value ?? [])
@@ -34,27 +36,41 @@ const items = computed(() => data.value ?? [])
 // queue (with counts), not the whole catalog — otherwise it's hundreds of materials
 // whose rows are all empty. Refetched whenever the queue's contents change, since a
 // material drops off once its last item leaves. Non-blocking: on failure the queue
-// still works, the filter just stays empty.
+// still works and the dropdown says so (see facetError) instead of looking like a
+// queue with nothing in it.
 const materials = ref<MaterialBucket[]>([])
+const materialsFailed = ref(false)
 async function loadQueueMaterials() {
   try {
-    const { data } = await designApi.queueMaterials({ batch: filters.appliedBatch || undefined })
+    const { data } = await designApi.queueMaterials({
+      batch: filters.appliedBatch || undefined,
+      sku: filters.sku || undefined,
+    })
     materials.value = data ?? []
+    materialsFailed.value = false
     // A material that just emptied out would leave the filter stuck on zero rows.
     if (filters.material !== '' && !materials.value.some((m) => m.material_id === filters.material)) {
       filters.material = ''
     }
   } catch {
-    /* dropdown optional — leave empty */
+    materials.value = []
+    materialsFailed.value = true
   }
 }
 onMounted(loadQueueMaterials)
+
+// A facet that failed to load looks exactly like a facet with nothing in it — one
+// disabled row tells the two apart, so a dead endpoint isn't read as an empty queue.
+function facetError(label: string) {
+  return { value: '__error', label, disabled: true }
+}
 
 // Counts ride in `hint` rather than the label so they align in their own column.
 const materialOptions = computed(() => [
   // No count on "all": a combo SKU sits in several buckets, so summing them would
   // overstate the queue.
   { value: '', label: 'Tất cả NVL' },
+  ...(materialsFailed.value ? [facetError('Không tải được danh sách NVL')] : []),
   ...materials.value.map((m) => ({
     value: m.material_id,
     label: m.material_code,
@@ -69,27 +85,61 @@ const materialValue = computed({
   },
 })
 
-const sortOptions = [
-  { value: 'batch:asc', label: 'Batch tăng dần' },
-  { value: 'batch:desc', label: 'Batch giảm dần' },
-  { value: 'created_at:desc', label: 'Đơn mới nhất' },
-  { value: 'created_at:asc', label: 'Đơn cũ nhất' },
-]
-const sortValue = computed({
-  get: () => `${filters.sort}:${filters.order}`,
+// The SKU dropdown is the same kind of facet as the NVL one: the server reports
+// every SKU code sitting in the queue (already sorted A→Z, with counts), so the
+// designer can jump straight to "all the BR-SH-2-KEP lines" without typing a code.
+// Reloaded whenever the queue's contents change — a SKU drops off once its last
+// item leaves. Non-blocking, same as the NVL facet above.
+const skus = ref<SKUBucket[]>([])
+const skusFailed = ref(false)
+async function loadQueueSkus() {
+  try {
+    const { data } = await designApi.queueSkus({
+      batch: filters.appliedBatch || undefined,
+      material_id: filters.material === '' ? undefined : filters.material,
+    })
+    skus.value = data ?? []
+    skusFailed.value = false
+    // A SKU that just emptied out would leave the filter stuck on zero rows.
+    if (filters.sku && !skus.value.some((s) => s.sku_code === filters.sku)) {
+      filters.sku = ''
+    }
+  } catch {
+    skus.value = []
+    skusFailed.value = true
+  }
+}
+onMounted(loadQueueSkus)
+
+// Counts ride in `hint` (their own column) like the NVL filter. The label is the
+// code alone — product names here run long enough to be truncated to uselessness
+// in a dropdown that's only as wide as its trigger.
+const skuOptions = computed(() => [
+  { value: '', label: 'Tất cả SKU' },
+  ...(skusFailed.value ? [facetError('Không tải được danh sách SKU')] : []),
+  ...skus.value.map((s) => ({
+    value: s.sku_code,
+    label: s.sku_code,
+    hint: String(s.item_count),
+  })),
+])
+// How many items the picked SKU covers under the other active filters — the facet
+// excludes only itself, so its count is exactly the filtered queue's total. Null
+// until the facet has loaded (or if the code isn't in it).
+const skuItemCount = computed(
+  () => skus.value.find((s) => s.sku_code === filters.sku)?.item_count ?? null,
+)
+
+// UiSelect hands back `string | number`; the filter only ever holds a SKU code.
+const skuValue = computed({
+  get: () => filters.sku,
   set: (value: string | number) => {
-    const [sort, order] = String(value).split(':') as ['batch' | 'created_at', 'asc' | 'desc']
-    filters.sort = sort
-    filters.order = order
+    filters.sku = String(value)
   },
 })
 
 const hasActiveFilters = computed(
-  () =>
-    Boolean(filters.appliedBatch) ||
-    filters.material !== '' ||
-    filters.sort !== 'batch' ||
-    filters.order !== 'asc',
+  () => Boolean(filters.appliedBatch) || filters.material !== '' || Boolean(filters.sku),
 )
 
 // Any change to what the list shows drops both selections: the tick marks refer
@@ -100,8 +150,11 @@ function resetView() {
   selected.value = null
   clearReadySelection()
   reload()
-  // The batch filter narrows the queue, so the NVL options change with it.
+  // Each filter narrows the queue the other two offer choices from, so both facets
+  // are refetched together (each excludes itself server-side, so neither collapses
+  // to a single option).
   loadQueueMaterials()
+  loadQueueSkus()
 }
 
 function applyFilters() {
@@ -113,8 +166,7 @@ function resetFilters() {
   filters.batch = ''
   filters.appliedBatch = ''
   filters.material = ''
-  filters.sort = 'batch'
-  filters.order = 'asc'
+  filters.sku = ''
   resetView()
 }
 
@@ -124,12 +176,23 @@ function changeMaterial() {
   resetView()
 }
 
-function changeSort() {
+// Same for the SKU dropdown.
+function changeSku() {
   resetView()
 }
 
 function changePage(p: number) {
   pager.page = p
+  selected.value = null
+  clearReadySelection()
+  reload()
+}
+
+// Đổi số dòng/trang: về trang 1 và bỏ chọn (tick + panel trỏ vào dòng có thể
+// không còn trên trang mới).
+function changePageSize(size: number) {
+  pager.page_size = size
+  pager.page = 1
   selected.value = null
   clearReadySelection()
   reload()
@@ -179,8 +242,8 @@ async function bulkSetReady() {
     clearReadySelection()
     selected.value = null
     await reload()
-    // Items just left the queue — a material may have emptied out entirely.
-    await loadQueueMaterials()
+    // Items just left the queue — a material or a SKU may have emptied out entirely.
+    await Promise.all([loadQueueMaterials(), loadQueueSkus()])
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -328,22 +391,67 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
-// ---- Bulk ZIP download (design + mockup, one folder per internal code) ------
+// ---- Bulk ZIP download (design files only) ---------------------------------
+// The dialog filters the WHOLE approved design queue on the server (not just the
+// loaded page): a free-text search over mã nội bộ/SKU plus the NVL dropdown. The
+// matching list comes from /design-queue/downloadable so counts and ticks reflect
+// every match. Download either the ticked subset (by id) or — when nothing is
+// ticked — everything matching the current filters, resolved server-side again so
+// a pull of hundreds of items never has to fit its ids into a URL.
 const zipOpen = ref(false)
-const zipMode = ref<'all' | 'select'>('all')
 const zipSelected = ref<Set<number>>(new Set())
 const downloadingZip = ref(false)
+const zipFilter = reactive({ text: '', material: '' as '' | number })
+const zipItems = ref<OrderItem[]>([])
+const zipLoading = ref(false)
 
-// Only items with an actual design file (front OR back) are worth bundling — this
-// download is design-only, so a mockup-only item would add nothing to the ZIP.
-const downloadableItems = computed(() =>
-  items.value.filter((it) => it.design_url || it.back_design_url),
-)
+// The NVL dropdown reuses the queue's material buckets (same server-side source as
+// the main filter), so it lists exactly the materials present in the queue.
+const zipMaterialValue = computed({
+  get: () => zipFilter.material,
+  set: (value: string | number) => {
+    zipFilter.material = value === '' ? '' : Number(value)
+  },
+})
+
+async function loadZipItems() {
+  if (!zipOpen.value) return // guards resets and any late-firing debounce after close
+  zipLoading.value = true
+  try {
+    const { data } = await designApi.downloadable({
+      q: zipFilter.text.trim() || undefined,
+      material_id: zipFilter.material === '' ? undefined : zipFilter.material,
+      batch: filters.appliedBatch || undefined,
+    })
+    zipItems.value = data ?? []
+    // Drop ticks that fell out of the new result so the count never exceeds the list.
+    const present = new Set(zipItems.value.map((it) => it.id))
+    zipSelected.value = new Set([...zipSelected.value].filter((id) => present.has(id)))
+  } catch (e) {
+    zipItems.value = []
+    toast.error(errorMessage(e))
+  } finally {
+    zipLoading.value = false
+  }
+}
+
+// Search is debounced (keystrokes); the NVL dropdown reloads at once — picking a
+// material is a deliberate single action, typing is not.
+let zipSearchTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => zipFilter.text, () => {
+  clearTimeout(zipSearchTimer)
+  zipSearchTimer = setTimeout(loadZipItems, 300)
+})
+watch(() => zipFilter.material, loadZipItems)
 
 function openZipDialog() {
-  zipMode.value = 'all'
   zipSelected.value = new Set()
+  zipItems.value = []
+  zipFilter.text = ''
+  zipFilter.material = ''
   zipOpen.value = true
+  clearTimeout(zipSearchTimer) // cancel any load the resets above scheduled
+  loadZipItems()
 }
 
 function toggleZipItem(id: number) {
@@ -353,29 +461,31 @@ function toggleZipItem(id: number) {
   zipSelected.value = next
 }
 
-const allSelected = computed(
-  () =>
-    downloadableItems.value.length > 0 &&
-    downloadableItems.value.every((it) => zipSelected.value.has(it.id)),
+const allZipSelected = computed(
+  () => zipItems.value.length > 0 && zipItems.value.every((it) => zipSelected.value.has(it.id)),
 )
 function toggleSelectAll() {
-  zipSelected.value = allSelected.value
+  zipSelected.value = allZipSelected.value
     ? new Set()
-    : new Set(downloadableItems.value.map((it) => it.id))
+    : new Set(zipItems.value.map((it) => it.id))
 }
 
-const canDownloadZip = computed(() =>
-  zipMode.value === 'all' ? downloadableItems.value.length > 0 : zipSelected.value.size > 0,
-)
+// Downloadable whenever at least one item matches — the button then pulls the ticked
+// subset, or the whole matching set if nothing is ticked.
+const canDownloadZip = computed(() => zipItems.value.length > 0)
 
 async function downloadZip() {
   if (!canDownloadZip.value || downloadingZip.value) return
   downloadingZip.value = true
   try {
-    const ids = zipMode.value === 'select' ? Array.from(zipSelected.value) : undefined
-    // Pass the applied batch filter so "whole queue" respects it and the ZIP lands
-    // in a Batch_<code> folder; without a filter the backend names it Design_<date>.
-    await designApi.downloadAssetsZip({ itemIds: ids, batch: filters.appliedBatch || undefined })
+    const ids = zipSelected.value.size ? Array.from(zipSelected.value) : undefined
+    await designApi.downloadAssetsZip({
+      itemIds: ids,
+      batch: filters.appliedBatch || undefined,
+      // Ignored by the backend when ids are present; drives the whole-queue pull otherwise.
+      q: zipFilter.text.trim() || undefined,
+      materialId: zipFilter.material === '' ? undefined : zipFilter.material,
+    })
     toast.success('Đang tải file ZIP…')
     zipOpen.value = false
   } catch (e) {
@@ -415,7 +525,7 @@ async function setReady() {
     toast.success('Item đã sẵn sàng sản xuất')
     selected.value = null
     await reload()
-    await loadQueueMaterials()
+    await Promise.all([loadQueueMaterials(), loadQueueSkus()])
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -460,13 +570,13 @@ async function setReady() {
             @change="changeMaterial"
           />
         </div>
-        <div class="w-full sm:w-44">
-          <label class="label">Sắp xếp</label>
+        <div class="w-full sm:w-56">
+          <label class="label">Lọc theo SKU</label>
           <UiSelect
-            v-model="sortValue"
-            :options="sortOptions"
-            aria-label="Sắp xếp Design Queue"
-            @change="changeSort"
+            v-model="skuValue"
+            :options="skuOptions"
+            aria-label="Lọc theo SKU"
+            @change="changeSku"
           />
         </div>
         <div class="flex gap-2">
@@ -476,9 +586,17 @@ async function setReady() {
           <button v-if="hasActiveFilters" class="btn-secondary" @click="resetFilters">Xóa</button>
         </div>
       </div>
-      <p v-if="filters.appliedBatch" class="mt-2 text-xs text-muted-foreground">
-        Đang hiển thị các item thuộc batch có mã chứa
-        <span class="font-medium text-foreground">{{ filters.appliedBatch }}</span>.
+      <p v-if="filters.appliedBatch || filters.sku" class="mt-2 text-xs text-muted-foreground">
+        <template v-if="filters.appliedBatch">
+          Đang hiển thị các item thuộc batch có mã chứa
+          <span class="font-medium text-foreground">{{ filters.appliedBatch }}</span
+          >{{ filters.sku ? ', ' : '.' }}
+        </template>
+        <template v-if="filters.sku">
+          <template v-if="!filters.appliedBatch">Đang hiển thị các item của </template>SKU
+          <span class="font-medium text-foreground">{{ filters.sku }}</span
+          >{{ skuItemCount !== null ? ` (${skuItemCount} đơn)` : '' }}.
+        </template>
       </p>
     </div>
 
@@ -491,7 +609,7 @@ async function setReady() {
           :loading="loading"
           :error="error"
           :empty="!loading && !error && items.length === 0"
-          :empty-text="filters.appliedBatch ? 'Không có item nào cần design trong batch này.' : 'Không có item nào cần design.'"
+          :empty-text="filters.sku ? 'Không có item nào cần design cho SKU này.' : filters.appliedBatch ? 'Không có item nào cần design trong batch này.' : 'Không có item nào cần design.'"
           @retry="reload"
         >
           <UiBulkBar
@@ -526,7 +644,8 @@ async function setReady() {
                       @change="toggleSelectAllReady"
                     />
                   </th>
-                  <th class="table-th w-full border-b border-border px-2.5">Đơn / SKU</th>
+                  <th class="table-th border-b border-border px-2.5">Mã nội bộ</th>
+                  <th class="table-th w-full border-b border-border px-2.5">SKU</th>
                   <th class="table-th border-b border-border px-2.5">NVL</th>
                   <th class="table-th border-b border-border px-2.5">Batch</th>
                   <th class="table-th border-b border-border px-2.5">File</th>
@@ -562,7 +681,7 @@ async function setReady() {
 
                   <td class="px-2.5 py-2 align-top">
                     <div class="flex items-center gap-1.5">
-                      <span class="text-sm font-medium text-foreground">{{ it.internal_code }}</span>
+                      <span class="whitespace-nowrap text-sm font-medium text-foreground">{{ it.internal_code }}</span>
                       <span
                         v-if="it.quantity > 1"
                         class="rounded bg-muted px-1 py-px text-[10px] font-semibold text-muted-foreground"
@@ -570,8 +689,12 @@ async function setReady() {
                         ×{{ it.quantity }}
                       </span>
                     </div>
-                    <div class="max-w-[20rem] truncate text-xs text-muted-foreground">
-                      {{ it.sku_code }}<template v-if="it.product_name"> · {{ it.product_name }}</template>
+                  </td>
+
+                  <td class="px-2.5 py-2 align-top">
+                    <div class="text-sm font-medium text-foreground">{{ it.sku_code || '—' }}</div>
+                    <div v-if="it.product_name" class="max-w-[20rem] truncate text-xs text-muted-foreground">
+                      {{ it.product_name }}
                     </div>
                   </td>
 
@@ -659,7 +782,12 @@ async function setReady() {
               </span>
             </div>
             <div class="min-w-0 flex-1">
-              <UiPagination :meta="meta" @change="changePage" />
+              <UiPagination
+                :meta="meta"
+                :page-size="pager.page_size"
+                @change="changePage"
+                @update:page-size="changePageSize"
+              />
             </div>
           </div>
         </UiStateBlock>
@@ -762,7 +890,7 @@ async function setReady() {
 
             <!-- Folded by default: these are batch-level fields, filling them per
                  item is the exception, not the flow. -->
-            <div class="rounded-md border border-border p-3">
+            <!-- <div class="rounded-md border border-border p-3">
               <p class="mb-1 text-xs uppercase tracking-wide text-muted-foreground">File in / cắt</p>
               <p class="text-[11px] text-muted-foreground">
                 <template v-if="validPrintUrl || validCutUrl">
@@ -774,7 +902,7 @@ async function setReady() {
                   dán 1 link in + 1 link cắt ở màn chi tiết batch, hệ thống tự áp cho mọi đơn.
                 </template>
               </p>
-            </div>
+            </div> -->
 
             <div class="space-y-2 rounded-md border border-border p-3">
               <p class="text-xs uppercase tracking-wide text-muted-foreground">Mở file</p>
@@ -837,96 +965,92 @@ async function setReady() {
       <div class="space-y-4">
         <p class="text-sm text-muted-foreground">
           <b>Chỉ tải file Design gốc (không gồm mockup).</b> Toàn bộ file nằm trong một
-          thư mục (<b>Batch_&lt;mã&gt;</b> nếu đang lọc theo batch, ngược lại <b>Design_&lt;ngày&gt;</b>),
-          mỗi file đặt tên theo <b>STT_SKU_SốLượng</b> (mặt trước/sau có hậu tố _FRONT/_BACK).
+          thư mục (<b>Batch_&lt;mã&gt;</b> nếu đang lọc theo batch, ngược lại
+          <b>Design_&lt;ngày&gt;</b>), mỗi file đặt tên theo <b>Mã nội bộ_SKU_SốLượng</b>
+          (mặt trước/sau có hậu tố _FRONT/_BACK).
         </p>
 
-        <div class="space-y-2">
-          <label
-            class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
-            :class="zipMode === 'all' ? 'bg-accent' : 'hover:bg-muted'"
-          >
-            <input
-              v-model="zipMode"
-              type="radio"
-              value="all"
-              class="mt-0.5 h-4 w-4 accent-primary"
+        <!-- Server-side filters over the WHOLE approved design queue (not the loaded
+             page): free text over mã nội bộ/SKU + the NVL dropdown. -->
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <input
+            v-model="zipFilter.text"
+            class="input flex-1"
+            placeholder="Tìm mã nội bộ hoặc SKU…"
+            aria-label="Tìm theo mã nội bộ hoặc SKU"
+          />
+          <div class="w-full sm:w-44">
+            <UiSelect
+              v-model="zipMaterialValue"
+              :options="materialOptions"
+              aria-label="Lọc theo nguyên vật liệu"
             />
-            <span class="text-sm">
-              <span class="font-medium text-foreground">Tải toàn bộ hàng đợi</span>
-              <span class="block text-muted-foreground">
-                Tất cả đơn đang chờ design có sẵn file design (mặt trước/sau).
-              </span>
-            </span>
-          </label>
+          </div>
+        </div>
 
+        <div class="flex items-center justify-between">
+          <button
+            class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+            :disabled="zipItems.length === 0"
+            @click="toggleSelectAll"
+          >
+            {{ allZipSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả' }}
+          </button>
+          <span class="text-xs text-muted-foreground">
+            <template v-if="zipLoading">Đang tải…</template>
+            <template v-else>{{ zipItems.length }} đơn khớp · đã chọn {{ zipSelected.size }}</template>
+          </span>
+        </div>
+
+        <div class="max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border">
+          <p v-if="zipLoading" class="px-3 py-6 text-center text-sm text-muted-foreground">
+            Đang tải danh sách…
+          </p>
+          <p
+            v-else-if="zipItems.length === 0"
+            class="px-3 py-6 text-center text-sm text-muted-foreground"
+          >
+            Không có đơn nào có file design khớp bộ lọc.
+          </p>
           <label
-            class="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3"
-            :class="zipMode === 'select' ? 'bg-accent' : 'hover:bg-muted'"
+            v-for="it in zipItems"
+            :key="it.id"
+            class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted"
           >
             <input
-              v-model="zipMode"
-              type="radio"
-              value="select"
-              class="mt-0.5 h-4 w-4 accent-primary"
+              type="checkbox"
+              class="h-4 w-4 accent-primary"
+              :checked="zipSelected.has(it.id)"
+              @change="toggleZipItem(it.id)"
             />
-            <span class="text-sm">
-              <span class="font-medium text-foreground">Chọn từng đơn</span>
-              <span class="block text-muted-foreground">
-                Tick những đơn muốn tải bên dưới.
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-foreground">
+                {{ it.internal_code }}
+              </span>
+              <span class="block truncate text-xs text-muted-foreground">
+                {{ it.sku_code }} · {{ it.design_url ? 'front ✓' : 'front ✗' }} ·
+                {{ it.back_design_url ? 'back ✓' : 'back ✗' }}
               </span>
             </span>
           </label>
         </div>
 
-        <div v-if="zipMode === 'select'" class="space-y-2">
-          <div class="flex items-center justify-between">
-            <button class="text-xs font-medium text-primary hover:underline" @click="toggleSelectAll">
-              {{ allSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả' }}
-            </button>
-            <span class="text-xs text-muted-foreground">Đã chọn {{ zipSelected.size }}</span>
-          </div>
-          <div class="max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border">
-            <p
-              v-if="downloadableItems.length === 0"
-              class="px-3 py-6 text-center text-sm text-muted-foreground"
-            >
-              Chưa có đơn nào trong hàng đợi có file để tải.
-            </p>
-            <label
-              v-for="it in downloadableItems"
-              :key="it.id"
-              class="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted"
-            >
-              <input
-                type="checkbox"
-                class="h-4 w-4 accent-primary"
-                :checked="zipSelected.has(it.id)"
-                @change="toggleZipItem(it.id)"
-              />
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium text-foreground">
-                  {{ it.internal_code }}
-                </span>
-                <span class="block truncate text-xs text-muted-foreground">
-                  {{ it.sku_code }} · {{ it.design_url ? 'front ✓' : 'front ✗' }} ·
-                  {{ it.back_design_url ? 'back ✓' : 'back ✗' }}
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
+        <p class="text-[11px] text-muted-foreground">
+          Không tick đơn nào → tải <b>tất cả đơn khớp bộ lọc</b>. Tick một số đơn → chỉ tải
+          những đơn đã chọn.
+        </p>
       </div>
 
       <template #footer>
         <button class="btn-secondary" @click="zipOpen = false">Huỷ</button>
         <button
           class="btn-primary"
-          :disabled="!canDownloadZip || downloadingZip"
+          :disabled="!canDownloadZip || downloadingZip || zipLoading"
           @click="downloadZip"
         >
           <UiSpinner v-if="downloadingZip" :size="16" />
-          <UiIcon v-else name="download" :size="16" /> Tải ZIP
+          <UiIcon v-else name="download" :size="16" />
+          {{ zipSelected.size ? `Tải ${zipSelected.size} đơn đã chọn` : `Tải tất cả ${zipItems.length} đơn` }}
         </button>
       </template>
     </UiModal>

@@ -10,6 +10,8 @@ export interface BatchListParams extends ListParams {
   // Lọc batch con của 1 batch mẹ. Mặc định danh sách chỉ trả batch mẹ + batch
   // phẳng (ẩn con) để không rối; truyền id mẹ để lấy riêng các con của nó.
   parent_batch_id?: number
+  // open=true: chỉ batch còn việc — bỏ batch đã đóng vì toàn bộ hàng bị huỷ ở QC.
+  open?: boolean
 }
 
 export interface CreateBatchInput {

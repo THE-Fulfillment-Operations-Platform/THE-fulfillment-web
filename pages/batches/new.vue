@@ -243,7 +243,18 @@ onMounted(() => {
                   <td class="table-td">
                     <input type="checkbox" :checked="selectedIds.has(it.id)" class="h-4 w-4 rounded border-border" @click.stop="toggle(it.id)" />
                   </td>
-                  <td class="table-td font-medium text-foreground">{{ it.internal_code }}</td>
+                  <td class="table-td font-medium text-foreground">
+                    {{ it.internal_code }}
+                    <!-- Hàng làm lại sau QC fail: người gom batch cần thấy ngay để
+                         ưu tiên, vì khách đã chờ qua một lượt sản xuất hỏng. -->
+                    <span
+                      v-if="(it.rework_count ?? 0) > 0"
+                      class="ml-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                      :title="`Đã QC fail ${it.rework_count} lần — đây là lần sản xuất thứ ${(it.rework_count ?? 0) + 1}`"
+                    >
+                      Làm lại · lần {{ (it.rework_count ?? 0) + 1 }}
+                    </span>
+                  </td>
                   <td class="table-td">{{ itemStoreOrderId(it) }}</td>
                   <td class="table-td">{{ it.sku_code }}</td>
                   <td class="table-td">{{ it.quantity }}</td>

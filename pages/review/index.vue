@@ -3,15 +3,20 @@ import { reviewApi } from '~/services/api'
 import type { Order } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { useConfirm } from '~/composables/useConfirm'
 import { useToastStore } from '~/stores/toast'
 import { formatDateTime } from '~/utils/format'
 import { errorMessage } from '~/utils/api-error'
 import { REVIEW_STATUS, REVIEW_STATUS_OPTIONS } from '~/utils/enums'
+import { useRowLink } from '~/composables/useRowLink'
+
+// Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
+const { rowLinkAttrs } = useRowLink()
 
 // Pending Review — seller-uploaded/imported orders wait here until Ops/Design
 // approves them. Only approved orders enter the design/production flow.
-const filters = reactive({ status: '', search: '', page: 1 })
+const filters = reactive({ status: '', search: '', page: 1, page_size: 20 })
 const toast = useToastStore()
 
 const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>
@@ -19,7 +24,7 @@ const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>
     status: filters.status || undefined,
     store_order_id: filters.search || undefined,
     page: filters.page,
-    page_size: 20,
+    page_size: filters.page_size,
   }),
 )
 const orders = computed(() => data.value ?? [])
@@ -41,6 +46,15 @@ function applyFilters() {
 }
 function changePage(p: number) {
   filters.page = p
+  clear()
+  reload()
+}
+
+// Đổi số dòng/trang thì về trang 1 và bỏ tick: các dòng đã chọn có thể không còn
+// trên trang mới.
+function changePageSize(size: number) {
+  filters.page_size = size
+  filters.page = 1
   clear()
   reload()
 }
@@ -71,6 +85,9 @@ async function bulkApprove() {
     if (res.approved_count === 0 && res.skipped_count === 0) toast.info('Không có đơn nào được xử lý')
     clear()
     reload()
+    // Duyệt hàng loạt là chỗ badge lệch nhiều nhất: duyệt 3 đơn một lúc mà con số
+    // vẫn là 3 thì đọc ra như chưa có đơn nào được duyệt.
+    if (res.approved_count > 0) void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -146,6 +163,7 @@ async function bulkApprove() {
               <tr
                 v-for="o in orders"
                 :key="o.id"
+                v-bind="rowLinkAttrs(`/review/${o.id}`)"
                 class="hover:bg-muted"
                 :class="{ 'bg-primary/5': isSelected(o.id), 'bg-rose-50/60 dark:bg-rose-500/10': o.store_order_dup && !isSelected(o.id) }"
               >
@@ -188,7 +206,12 @@ async function bulkApprove() {
           </table>
         </div>
         <div class="px-4">
-          <UiPagination :meta="meta" @change="changePage" />
+          <UiPagination
+            :meta="meta"
+            :page-size="filters.page_size"
+            @change="changePage"
+            @update:page-size="changePageSize"
+          />
         </div>
       </UiStateBlock>
     </div>

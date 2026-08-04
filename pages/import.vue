@@ -3,6 +3,7 @@ import { importsApi, sellersApi } from '~/services/api'
 import type { ImportPreview, ImportRow, Seller } from '~/types'
 import { parseCsv, importTemplateCsv, IMPORT_COLUMNS } from '~/utils/csv'
 import { importErrorVi } from '~/utils/import-errors'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
@@ -118,6 +119,10 @@ async function commit() {
     committed.value = true
     if (preview.value) preview.value.status = 'COMMITTED'
     toast.success(`Đã commit ${created} đơn hợp lệ`)
+    // Đơn vừa import vào thẳng hàng "Chờ duyệt", và item thiếu mockup còn sinh
+    // note "cần xử lý" — hai badge cùng TĂNG. Người vừa import cần thấy ngay số
+    // việc mình vừa tạo ra.
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -170,7 +175,7 @@ const skuIssues = computed(() => (preview.value?.errors ?? []).filter((e) => isS
 const unmappedSkus = computed(() => [...new Set(skuIssues.value.map((e) => e.sku).filter(Boolean))] as string[])
 // Deep-link: unknown SKU → legacy import / create; existing-but-unmapped → mapping.
 function masterDataLink(code?: string) {
-  return code === 'SKU_NO_MATERIAL' ? '/master-data?tab=mapping' : '/master-data?tab=import'
+  return code === 'SKU_NO_MATERIAL' ? '/master-data?tab=mapping' : '/master-data?tab=skus'
 }
 </script>
 
@@ -335,7 +340,7 @@ function masterDataLink(code?: string) {
                   </span>
                 </p>
                 <div class="mt-3 flex flex-wrap gap-2">
-                  <NuxtLink to="/master-data?tab=import" class="btn-primary px-3 py-1.5 text-xs">
+                  <NuxtLink to="/master-data?tab=skus" class="btn-primary px-3 py-1.5 text-xs">
                     <UiIcon name="layers" :size="14" /> Setup SKU/NVL
                   </NuxtLink>
                   <button class="btn-secondary px-3 py-1.5 text-xs" :disabled="previewing" @click="runPreview">

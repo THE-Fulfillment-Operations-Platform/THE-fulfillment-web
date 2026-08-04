@@ -1,5 +1,13 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../http'
-import type { Note, NoteSeverity, NoteStatus, EntityType, Role, ListParams } from '~/types'
+import type {
+  Note,
+  NoteSeverity,
+  NoteStatus,
+  EntityType,
+  Role,
+  ListParams,
+  NoteDeleteResult,
+} from '~/types'
 
 export interface NoteListParams extends ListParams {
   status?: string
@@ -28,4 +36,12 @@ export const notesApi = {
   create: (body: NoteInput) => apiPost<Note>('/api/notes', body),
   update: (id: number | string, body: Partial<NoteInput>) => apiPut<Note>(`/api/notes/${id}`, body),
   remove: (id: number | string) => apiDelete<unknown>(`/api/notes/${id}`),
+  // Xoá nhiều note trong MỘT request — màn này phần lớn là cảnh báo tự sinh nên
+  // dọn theo lô là thao tác thường xuyên nhất.
+  bulkRemove: (ids: number[]) => apiPost<NoteDeleteResult>('/api/notes/bulk-delete', { ids }),
+  // "Chọn tất cả": gửi BỘ LỌC đang xem thay vì danh sách id, để server xoá đúng
+  // toàn bộ tập khớp — kể cả các trang chưa tải. Gửi id thì chỉ xoá được đúng
+  // những gì client đang giữ (một trang), tức là im lặng làm thiếu việc.
+  bulkRemoveMatching: (filter: NoteListParams) =>
+    apiPost<NoteDeleteResult>('/api/notes/bulk-delete', { ...filter, all: true }),
 }

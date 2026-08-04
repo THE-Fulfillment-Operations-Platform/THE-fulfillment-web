@@ -3,7 +3,9 @@ import { notesApi } from '~/services/api'
 import type { NoteInput } from '~/services/api'
 import type { Note } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { useConfirm } from '~/composables/useConfirm'
+import { useSelection } from '~/composables/useSelection'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import { exportCsv } from '~/utils/csv'
@@ -26,7 +28,7 @@ import {
 // resolves; required_attention surfaces them on the dashboard.
 const toast = useToastStore()
 
-const filters = reactive({ status: '', severity: '', required: false, page: 1 })
+const filters = reactive({ status: '', severity: '', required: false, page: 1, page_size: 20 })
 
 const statusFilterOptions = computed(() => [
   { value: '', label: 'Tất cả' },
@@ -43,18 +45,106 @@ const { data, meta, loading, error, reload } = useApiResource<Note[]>(() =>
     severity: filters.severity || undefined,
     required_attention: filters.required || undefined,
     page: filters.page,
-    page_size: 20,
+    page_size: filters.page_size,
   }),
 )
 const notes = computed(() => data.value ?? [])
 
 function applyFilters() {
   filters.page = 1
+  clearSelection()
   reload()
 }
 function changePage(p: number) {
   filters.page = p
+  clearSelection()
   reload()
+}
+
+// Đổi số dòng/trang thì về trang 1: trang đang xem có thể không còn tồn tại ở
+// kích thước mới.
+function changePageSize(size: number) {
+  filters.page_size = size
+  filters.page = 1
+  clearSelection()
+  reload()
+}
+
+// --- Tick chọn để xoá hàng loạt ---
+// Checkbox ở header tick đúng những dòng đang thấy (một trang). Khi cả trang đã
+// được tick mà tập khớp bộ lọc còn nhiều hơn, màn hình mời "chọn tất cả N" —
+// chế độ đó KHÔNG gom id nữa mà gửi thẳng bộ lọc cho server xoá, nên xoá đúng
+// toàn bộ tập chứ không phải mỗi trang đang tải.
+const {
+  isSelected,
+  toggle: toggleRow,
+  toggleAll,
+  allSelected,
+  someSelected,
+  count: selectedCount,
+  selectedIds,
+  clear: clearRowSelection,
+} = useSelection(() => notes.value)
+
+// Bật khi user bấm "chọn tất cả …": thao tác chạy theo bộ lọc, không theo id.
+const allMatching = ref(false)
+// Tổng số bản ghi khớp bộ lọc (server trả trong meta), độc lập với cỡ trang.
+const matchingTotal = computed(() => meta.value?.total ?? 0)
+// Số mục thao tác sẽ đụng tới — đây là con số hiển thị trên thanh và trong hộp
+// xác nhận, để không bao giờ nói "50" rồi xoá 400 (hoặc ngược lại).
+const affectedCount = computed(() => (allMatching.value ? matchingTotal.value : selectedCount.value))
+// Chỉ mời chọn-tất-cả khi còn thứ ngoài trang hiện tại để chọn.
+const canOfferSelectAll = computed(
+  () => !allMatching.value && allSelected.value && matchingTotal.value > selectedCount.value,
+)
+
+function clearSelection() {
+  allMatching.value = false
+  clearRowSelection()
+}
+function selectAllMatching() {
+  allMatching.value = true
+}
+
+const bulkBusy = ref(false)
+async function bulkRemove() {
+  const count = affectedCount.value
+  if (!count || bulkBusy.value) return
+  if (
+    !(await useConfirm().confirm({
+      title: 'Xoá nhiều ghi chú',
+      message: allMatching.value
+        ? `Xoá TẤT CẢ ${count} ghi chú khớp bộ lọc hiện tại (gồm cả các trang chưa xem)? Thao tác không thể hoàn tác.`
+        : `Xoá ${count} ghi chú đã chọn? Thao tác không thể hoàn tác.`,
+      tone: 'danger',
+      confirmText: `Xoá ${count} mục`,
+    }))
+  )
+    return
+  bulkBusy.value = true
+  try {
+    // Chế độ "tất cả": server xoá theo đúng bộ lọc đang xem — client không cần
+    // (và không nên) liệt kê hàng nghìn id. Ngược lại thì gửi đúng id đã tick.
+    const { data } = allMatching.value
+      ? await notesApi.bulkRemoveMatching({
+          status: filters.status || undefined,
+          severity: filters.severity || undefined,
+          required_attention: filters.required || undefined,
+        })
+      : await notesApi.bulkRemove(selectedIds.value)
+    const ok = data?.deleted_count ?? 0
+    const missing = data?.missing_ids.length ?? 0
+    if (!missing) toast.success(`Đã xoá ${ok} ghi chú`)
+    else toast.error(`Đã xoá ${ok}, ${missing} mục không còn tồn tại`)
+    clearSelection()
+    filters.page = 1
+    await reload()
+    void refreshActionCounts()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    bulkBusy.value = false
+  }
 }
 
 function exportNotes() {
@@ -175,6 +265,8 @@ async function submit() {
     }
     open.value = false
     await reload()
+    // Tạo/sửa đều có thể bật-tắt cờ "cần xử lý", tức làm badge tăng HOẶC giảm.
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -189,6 +281,7 @@ async function resolve(n: Note) {
     await notesApi.update(n.id, { status: 'RESOLVED', is_required_attention: false })
     toast.success(`Đã giải quyết: ${n.title}`)
     await reload()
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -210,6 +303,7 @@ async function remove(n: Note) {
     await notesApi.remove(n.id)
     toast.success('Đã xoá note')
     await reload()
+    void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
   }
@@ -251,6 +345,28 @@ async function remove(n: Note) {
     </div>
 
     <div class="card overflow-hidden">
+      <UiBulkBar :count="affectedCount" noun="ghi chú" @clear="clearSelection">
+        <template #note>
+          <button
+            v-if="canOfferSelectAll"
+            class="text-sm font-medium text-primary hover:underline"
+            @click="selectAllMatching"
+          >
+            Chọn tất cả {{ matchingTotal }} ghi chú khớp bộ lọc
+          </button>
+          <span v-else-if="allMatching" class="text-sm text-muted-foreground">
+            (toàn bộ {{ matchingTotal }} ghi chú khớp bộ lọc, gồm cả trang chưa xem)
+          </span>
+        </template>
+        <button
+          class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
+          :disabled="bulkBusy"
+          @click="bulkRemove"
+        >
+          <UiSpinner v-if="bulkBusy" :size="14" /> Xoá {{ affectedCount }} mục
+        </button>
+      </UiBulkBar>
+
       <UiStateBlock
         :loading="loading"
         :error="error"
@@ -264,6 +380,17 @@ async function remove(n: Note) {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
+                <th class="table-th w-10">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                    :checked="allSelected || allMatching"
+                    :indeterminate.prop="someSelected && !allMatching"
+                    :disabled="notes.length === 0"
+                    aria-label="Chọn tất cả ghi chú trên trang"
+                    @change="toggleAll"
+                  />
+                </th>
                 <th class="table-th">Tiêu đề</th>
                 <th class="table-th hidden md:table-cell">Đối tượng</th>
                 <th class="table-th hidden lg:table-cell">Phụ trách</th>
@@ -274,7 +401,16 @@ async function remove(n: Note) {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="n in notes" :key="n.id" class="hover:bg-muted">
+              <tr v-for="n in notes" :key="n.id" class="hover:bg-muted" :class="allMatching || isSelected(n.id) ? 'bg-primary/5' : ''">
+                <td class="table-td">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                    :checked="allMatching || isSelected(n.id)"
+                    :aria-label="`Chọn ghi chú ${n.title}`"
+                    @change="toggleRow(n.id)"
+                  />
+                </td>
                 <td class="table-td max-w-xs">
                   <div class="flex items-center gap-1.5">
                     <UiIcon v-if="n.is_required_attention" name="alert" :size="14" class="shrink-0 text-red-500 dark:text-rose-400" />
@@ -309,7 +445,12 @@ async function remove(n: Note) {
           </table>
         </div>
         <div class="px-4">
-          <UiPagination :meta="meta" @change="changePage" />
+          <UiPagination
+            :meta="meta"
+            :page-size="filters.page_size"
+            @change="changePage"
+            @update:page-size="changePageSize"
+          />
         </div>
       </UiStateBlock>
     </div>

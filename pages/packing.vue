@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { packingApi, ordersApi } from '~/services/api'
+import { packingApi, ordersApi, handoffsApi } from '~/services/api'
 import type { PackingResult, Order } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
+import { useConfirm } from '~/composables/useConfirm'
 
 // Packing station (Wireframe: Packing). Each item scan is posted to the package
 // for its order; the backend returns the running package state. When every line
@@ -95,6 +96,36 @@ function openPacked(o: Order) {
   orderLookup.value = String(o.id)
   loadOrder()
   if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// ---- Bàn giao cho THE -------------------------------------------------------
+// Đây là ranh giới giữa hai nửa vòng đời của đơn: mọi thứ trước nó là luồng sản
+// xuất của xưởng, sau nó kiện hàng thuộc bên vận chuyển. Bấm nút này mới là lúc
+// hệ thống bắt đầu theo dõi hành trình — trước đó backend không gọi 24hTrack,
+// vì kiện hàng chưa tồn tại với hãng vận chuyển.
+const handingOff = ref<number | null>(null)
+
+async function handOff(orderId: number, orderCode: string) {
+  if (handingOff.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Bàn giao cho THE',
+    message: `Bàn giao đơn ${orderCode} cho THE? Sau bước này hệ thống bắt đầu theo dõi hành trình kiện hàng.`,
+    confirmText: 'Bàn giao',
+  })
+  if (!ok) return
+  handingOff.value = orderId
+  try {
+    const { data } = await handoffsApi.create({ order_id: orderId })
+    toast.success(`Đã bàn giao ${orderCode} — handoff ${data.code}`)
+    // Đơn rời khỏi hàng đợi "chờ bàn giao", và kiện đang mở trên panel cũng phải
+    // phản ánh trạng thái mới thay vì tiếp tục mời bàn giao lần nữa.
+    await loadPacked()
+    if (pkg.value?.order_id === orderId) clearStation()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    handingOff.value = null
+  }
 }
 
 onMounted(() => {
@@ -240,13 +271,20 @@ onMounted(() => {
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3">
         <p v-if="pkg.fully_packed" class="text-sm font-medium text-emerald-700 dark:text-emerald-300">
-          ✓ Kiện hàng đã đủ — chuyển sang bàn giao ở màn Shipping.
+          ✓ Kiện hàng đã đủ — bàn giao cho THE để bắt đầu theo dõi hành trình.
         </p>
         <p v-else class="text-sm text-muted-foreground">Tiếp tục quét cho đến khi đủ số lượng.</p>
         <div class="flex gap-2">
-          <NuxtLink v-if="pkg.fully_packed" to="/shipping" class="btn-primary">
-            <UiIcon name="shipping" :size="16" /> Tạo handoff
-          </NuxtLink>
+          <button
+            v-if="pkg.fully_packed"
+            class="btn-primary"
+            :disabled="handingOff === pkg.order_id"
+            @click="handOff(pkg.order_id, pkg.order_code)"
+          >
+            <UiSpinner v-if="handingOff === pkg.order_id" :size="16" />
+            <UiIcon v-else name="shipping" :size="16" />
+            Bàn giao cho THE
+          </button>
           <button class="btn-secondary" @click="clearStation">Đơn khác</button>
         </div>
       </div>
@@ -287,7 +325,19 @@ onMounted(() => {
               <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.store_name }}</td>
               <td class="table-td"><UiStatusBadge kind="seller" :value="o.seller_status" /></td>
               <td class="table-td text-right">
-                <button class="table-action text-primary" @click="openPacked(o)">Mở kiện</button>
+                <div class="flex items-center justify-end gap-3">
+                  <button class="table-action text-primary" @click="openPacked(o)">Mở kiện</button>
+                  <!-- Bàn giao thẳng từ hàng đợi: đơn đã đóng đủ rồi, không cần
+                       mở lại kiện chỉ để bấm một nút. -->
+                  <button
+                    class="table-action inline-flex items-center gap-1 text-primary disabled:opacity-50"
+                    :disabled="handingOff === o.id"
+                    @click="handOff(o.id, o.internal_code)"
+                  >
+                    <UiSpinner v-if="handingOff === o.id" :size="12" />
+                    Bàn giao cho THE
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>

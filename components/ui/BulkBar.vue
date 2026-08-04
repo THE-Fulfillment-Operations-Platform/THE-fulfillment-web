@@ -13,6 +13,9 @@ defineEmits<{ (e: 'clear'): void }>()
         <span class="text-sm font-medium text-foreground">
           Đã chọn {{ count }} {{ noun || 'mục' }}
         </span>
+        <!-- Slot phụ: chỗ mời "chọn tất cả N khớp bộ lọc" khi tập ngoài trang
+             hiện tại còn nhiều hơn những gì vừa tick. -->
+        <slot name="note" />
         <div class="ml-auto flex flex-wrap items-center gap-1.5">
           <slot />
           <button class="table-action text-muted-foreground" @click="$emit('clear')">Bỏ chọn</button>

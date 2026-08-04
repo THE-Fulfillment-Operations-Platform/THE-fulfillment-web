@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { handoffsApi } from '~/services/api'
+import { handoffsApi, trackingApi } from '~/services/api'
 import type { Handoff, HandoffStatus } from '~/types'
 import type { HandoffInput, ShipHandoffInput } from '~/services/api'
 import { useApiResource } from '~/composables/useApiResource'
@@ -9,7 +9,7 @@ import { useToastStore } from '~/stores/toast'
 
 // Shipping / Handoff (Wireframe: Shipping). Packed orders are handed off to THE
 // for dispatch. The create form mirrors the HandoffInput the backend accepts —
-// carrier/tracking are populated by the SHIPPED stage, not at handoff time.
+// tracking is populated by the SHIPPED stage, not at handoff time.
 const toast = useToastStore()
 const pager = reactive({ page: 1, page_size: 20 })
 const { data, meta, loading, error, reload } = useApiResource<Handoff[]>(() =>
@@ -19,6 +19,14 @@ const handoffs = computed(() => data.value ?? [])
 
 function changePage(p: number) {
   pager.page = p
+  reload()
+}
+
+// Đổi số dòng/trang thì phải về trang 1: trang hiện tại có thể không còn tồn tại
+// ở kích thước mới.
+function changePageSize(size: number) {
+  pager.page_size = size
+  pager.page = 1
   reload()
 }
 
@@ -82,29 +90,28 @@ async function submit() {
 }
 
 // ---- Mark shipped (HANDED_OFF → SHIPPED) -----------------------------------
-// Records the carrier + tracking number so the order can complete and the
-// seller can follow the parcel.
+// Chỉ ghi mã vận đơn. Không hỏi "đơn vị vận chuyển": trong hệ thống này chỉ có
+// MỘT đơn vị vận chuyển là chính chúng ta — hãng nào chở thực tế là chuyện nội
+// bộ, không phải thứ gõ vào một ô mà đơn hàng của seller sẽ hiển thị lại.
 const shipOpen = ref(false)
 const shipping = ref(false)
 const shipTarget = ref<Handoff | null>(null)
-const shipForm = reactive<ShipHandoffInput>({ carrier: '', tracking_number: '', label_url: '' })
+const shipForm = reactive<ShipHandoffInput>({ tracking_number: '', label_url: '' })
 
 function openShip(h: Handoff) {
   shipTarget.value = h
-  shipForm.carrier = h.carrier || ''
   shipForm.tracking_number = h.tracking_number || ''
   shipForm.label_url = h.label_url || ''
   shipOpen.value = true
 }
 
-const canShip = computed(() => !!shipForm.carrier.trim() && !!shipForm.tracking_number.trim())
+const canShip = computed(() => !!shipForm.tracking_number.trim())
 
 async function submitShip() {
   if (!shipTarget.value || !canShip.value || shipping.value) return
   shipping.value = true
   try {
     await handoffsApi.markShipped(shipTarget.value.id, {
-      carrier: shipForm.carrier.trim(),
       tracking_number: shipForm.tracking_number.trim(),
       label_url: shipForm.label_url?.trim() || undefined,
     })
@@ -117,6 +124,28 @@ async function submitShip() {
     shipping.value = false
   }
 }
+
+// ---- 24hTrack ---------------------------------------------------------------
+// The provider is polled on a timer server-side; this button is for when someone
+// does not want to wait for the next pass (e.g. right after dispatching a batch).
+const syncing = ref(false)
+async function syncTracking() {
+  if (syncing.value) return
+  syncing.value = true
+  try {
+    const { data } = await trackingApi.syncAll()
+    const parts: string[] = []
+    if (data?.resolved) parts.push(`${data.resolved} đơn tìm được mã vận đơn`)
+    if (data?.synced) parts.push(`${data.synced} đơn đã cập nhật`)
+    if (data?.failed) parts.push(`${data.failed} lỗi`)
+    toast.success(parts.length ? `24hTrack: ${parts.join(', ')}` : 'Không có đơn nào cần đồng bộ')
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    syncing.value = false
+  }
+}
 </script>
 
 <template>
@@ -127,6 +156,11 @@ async function submitShip() {
     >
       <template #actions>
         <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /> Làm mới</button>
+        <button class="btn-secondary" :disabled="syncing" title="Cập nhật trạng thái & hành trình từ 24hTrack" @click="syncTracking">
+          <UiSpinner v-if="syncing" :size="16" />
+          <UiIcon v-else name="refresh" :size="16" />
+          Đồng bộ 24hTrack
+        </button>
         <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Tạo handoff</button>
       </template>
     </PageHeader>
@@ -145,7 +179,6 @@ async function submitShip() {
               <tr>
                 <th class="table-th">Mã handoff</th>
                 <th class="table-th">Order / Package</th>
-                <th class="table-th">Carrier</th>
                 <th class="table-th">Tracking</th>
                 <th class="table-th">Kiện</th>
                 <th class="table-th">Trạng thái</th>
@@ -160,7 +193,6 @@ async function submitShip() {
                   <span v-if="h.order_id">Order #{{ h.order_id }}</span>
                   <span v-if="h.package_id" class="text-muted-foreground"> · Pkg #{{ h.package_id }}</span>
                 </td>
-                <td class="table-td">{{ h.carrier || '—' }}</td>
                 <td class="table-td font-mono text-xs">{{ h.tracking_number || '—' }}</td>
                 <td class="table-td text-xs text-muted-foreground">
                   {{ h.box_type || '—' }}<span v-if="h.weight_grams"> · {{ h.weight_grams }}g</span>
@@ -190,7 +222,12 @@ async function submitShip() {
             </tbody>
           </table>
         </div>
-        <UiPagination :meta="meta" @change="changePage" />
+        <UiPagination
+          :meta="meta"
+          :page-size="pager.page_size"
+          @change="changePage"
+          @update:page-size="changePageSize"
+        />
       </UiStateBlock>
     </div>
 
@@ -259,13 +296,9 @@ async function submitShip() {
     <UiModal v-model="shipOpen" :title="shipTarget ? `Đánh dấu đã gửi · ${shipTarget.code}` : 'Đánh dấu đã gửi'">
       <div class="space-y-4">
         <p class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Nhập đơn vị vận chuyển và mã vận đơn. Kiện sẽ chuyển sang trạng thái
+          Nhập mã vận đơn. Kiện sẽ chuyển sang trạng thái
           <span class="font-medium">Đã gửi đi</span> và seller theo dõi được mã này.
         </p>
-        <div>
-          <label class="label">Đơn vị vận chuyển <span class="text-destructive">*</span></label>
-          <input v-model="shipForm.carrier" class="input" placeholder="VD: GHN, J&T, DHL…" />
-        </div>
         <div>
           <label class="label">Mã vận đơn (tracking) <span class="text-destructive">*</span></label>
           <input v-model="shipForm.tracking_number" class="input" placeholder="VD: JT0001234567" />

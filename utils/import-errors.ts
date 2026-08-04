@@ -52,6 +52,13 @@ const IMPORT_ERROR_VI: Record<string, ImportErrorVi> = {
     detail: 'Link design không phải một địa chỉ http(s) hợp lệ.',
     suggestion: 'Sửa lại link design, hoặc để trống nếu chưa có.',
   },
+  ADDR_ZIP_STATE_SWAPPED: {
+    label: 'ZIP và Bang có vẻ bị đảo cột',
+    detail:
+      'Cột ShippingZip đang chứa mã bang (2 chữ cái) còn ShippingProvince chứa toàn số — KHÔNG chặn, nhưng nếu đúng là đảo thì kiện sẽ bị trả về.',
+    suggestion:
+      'Đổi chỗ hai cột trong file: ShippingZip là mã bưu chính (số), ShippingProvince là bang/tỉnh. Lưu ý template xếp ZIP TRƯỚC Bang, ngược với thứ tự quen thuộc "City, State ZIP".',
+  },
   ORD_DUPLICATE: {
     label: 'Trùng mã đơn (StoreOrderID)',
     detail: 'StoreOrderID này đã tồn tại cho seller — KHÔNG chặn, đơn vẫn được import với mã nội bộ riêng.',

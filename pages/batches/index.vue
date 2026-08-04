@@ -7,6 +7,10 @@ import { formatDate } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { useToastStore } from '~/stores/toast'
+import { useRowLink } from '~/composables/useRowLink'
+
+// Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
+const { rowLinkAttrs } = useRowLink()
 
 const toast = useToastStore()
 const materials = ref<Material[]>([])
@@ -19,6 +23,7 @@ const filters = reactive({
   sku: '', // client-side refine
   overdue: false, // client-side refine
   page: 1,
+  page_size: 20,
 })
 
 const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
@@ -27,7 +32,7 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     status: filters.status || undefined,
     priority: filters.priority || undefined,
     page: filters.page,
-    page_size: 20,
+    page_size: filters.page_size,
   }),
 )
 
@@ -81,6 +86,14 @@ function changePage(p: number) {
   reload()
 }
 
+// Đổi số dòng/trang thì về trang 1: trang đang xem có thể không còn tồn tại ở
+// kích thước mới.
+function changePageSize(size: number) {
+  filters.page_size = size
+  filters.page = 1
+  reload()
+}
+
 function exportBatches() {
   const list = rows.value
   if (!list.length) {
@@ -91,6 +104,8 @@ function exportBatches() {
     { label: 'Batch', value: 'code' },
     { label: 'Material', value: (b) => b.material_name || b.material?.name || b.material_code || '' },
     { label: 'Items', value: (b) => b.item_count ?? b.items?.length ?? 0 },
+    { label: 'Đã huỷ (QC fail)', value: (b) => b.scrapped_count ?? 0 },
+    { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
     { label: 'SKU', value: (b) => skuSummary(b) },
     { label: 'Status', value: (b) => INTERNAL_STATUS[b.status]?.label ?? b.status },
     { label: 'Priority', value: (b) => PRIORITY[b.priority || 'NORMAL']?.label ?? b.priority ?? '' },
@@ -179,11 +194,16 @@ function exportBatches() {
                 <th class="table-th hidden sm:table-cell">Priority</th>
                 <th class="table-th hidden md:table-cell">Hạn</th>
                 <th class="table-th hidden lg:table-cell">Người tạo</th>
-                <th class="table-th"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="b in rows" :key="b.id" class="hover:bg-muted" :class="{ 'bg-rose-50/40 dark:bg-rose-500/5': isBatchOverdue(b) }">
+              <tr
+                v-for="b in rows"
+                :key="b.id"
+                v-bind="rowLinkAttrs(`/batches/${b.id}`)"
+                class="hover:bg-muted"
+                :class="{ 'bg-rose-50/40 dark:bg-rose-500/5': isBatchOverdue(b) }"
+              >
                 <td class="table-td font-medium text-foreground">
                   <div class="flex items-center gap-1.5">
                     <span>{{ b.code }}</span>
@@ -195,6 +215,13 @@ function exportBatches() {
                       Mẹ · {{ b.child_count ?? b.child_batches?.length ?? 0 }} con
                     </span>
                     <span
+                      v-if="b.closed_at"
+                      class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                      :title="b.close_reason || 'Batch đã đóng'"
+                    >
+                      Đã đóng
+                    </span>
+                    <span
                       v-else-if="b.parent_batch_id"
                       class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                       title="Batch con"
@@ -204,7 +231,18 @@ function exportBatches() {
                   </div>
                 </td>
                 <td class="table-td">{{ b.material_name || b.material?.name || b.material_code }}</td>
-                <td class="table-td hidden md:table-cell">{{ b.item_count ?? b.items?.length ?? 0 }}</td>
+                <td class="table-td hidden md:table-cell">
+                  {{ b.item_count ?? b.items?.length ?? 0 }}
+                  <!-- Batch có thể còn 0 sản phẩm mà vẫn tồn tại: hàng nó làm ra đã
+                       bị huỷ ở QC. Nói ra để không ai tưởng batch lỗi/trống. -->
+                  <span
+                    v-if="(b.scrapped_count ?? 0) > 0"
+                    class="ml-1 text-[11px] text-rose-600 dark:text-rose-400"
+                    :title="`${b.scrapped_count} sản phẩm của batch này đã bị huỷ do QC fail và đang được làm lại ở batch khác`"
+                  >
+                    ({{ b.scrapped_count }} huỷ)
+                  </span>
+                </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
                 <td class="table-td"><UiStatusBadge kind="internal" :value="b.status" /></td>
                 <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" /></td>
@@ -217,14 +255,16 @@ function exportBatches() {
                   <span v-else class="text-muted-foreground">{{ formatDate(b.due_date) }}</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ b.created_by?.full_name || b.created_by?.email || '—' }}</td>
-                <td class="table-td text-right">
-                  <NuxtLink :to="`/batches/${b.id}`" class="text-xs font-medium text-primary hover:underline">Open</NuxtLink>
-                </td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="px-4"><UiPagination :meta="meta" @change="changePage" /></div>
+        <div class="px-4"><UiPagination
+            :meta="meta"
+            :page-size="filters.page_size"
+            @change="changePage"
+            @update:page-size="changePageSize"
+          /></div>
       </UiStateBlock>
     </div>
   </div>

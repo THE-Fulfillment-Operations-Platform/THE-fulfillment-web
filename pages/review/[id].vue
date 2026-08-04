@@ -2,6 +2,7 @@
 import { reviewApi, itemsApi } from '~/services/api'
 import type { ReviewOrderDetail, ReviewIssue, OrderItem } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
@@ -108,6 +109,10 @@ async function doAction(kind: 'approve' | 'reject' | 'correction') {
     toast.success(
       kind === 'approve' ? 'Đã duyệt đơn' : kind === 'reject' ? 'Đã từ chối đơn' : 'Đã gửi yêu cầu chỉnh sửa',
     )
+    // Cả ba nhánh đều đưa đơn ra khỏi hàng chờ duyệt, nên badge sidebar phải giảm
+    // ngay. Không chờ được nó: điều hướng về /review là màn này unmount, và người
+    // dùng sẽ thấy badge cũ cạnh một danh sách đã rỗng.
+    void refreshActionCounts()
     router.push('/review')
   } catch (e) {
     toast.error(errorMessage(e))
@@ -116,21 +121,26 @@ async function doAction(kind: 'approve' | 'reject' | 'correction') {
   }
 }
 
-const shippingRows = computed(() => {
+// Trường lõi LUÔN hiện, trống thì '—': người duyệt cần thấy đơn thiếu địa chỉ
+// TRƯỚC khi cho vào sản xuất, chứ không phải trường trống bị ẩn đi cho gọn.
+// IOSS chỉ hiện khi có (riêng đơn EU).
+const shippingRows = computed<[string, string][]>(() => {
   const o = order.value
   if (!o) return []
-  return [
-    ['Người nhận', o.shipping_name],
-    ['Địa chỉ 1', o.shipping_address1],
-    ['Địa chỉ 2', o.shipping_address2],
-    ['Thành phố', o.shipping_city],
-    ['Tỉnh/Bang', o.shipping_province],
-    ['Mã bưu chính', o.shipping_zip],
-    ['Quốc gia', o.shipping_country],
-    ['Điện thoại', o.shipping_phone],
-    ['Email', o.shipping_email],
-    ['IOSS', o.ioss],
-  ].filter(([, v]) => v) as [string, string][]
+  const dash = (v?: string) => (v ?? '').trim() || '—'
+  const rows: [string, string][] = [
+    ['Người nhận', dash(o.shipping_name)],
+    ['Địa chỉ 1', dash(o.shipping_address1)],
+    ['Địa chỉ 2', dash(o.shipping_address2)],
+    ['Thành phố', dash(o.shipping_city)],
+    ['Tỉnh/Bang', dash(o.shipping_province)],
+    ['Mã bưu chính', dash(o.shipping_zip)],
+    ['Quốc gia', dash(o.shipping_country)],
+    ['Điện thoại', dash(o.shipping_phone)],
+    ['Email', dash(o.shipping_email)],
+  ]
+  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
+  return rows
 })
 </script>
 

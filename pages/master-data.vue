@@ -4,23 +4,27 @@ import type { Material, Sku, Seller } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
-// Master Data / SKU-NVL Setup. Single page with four tabs (MVP): Materials, SKUs,
-// SKU → Material mapping, and legacy Excel import. The catalog is loaded once here
-// and shared with every tab so a create/import in one reflects across the others.
+// Master Data / SKU-NVL Setup. Single page with four tabs: Materials, SKUs,
+// SKU → Material mapping and Seller. The catalog is loaded once here and shared
+// with every tab so a create/import in one reflects across the others. Cả hai
+// đường import Excel (định mức NVL, file vận hành cũ) đều là nút ngay trong tab
+// sở hữu dữ liệu đó, không còn tab riêng.
 const route = useRoute()
 const router = useRouter()
 
-type TabKey = 'materials' | 'skus' | 'mapping' | 'sellers' | 'import'
+type TabKey = 'materials' | 'skus' | 'mapping' | 'sellers'
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'materials', label: 'Materials', icon: 'box' },
   { key: 'skus', label: 'SKUs', icon: 'orders' },
   { key: 'mapping', label: 'SKU → Material', icon: 'link' },
   { key: 'sellers', label: 'Seller', icon: 'users' },
-  { key: 'import', label: 'Import Excel vận hành cũ', icon: 'upload' },
 ]
 
-const VALID: TabKey[] = ['materials', 'skus', 'mapping', 'sellers', 'import']
-const tab = ref<TabKey>(VALID.includes(route.query.tab as TabKey) ? (route.query.tab as TabKey) : 'materials')
+const VALID: TabKey[] = ['materials', 'skus', 'mapping', 'sellers']
+// ?tab=import là link cũ (tab import Excel vận hành) — đưa về tab SKUs, nơi chứa
+// nút import bây giờ, thay vì rơi về Materials.
+const requested = route.query.tab === 'import' ? 'skus' : (route.query.tab as TabKey)
+const tab = ref<TabKey>(VALID.includes(requested) ? requested : 'materials')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t } }))
 
 const materials = ref<Material[]>([])
@@ -134,6 +138,7 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
       :materials="materials"
       :loading="loadingSkus"
       @changed="reloadSkus"
+      @imported="reloadImported"
     />
     <MasterDataMappingTab
       v-else-if="tab === 'mapping'"
@@ -143,11 +148,10 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
       @changed="reloadSkus"
     />
     <MasterDataSellersTab
-      v-else-if="tab === 'sellers'"
+      v-else
       :sellers="sellers"
       :loading="loadingSellers"
       @changed="reloadSellers"
     />
-    <MasterDataLegacyImportTab v-else @committed="reloadImported" />
   </div>
 </template>

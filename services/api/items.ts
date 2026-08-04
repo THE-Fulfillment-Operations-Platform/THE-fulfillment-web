@@ -6,6 +6,11 @@ export interface ItemListParams extends ListParams {
   status?: string // = internal_status
   design_status?: string
   review_status?: string // parent order review status
+  // Kéo cả dòng đã huỷ vào kết quả. Mặc định tắt ở mọi hàng chờ việc (dòng huỷ
+  // không phải việc); bật khi đang tra cứu lịch sử. Backend tự bật khi
+  // review_status=CANCELLED, vì huỷ đơn là huỷ mọi dòng của nó — không bật thì
+  // bộ lọc "Đã huỷ" luôn trả về rỗng.
+  include_cancelled?: boolean
   store_order_id?: string // partial match on the parent order's store order id
   internal_code?: string // partial match on the item's internal (QR) code
   batch_id?: number
