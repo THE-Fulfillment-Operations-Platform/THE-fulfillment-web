@@ -129,7 +129,7 @@ async function submit() {
 }
 
 // --- Chọn nhiều dòng để thao tác hàng loạt (ẩn/bật/xoá) ---
-const { isSelected, toggle, toggleAll, allSelected, someSelected, count: selectedCount, selectedIds, clear: clearSelection } =
+const { isSelected, toggle, rowClick, toggleAll, allSelected, someSelected, count: selectedCount, selectedIds, clear: clearSelection } =
   useSelection(() => filtered.value)
 
 const bulkBusy = ref(false)
@@ -275,11 +275,17 @@ async function remove(s: Sku) {
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
-            <tr v-for="s in paged" :key="s.id" class="transition-colors duration-150 hover:bg-muted" :class="isSelected(s.id) ? 'bg-accent/40' : ''">
+            <tr
+              v-for="s in paged"
+              :key="s.id"
+              class="cursor-pointer transition-colors duration-150 hover:bg-muted"
+              :class="isSelected(s.id) ? 'bg-accent/40' : ''"
+              @click="rowClick(s.id, $event)"
+            >
               <td class="table-td">
                 <input
                   type="checkbox"
-                  class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                  class="h-4 w-4 cursor-pointer rounded border-border text-primary focus:ring-ring"
                   :checked="isSelected(s.id)"
                   :aria-label="`Chọn ${s.code}`"
                   @change="toggle(s.id)"

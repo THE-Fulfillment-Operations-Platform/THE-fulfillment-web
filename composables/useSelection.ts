@@ -28,6 +28,21 @@ export function useSelection<T extends { id: number }>(visibleRows: () => T[]) {
     selected.value = next
   }
 
+  // Toggle from a click anywhere on the row — so the whole row is the hit target,
+  // not just the 16px checkbox. Bind on <tr @click="rowClick(id, $event)">.
+  // Clicks that belong to something else in the row are ignored:
+  //   • action controls (Sửa/Xoá/Ẩn buttons, links, the checkbox, form fields)
+  //     handle their own click — the row must not also toggle;
+  //   • a click that ends a text drag (user highlighting a code to copy) leaves a
+  //     non-collapsed selection — don't hijack it.
+  function rowClick(id: number, e: MouseEvent) {
+    const el = e.target as HTMLElement | null
+    if (el?.closest('button, a, input, label, select, textarea, [data-no-row-select]')) return
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null
+    if (sel && !sel.isCollapsed) return
+    toggle(id)
+  }
+
   const allSelected = computed(() => {
     const rows = visibleRows()
     return rows.length > 0 && rows.every((r) => selected.value.has(r.id))
@@ -51,5 +66,5 @@ export function useSelection<T extends { id: number }>(visibleRows: () => T[]) {
     if (selected.value.size) selected.value = new Set()
   }
 
-  return { selected, selectedIds, count, isSelected, toggle, allSelected, someSelected, toggleAll, clear }
+  return { selected, selectedIds, count, isSelected, toggle, rowClick, allSelected, someSelected, toggleAll, clear }
 }
