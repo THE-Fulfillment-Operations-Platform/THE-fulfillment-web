@@ -60,9 +60,10 @@ interface ProdRow {
   print_file_url: string
   cut_file_url: string
   status: InternalStatus
-  // Đơn gốc — chỉ dùng cho tem QR (mã đơn của store + tên người nhận hàng).
+  // Đơn gốc — chỉ dùng cho tem QR (mã đơn của store + tên người nhận + seller).
   store_order_id: string
   shipping_name: string
+  seller_name: string
 }
 const prodRows = computed<ProdRow[]>(() =>
   items.value.map((bi) => {
@@ -89,6 +90,7 @@ const prodRows = computed<ProdRow[]>(() =>
       // các shape phẳng (list endpoint / mock) không có object order lồng bên trong.
       store_order_id: oi?.order?.store_order_id || oi?.store_order_id || bi.store_order_id || '',
       shipping_name: oi?.order?.shipping_name ?? '',
+      seller_name: oi?.order?.seller?.name ?? '',
     }
   }),
 )
@@ -304,11 +306,16 @@ async function printLabels() {
         } catch { /* QR optional — fall through to text-only label */ }
         return `
           <div class="label">
-            ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
-            <div class="code">${esc(r.internal_code || '—')}</div>
-            <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
-            <div class="sub">SL: ${esc(r.quantity || '—')} · Ngày: ${esc(labelDate)}</div>
+            <div class="top">
+              ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
+              <div class="meta">
+                <div class="code">${esc(r.internal_code || '—')}</div>
+                <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
+                <div class="sub">SL: ${esc(r.quantity || '—')} · ${esc(labelDate)}</div>
+              </div>
+            </div>
             <div class="info">
+              ${r.seller_name ? `<div class="row"><span class="key">Seller:</span> ${esc(r.seller_name)}</div>` : ''}
               <div class="row"><span class="key">Order:</span> ${esc(r.store_order_id || '—')}</div>
               <div class="row"><span class="key">Người nhận:</span> ${esc(r.shipping_name || '—')}</div>
               ${r.qc_description ? `<div class="desc">${esc(r.qc_description)}</div>` : ''}
@@ -318,22 +325,28 @@ async function printLabels() {
     )
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
       <style>
-        /* Tem 45x65mm in trên khổ decal 50x70mm — kích thước thật bằng mm/pt để máy in
-           không phải co giãn; mỗi tem một trang, căn giữa khổ giấy. */
-        @page { size: 50mm 70mm; margin: 0; }
+        /* Tem NGANG 65x45mm in trên khổ decal 70x50mm (khổ ngang) — kích thước thật
+           bằng mm/pt để máy in không phải co giãn; mỗi tem một trang, căn giữa giấy.
+           Bố cục: QR bên trái + mã nội bộ/thông tin phụ bên cạnh, các trường
+           Seller/Order/Người nhận chạy full chiều ngang bên dưới. */
+        @page { size: 70mm 50mm; margin: 0; }
         body { margin: 0; font-family: ui-monospace, monospace; color: #000; }
-        .label { display: block; box-sizing: border-box; width: 45mm; height: 65mm;
+        .label { display: block; box-sizing: border-box; width: 65mm; height: 45mm;
           margin: 2.5mm auto; border: 1px solid #ccc; border-radius: 2mm; padding: 2mm;
-          overflow: hidden; text-align: center; page-break-inside: avoid; page-break-after: always; }
+          overflow: hidden; page-break-inside: avoid; page-break-after: always; }
         .label:last-child { page-break-after: auto; }
-        .qr { width: 25mm; height: 25mm; }
-        .code { font-size: 15pt; font-weight: bold; line-height: 1.15; word-break: break-all; }
-        .sub { font-size: 8pt; font-weight: bold; margin-top: 1mm; overflow-wrap: anywhere; }
-        /* Order + người nhận chạy hết chiều ngang tem nên tên dài vẫn đọc được;
+        .top { display: flex; gap: 2.5mm; align-items: center; }
+        .qr { width: 18mm; height: 18mm; flex: 0 0 auto; }
+        .meta { min-width: 0; flex: 1; }
+        /* Mã nội bộ là trường quét/đọc chính — chữ to nhất; cột cạnh QR rộng ~40mm
+           nên mã 12-13 ký tự vẫn một dòng. */
+        .code { font-size: 14pt; font-weight: bold; line-height: 1.15; word-break: break-all; }
+        .sub { font-size: 7.5pt; font-weight: bold; margin-top: 0.8mm; overflow-wrap: anywhere; }
+        /* Các trường chạy hết chiều ngang tem nên giá trị dài vẫn đọc được;
            xuống dòng thay vì cắt cụt. */
-        .info { margin-top: 2mm; border-top: 1px dashed #999; padding-top: 2mm; text-align: left; }
-        .row { font-size: 10pt; font-weight: bold; margin-top: 1mm; overflow-wrap: anywhere; }
-        .desc { font-size: 8pt; font-weight: bold; color: #444; margin-top: 1mm; }
+        .info { margin-top: 1.5mm; border-top: 1px dashed #999; padding-top: 1mm; }
+        .row { font-size: 9pt; font-weight: bold; margin-top: 0.8mm; overflow-wrap: anywhere; }
+        .desc { font-size: 7.5pt; font-weight: bold; color: #444; margin-top: 0.8mm; }
         @media print { .label { border-color: #999; } }
       </style></head>
       <body>${labels.join('')}

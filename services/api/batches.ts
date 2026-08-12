@@ -12,6 +12,9 @@ export interface BatchListParams extends ListParams {
   parent_batch_id?: number
   // open=true: chỉ batch còn việc — bỏ batch đã đóng vì toàn bộ hàng bị huỷ ở QC.
   open?: boolean
+  // Mã nội bộ đơn ("100047") hoặc mã tem item ("100047_1/1") — trả về (các)
+  // batch đang sản xuất đơn đó, kể cả batch con (list thường ẩn con).
+  code?: string
 }
 
 export interface CreateBatchInput {

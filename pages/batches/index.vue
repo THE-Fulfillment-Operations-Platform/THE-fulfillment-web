@@ -3,7 +3,7 @@ import { batchesApi, materialsApi } from '~/services/api'
 import type { Batch, Material } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY, PRIORITY_OPTIONS } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
-import { formatDate } from '~/utils/format'
+import { formatDate, formatDateTime } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { useToastStore } from '~/stores/toast'
@@ -21,6 +21,7 @@ const filters = reactive({
   priority: '',
   batch_id: '', // client-side refine
   sku: '', // client-side refine
+  code: '', // server-side: mã nội bộ đơn / mã tem item → batch chứa đơn đó
   overdue: false, // client-side refine
   page: 1,
   page_size: 20,
@@ -31,6 +32,7 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
     status: filters.status || undefined,
     priority: filters.priority || undefined,
+    code: filters.code.trim() || undefined,
     page: filters.page,
     page_size: filters.page_size,
   }),
@@ -59,9 +61,32 @@ onMounted(async () => {
 })
 
 function skuSummary(b: Batch): string {
-  const codes = Array.from(new Set((b.items ?? []).map((i) => i.sku_code).filter(Boolean)))
+  // List endpoint lồng SKU trong order_item (không có field phẳng trên batch item).
+  const codes = Array.from(
+    new Set((b.items ?? []).map((i) => i.sku_code ?? i.order_item?.sku_code).filter(Boolean)),
+  )
   if (!codes.length) return '—'
   return codes.slice(0, 3).join(', ') + (codes.length > 3 ? '…' : '')
+}
+
+// Tổng SỐ SẢN PHẨM của batch = cộng SL từng dòng (một item là một dòng, SL có
+// thể >1) — khác cột Items đếm số dòng/phần. Batch mẹ không giữ item (hàng nằm
+// ở các con) nên không tính được từ payload list → trả null, hiện "—".
+function productCount(b: Batch): number | null {
+  const items = b.items ?? []
+  if (!items.length) return null
+  return items.reduce((sum, i) => sum + (i.order_item?.quantity ?? 1), 0)
+}
+
+// Số ĐƠN VỊ NVL cần cho batch theo định mức (products_per_unit của material):
+// batch thường = ceil(SP / định mức); batch mẹ = số batch con (mỗi con tối đa
+// một đơn vị). NVL chưa khai định mức thì chịu → "—".
+function materialUnits(b: Batch): number | null {
+  if (b.is_parent) return b.child_count ?? b.child_batches?.length ?? null
+  const quota = b.material?.products_per_unit
+  const sp = productCount(b)
+  if (!quota || !sp) return null
+  return Math.ceil(sp / quota)
 }
 
 const rows = computed(() => {
@@ -103,8 +128,10 @@ function exportBatches() {
   exportCsv(`batches-${new Date().toISOString().slice(0, 10)}`, list, [
     { label: 'Batch', value: 'code' },
     { label: 'Material', value: (b) => b.material_name || b.material?.name || b.material_code || '' },
-    { label: 'Items', value: (b) => b.item_count ?? b.items?.length ?? 0 },
+    { label: 'Số lượng SP', value: (b) => productCount(b) ?? '' },
+    { label: 'NVL cần (đv)', value: (b) => materialUnits(b) ?? '' },
     { label: 'Đã huỷ (QC fail)', value: (b) => b.scrapped_count ?? 0 },
+    { label: 'Tạo lúc', value: (b) => (b.created_at ? formatDateTime(b.created_at) : '') },
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
     { label: 'SKU', value: (b) => skuSummary(b) },
     { label: 'Status', value: (b) => INTERNAL_STATUS[b.status]?.label ?? b.status },
@@ -131,10 +158,15 @@ function exportBatches() {
     </PageHeader>
 
     <div class="card mb-4 p-4">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <div>
           <label class="label">Batch ID</label>
-          <input v-model="filters.batch_id" class="input" placeholder="#101001" />
+          <input v-model="filters.batch_id" class="input" placeholder="#101001" @keyup.enter="applyFilters" />
+        </div>
+        <!-- Tìm ngược từ đơn: nhập mã nội bộ đơn / mã tem là ra batch đang sản xuất nó. -->
+        <div>
+          <label class="label">Mã nội bộ đơn</label>
+          <input v-model="filters.code" class="input font-mono" placeholder="100047 / 100047_1/1" @keyup.enter="applyFilters" />
         </div>
         <div>
           <label class="label">Material</label>
@@ -142,7 +174,7 @@ function exportBatches() {
         </div>
         <div>
           <label class="label">SKU</label>
-          <input v-model="filters.sku" class="input" placeholder="WOOD-01" />
+          <input v-model="filters.sku" class="input" placeholder="WOOD-01" @keyup.enter="applyFilters" />
         </div>
         <div>
           <label class="label">Status</label>
@@ -177,7 +209,9 @@ function exportBatches() {
         :loading="loading"
         :error="error"
         :empty="!loading && !error && rows.length === 0"
-        empty-text="Không có batch nào."
+        :empty-text="filters.code.trim()
+          ? `Không có batch nào chứa mã ${filters.code.trim()} — kiểm tra lại mã, hoặc đơn chưa được gom vào batch.`
+          : 'Không có batch nào.'"
         skeleton
         :skeleton-rows="8"
         @retry="reload"
@@ -188,11 +222,13 @@ function exportBatches() {
               <tr>
                 <th class="table-th">Batch</th>
                 <th class="table-th">Material</th>
-                <th class="table-th hidden md:table-cell">Items</th>
+                <th class="table-th" title="Tổng số sản phẩm trong batch (cộng SL từng dòng)">Số lượng SP</th>
+                <th class="table-th" title="Số đơn vị NVL cần theo định mức (sp/đơn vị) của vật liệu">NVL</th>
                 <th class="table-th hidden lg:table-cell">SKU / Products</th>
                 <th class="table-th">Status</th>
                 <th class="table-th hidden sm:table-cell">Priority</th>
                 <th class="table-th hidden md:table-cell">Hạn</th>
+                <th class="table-th hidden xl:table-cell">Tạo lúc</th>
                 <th class="table-th hidden lg:table-cell">Người tạo</th>
               </tr>
             </thead>
@@ -231,17 +267,26 @@ function exportBatches() {
                   </div>
                 </td>
                 <td class="table-td">{{ b.material_name || b.material?.name || b.material_code }}</td>
-                <td class="table-td hidden md:table-cell">
-                  {{ b.item_count ?? b.items?.length ?? 0 }}
+                <td class="table-td font-medium text-foreground">
+                  {{ productCount(b) ?? '—' }}
                   <!-- Batch có thể còn 0 sản phẩm mà vẫn tồn tại: hàng nó làm ra đã
                        bị huỷ ở QC. Nói ra để không ai tưởng batch lỗi/trống. -->
                   <span
                     v-if="(b.scrapped_count ?? 0) > 0"
-                    class="ml-1 text-[11px] text-rose-600 dark:text-rose-400"
+                    class="ml-1 text-[11px] font-normal text-rose-600 dark:text-rose-400"
                     :title="`${b.scrapped_count} sản phẩm của batch này đã bị huỷ do QC fail và đang được làm lại ở batch khác`"
                   >
                     ({{ b.scrapped_count }} huỷ)
                   </span>
+                </td>
+                <td class="table-td">
+                  <span
+                    v-if="materialUnits(b) != null"
+                    :title="b.is_parent
+                      ? 'Batch mẹ — mỗi batch con dùng tối đa một đơn vị NVL'
+                      : `Định mức ${b.material?.products_per_unit} sp/đơn vị`"
+                  >{{ materialUnits(b) }} đv</span>
+                  <span v-else class="text-muted-foreground" title="NVL chưa khai định mức sp/đơn vị trong Master Data">—</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
                 <td class="table-td"><UiStatusBadge kind="internal" :value="b.status" /></td>
@@ -253,6 +298,9 @@ function exportBatches() {
                     <span class="rounded bg-rose-100 px-1 text-[10px] dark:bg-rose-500/20">trễ {{ overdueDays(b) }}n</span>
                   </span>
                   <span v-else class="text-muted-foreground">{{ formatDate(b.due_date) }}</span>
+                </td>
+                <td class="table-td hidden text-xs text-muted-foreground xl:table-cell">
+                  {{ b.created_at ? formatDateTime(b.created_at) : '—' }}
                 </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ b.created_by?.full_name || b.created_by?.email || '—' }}</td>
               </tr>
