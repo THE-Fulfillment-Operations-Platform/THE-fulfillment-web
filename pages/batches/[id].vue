@@ -299,18 +299,15 @@ async function printLabels() {
         const payload = r.internal_code || code
         let qr = ''
         try {
-          qr = await QRCode.toDataURL(payload, { margin: 1, width: 240 })
+          // 25mm ở 300dpi ≈ 300px — render 512px cho nét khi in nhiệt.
+          qr = await QRCode.toDataURL(payload, { margin: 1, width: 512 })
         } catch { /* QR optional — fall through to text-only label */ }
         return `
           <div class="label">
-            <div class="top">
-              ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
-              <div class="meta">
-                <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
-                <div class="code">${esc(r.internal_code || '—')}</div>
-                <div class="sub">SL: ${esc(r.quantity || '—')} · Ngày: ${esc(labelDate)}</div>
-              </div>
-            </div>
+            ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
+            <div class="code">${esc(r.internal_code || '—')}</div>
+            <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
+            <div class="sub">SL: ${esc(r.quantity || '—')} · Ngày: ${esc(labelDate)}</div>
             <div class="info">
               <div class="row"><span class="key">Order:</span> ${esc(r.store_order_id || '—')}</div>
               <div class="row"><span class="key">Người nhận:</span> ${esc(r.shipping_name || '—')}</div>
@@ -321,20 +318,22 @@ async function printLabels() {
     )
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
       <style>
-        body { margin: 16px; font-family: ui-monospace, monospace; }
-        .label { display: inline-block; box-sizing: border-box; width: 340px; vertical-align: top;
-          border: 1px solid #ccc; border-radius: 8px; padding: 14px; margin: 8px; page-break-inside: avoid; }
-        .top { display: flex; gap: 12px; align-items: center; }
-        .qr { width: 96px; height: 96px; flex: 0 0 auto; }
-        .meta { min-width: 0; }
-        .sub { font-size: 12px; color: #666; }
-        .code { font-size: 20px; font-weight: bold; margin-top: 4px; word-break: break-all; }
-        /* Order + người nhận chạy hết chiều ngang tem (không bị QR ép hẹp) nên tên
-           dài vẫn đọc được; xuống dòng thay vì cắt cụt. */
-        .info { margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 8px; }
-        .row { font-size: 13px; margin-top: 3px; overflow-wrap: anywhere; }
-        .key { color: #666; }
-        .desc { font-size: 11px; color: #888; margin-top: 4px; }
+        /* Tem 45x65mm in trên khổ decal 50x70mm — kích thước thật bằng mm/pt để máy in
+           không phải co giãn; mỗi tem một trang, căn giữa khổ giấy. */
+        @page { size: 50mm 70mm; margin: 0; }
+        body { margin: 0; font-family: ui-monospace, monospace; color: #000; }
+        .label { display: block; box-sizing: border-box; width: 45mm; height: 65mm;
+          margin: 2.5mm auto; border: 1px solid #ccc; border-radius: 2mm; padding: 2mm;
+          overflow: hidden; text-align: center; page-break-inside: avoid; page-break-after: always; }
+        .label:last-child { page-break-after: auto; }
+        .qr { width: 25mm; height: 25mm; }
+        .code { font-size: 15pt; font-weight: bold; line-height: 1.15; word-break: break-all; }
+        .sub { font-size: 8pt; font-weight: bold; margin-top: 1mm; overflow-wrap: anywhere; }
+        /* Order + người nhận chạy hết chiều ngang tem nên tên dài vẫn đọc được;
+           xuống dòng thay vì cắt cụt. */
+        .info { margin-top: 2mm; border-top: 1px dashed #999; padding-top: 2mm; text-align: left; }
+        .row { font-size: 10pt; font-weight: bold; margin-top: 1mm; overflow-wrap: anywhere; }
+        .desc { font-size: 8pt; font-weight: bold; color: #444; margin-top: 1mm; }
         @media print { .label { border-color: #999; } }
       </style></head>
       <body>${labels.join('')}

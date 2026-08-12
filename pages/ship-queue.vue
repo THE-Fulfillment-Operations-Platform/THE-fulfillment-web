@@ -3,18 +3,20 @@ import { qcApi, handoffsApi } from '~/services/api'
 import type { QcResultOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useToastStore } from '~/stores/toast'
-import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 
 // Chờ gửi hàng — điểm nối giữa hai nửa vòng đời của đơn.
 //
 //   QC là việc cuối của xưởng. Xong QC, đơn rơi vào màn này.
-//   Người phụ trách tick những đơn cần gửi → "Gửi hàng đi cho THE".
+//   Người phụ trách bấm "Quét gửi hàng" rồi quét QR trên từng đơn:
+//   quét là gửi — mã nội bộ vừa đọc được chính là lệnh gửi đơn đó cho THE.
 //   Từ đó đơn sang màn Hành trình đơn hàng để CS gắn mã vận đơn.
 //
-// Màn này CỐ Ý chỉ hiện đơn đã QC đủ và chưa gửi: nó là một hàng đợi công việc,
-// không phải bảng tra cứu. Đơn còn thiếu sản phẩm chưa QC nằm ở màn Kết quả QC.
+// Luồng tick-từng-đơn rồi bấm nút đã bỏ: với vài chục đơn mỗi lượt, dò mã trên
+// màn hình để tick đúng dòng chậm và dễ nhầm hơn nhiều so với quét thẳng tờ đơn
+// đang cầm trên tay. Bảng bên dưới giữ vai trò hàng đợi để đối chiếu còn bao
+// nhiêu đơn chưa quét.
 
 const toast = useToastStore()
 
@@ -49,74 +51,81 @@ function resetSearch() {
   applyFilters()
 }
 
-// ---- Chọn đơn ---------------------------------------------------------------
-// Giữ lựa chọn theo id chứ không theo chỉ số dòng: người dùng lọc lại hoặc sang
-// trang khác thì những đơn đã tick vẫn còn nguyên.
-const selected = ref<Set<number>>(new Set())
-const selectedCount = computed(() => selected.value.size)
+// ---- Trạm quét gửi hàng ------------------------------------------------------
+// Máy quét là bàn phím: bắn chuỗi mã + Enter vào ô input. Vào chế độ quét thì ô
+// này giữ focus liên tục — quét phát nào ăn phát đó, không cần chạm chuột.
+const scanMode = ref(false)
+const code = ref('')
+const scanInput = ref<HTMLInputElement | null>(null)
 
-function toggle(orderId: number) {
-  const next = new Set(selected.value)
-  next.has(orderId) ? next.delete(orderId) : next.add(orderId)
-  selected.value = next
+function focusScan() {
+  nextTick(() => scanInput.value?.focus())
 }
-function isSelected(orderId: number) {
-  return selected.value.has(orderId)
+function startScan() {
+  scanMode.value = true
+  focusScan()
 }
-const allOnPageSelected = computed(
-  () => orders.value.length > 0 && orders.value.every((o) => selected.value.has(o.order_id)),
-)
-function togglePage() {
-  const next = new Set(selected.value)
-  if (allOnPageSelected.value) {
-    orders.value.forEach((o) => next.delete(o.order_id))
-  } else {
-    orders.value.forEach((o) => next.add(o.order_id))
-  }
-  selected.value = next
-}
-function clearSelection() {
-  selected.value = new Set()
+function stopScan() {
+  scanMode.value = false
+  code.value = ''
 }
 
-// ---- Gửi hàng đi cho THE ----------------------------------------------------
-const shipping = ref(false)
+// Nhật ký phiên quét: người đứng trạm cầm chồng đơn, quét liên tục — toast trôi
+// mất, còn danh sách này giữ lại từng kết quả (gửi được / vì sao không) để soát.
+interface ScanLogEntry {
+  key: number
+  code: string
+  ok: boolean
+  time: string
+  internal_code?: string
+  store_order_id?: string
+  handoff_code?: string
+  reason?: string
+}
+const scanLog = ref<ScanLogEntry[]>([])
+const shippedCount = computed(() => scanLog.value.filter((e) => e.ok).length)
+let logKey = 0
 
-async function shipSelected() {
-  if (shipping.value || selectedCount.value === 0) return
-  const ids = [...selected.value]
-  const ok = await useConfirm().confirm({
-    title: 'Gửi hàng đi cho THE',
-    message: `Gửi ${ids.length} đơn cho THE? Sau bước này hệ thống bắt đầu theo dõi hành trình, và đơn chuyển sang màn Hành trình đơn hàng.`,
-    confirmText: 'Gửi hàng',
-  })
-  if (!ok) return
+function timeNow() {
+  return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
 
-  shipping.value = true
-  try {
-    const { data: res } = await handoffsApi.shipToCarrier(ids)
-    const sent = res?.shipped?.length ?? 0
-    const skipped = res?.skipped ?? []
-    if (sent > 0) toast.success(`Đã gửi ${sent} đơn cho THE`)
-    // Đơn bị bỏ qua phải nói rõ vì sao, không im lặng biến mất khỏi lựa chọn.
-    if (skipped.length) {
-      const detail = skipped
-        .slice(0, 3)
-        .map((s) => `${s.internal_code || s.order_id}: ${s.reason}`)
-        .join(' · ')
-      toast.error(
-        `${skipped.length} đơn chưa gửi được — ${detail}${skipped.length > 3 ? '…' : ''}`,
-      )
-    }
-    // Chỉ bỏ tick những đơn đã đi; đơn bị bỏ qua giữ nguyên để xử lý tiếp.
-    const stillSelected = new Set(skipped.map((s) => s.order_id))
-    selected.value = new Set([...selected.value].filter((id) => stillSelected.has(id)))
-    await reload()
-  } catch (e) {
-    toast.error(errorMessage(e))
-  } finally {
-    shipping.value = false
-  }
+// Không khoá input trong lúc chờ server: bắt trạm chạy theo tốc độ đường truyền
+// là mỗi đơn tốn thêm cả giây nhìn spinner. Mỗi lần quét bắn một request chạy
+// nền, kết quả về thì ghi vào nhật ký + toast; mã đang bay thì chặn quét trùng
+// (máy quét hay bắn đúp) — server cũng tự chặn gửi lại đơn đã gửi.
+const pending = ref<string[]>([])
+
+function submitScan() {
+  const value = code.value.trim()
+  code.value = ''
+  focusScan()
+  if (!value || pending.value.includes(value)) return
+
+  pending.value.push(value)
+  handoffsApi
+    .shipScan(value)
+    .then(({ data: res }) => {
+      scanLog.value.unshift({
+        key: ++logKey, code: value, ok: true, time: timeNow(),
+        internal_code: res?.internal_code, store_order_id: res?.store_order_id,
+        handoff_code: res?.handoff_code,
+      })
+      toast.success(`Đã gửi đơn ${res?.internal_code ?? value} cho THE`)
+      void reload()
+    })
+    .catch((e) => {
+      scanLog.value.unshift({
+        key: ++logKey, code: value, ok: false, time: timeNow(), reason: errorMessage(e),
+      })
+      toast.error(`${value}: ${errorMessage(e)}`)
+    })
+    .finally(() => {
+      const i = pending.value.indexOf(value)
+      if (i !== -1) pending.value.splice(i, 1)
+      // Nhật ký là để soát phiên đang làm, không phải lịch sử — giữ 50 dòng gần nhất.
+      if (scanLog.value.length > 50) scanLog.value.splice(50)
+    })
 }
 </script>
 
@@ -124,14 +133,76 @@ async function shipSelected() {
   <div>
     <PageHeader
       title="Chờ gửi hàng"
-      subtitle="Đơn đã QC đủ và chưa gửi — chọn rồi gửi cho THE để bắt đầu theo dõi hành trình"
+      subtitle="Đơn đã QC đủ và chưa gửi — bấm Quét gửi hàng rồi quét QR trên đơn, quét là gửi cho THE"
     >
       <template #actions>
         <button class="btn-secondary" @click="reload">
           <UiIcon name="refresh" :size="16" /> Làm mới
         </button>
+        <button v-if="!scanMode" class="btn-primary" @click="startScan">
+          <UiIcon name="qc" :size="16" /> Quét gửi hàng
+        </button>
+        <button v-else class="btn-secondary" @click="stopScan">
+          <UiIcon name="close" :size="16" /> Dừng quét
+        </button>
       </template>
     </PageHeader>
+
+    <!-- Trạm quét -->
+    <div v-if="scanMode" class="card mb-4 border-primary/40 p-4 ring-1 ring-primary/30">
+      <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="submitScan">
+        <div class="flex-1">
+          <label class="label" for="ship-scan">Quét QR trên đơn (mã nội bộ)</label>
+          <input
+            id="ship-scan"
+            ref="scanInput"
+            v-model="code"
+            class="input font-mono text-base"
+            placeholder="Quét hoặc nhập mã rồi Enter — đơn sẽ gửi đi ngay…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <button type="submit" class="btn-primary sm:w-44" :disabled="!code.trim()">
+          <UiIcon name="shipping" :size="16" /> Gửi cho THE
+        </button>
+      </form>
+
+      <!-- Request chạy nền nên trạm trống ngay; dòng này để việc đang chạy không vô hình. -->
+      <p v-if="pending.length" class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <UiSpinner :size="14" />
+        Đang gửi: <span class="font-mono">{{ pending.join(', ') }}</span>
+      </p>
+
+      <!-- Nhật ký phiên quét -->
+      <div v-if="scanLog.length" class="mt-4 border-t border-border pt-3">
+        <p class="mb-2 text-xs font-medium text-muted-foreground">
+          Phiên quét này: <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ shippedCount }}</span> đơn đã gửi
+          <template v-if="scanLog.length - shippedCount > 0">
+            · <span class="font-semibold text-red-700 dark:text-rose-300">{{ scanLog.length - shippedCount }}</span> lượt quét lỗi
+          </template>
+        </p>
+        <ul class="max-h-64 space-y-1 overflow-y-auto pr-1">
+          <li
+            v-for="entry in scanLog"
+            :key="entry.key"
+            class="flex items-start gap-2 rounded-md px-2.5 py-1.5 text-sm"
+            :class="entry.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200' : 'bg-red-50 text-red-700 dark:bg-rose-500/10 dark:text-rose-300'"
+          >
+            <UiIcon :name="entry.ok ? 'check' : 'alert'" :size="15" class="mt-0.5 shrink-0" />
+            <span class="min-w-0 flex-1">
+              <span class="font-mono font-semibold">{{ entry.internal_code || entry.code }}</span>
+              <template v-if="entry.ok">
+                <span v-if="entry.store_order_id"> · {{ entry.store_order_id }}</span>
+                — đã gửi cho THE<span v-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
+              </template>
+              <template v-else> — {{ entry.reason }}</template>
+            </span>
+            <span class="shrink-0 text-xs opacity-70">{{ entry.time }}</span>
+          </li>
+        </ul>
+      </div>
+    </div>
 
     <div class="card mb-4 p-4">
       <form class="flex flex-col gap-3 sm:flex-row sm:items-center" @submit.prevent="applyFilters">
@@ -159,14 +230,6 @@ async function shipSelected() {
     </div>
 
     <div class="card overflow-hidden">
-      <UiBulkBar :count="selectedCount" noun="đơn" @clear="clearSelection">
-        <button class="btn-primary ml-auto" :disabled="shipping" @click="shipSelected">
-          <UiSpinner v-if="shipping" :size="16" />
-          <UiIcon v-else name="shipping" :size="16" />
-          Gửi hàng đi cho THE
-        </button>
-      </UiBulkBar>
-
       <UiStateBlock
         :loading="loading"
         :error="error"
@@ -178,15 +241,6 @@ async function shipSelected() {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
-                <th class="table-th w-10">
-                  <input
-                    type="checkbox"
-                    class="h-4 w-4 rounded border-border"
-                    :checked="allOnPageSelected"
-                    aria-label="Chọn tất cả đơn trong trang"
-                    @change="togglePage"
-                  />
-                </th>
                 <th class="table-th">Mã đơn shop</th>
                 <th class="table-th">Mã nội bộ</th>
                 <th class="table-th hidden md:table-cell">Seller</th>
@@ -195,22 +249,7 @@ async function shipSelected() {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr
-                v-for="o in orders"
-                :key="o.order_id"
-                class="cursor-pointer transition-colors hover:bg-muted/60"
-                :class="isSelected(o.order_id) ? 'bg-accent/40' : ''"
-                @click="toggle(o.order_id)"
-              >
-                <td class="table-td" @click.stop>
-                  <input
-                    type="checkbox"
-                    class="h-4 w-4 rounded border-border"
-                    :checked="isSelected(o.order_id)"
-                    :aria-label="`Chọn đơn ${o.store_order_id}`"
-                    @change="toggle(o.order_id)"
-                  />
-                </td>
+              <tr v-for="o in orders" :key="o.order_id" class="transition-colors hover:bg-muted/60">
                 <td class="table-td font-medium text-foreground">{{ o.store_order_id }}</td>
                 <td class="table-td font-mono text-xs text-muted-foreground">{{ o.internal_code }}</td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>

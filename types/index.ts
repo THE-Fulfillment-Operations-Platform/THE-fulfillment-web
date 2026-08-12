@@ -746,6 +746,7 @@ export interface QcScanResult {
   variant_code?: string
   quantity?: number
   material_name?: string
+  material_description?: string
   qc_description?: string
   sku_description?: string
   sku_product_name?: string

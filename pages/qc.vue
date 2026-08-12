@@ -262,9 +262,13 @@ onMounted(focusScan)
             <UiStatusBadge kind="internal" :value="result.internal_status" />
           </div>
 
-          <!-- Tên sản phẩm (ưu tiên product_name, fallback tên SKU) -->
-          <p v-if="productName" class="mt-4 text-base font-semibold leading-snug text-foreground">
-            {{ productName }}
+          <!-- Tên sản phẩm (ưu tiên product_name, fallback tên SKU) + mô tả NVL của
+               SKU (spec vật liệu/kích thước) ngay cạnh để QC đối chiếu hàng thật. -->
+          <p v-if="productName || result.material_description" class="mt-4 text-base leading-snug">
+            <span class="font-semibold text-foreground">{{ productName }}</span>
+            <span v-if="result.material_description" class="text-sm font-medium text-muted-foreground">
+              {{ productName ? ' — ' : '' }}{{ result.material_description }}
+            </span>
           </p>
 
           <!-- Thông tin cấu trúc để QC đối chiếu với hàng thực tế.

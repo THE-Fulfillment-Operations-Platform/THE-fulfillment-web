@@ -26,6 +26,15 @@ export interface ShipToCarrierResult {
   skipped: Array<{ order_id: number; internal_code: string; reason: string }>
 }
 
+/** Kết quả một lần quét gửi hàng: quét là gửi, một mã — một đơn — một câu trả lời. */
+export interface ShipScanResult {
+  order_id: number
+  internal_code: string
+  store_order_id: string
+  seller_name?: string
+  handoff_code: string
+}
+
 export const handoffsApi = {
   list: (params?: { page?: number; page_size?: number }) => apiGet<Handoff[]>('/api/handoffs', params),
   create: (body: HandoffInput) => apiPost<Handoff>('/api/handoffs', body),
@@ -40,4 +49,7 @@ export const handoffsApi = {
   // luồng sản xuất và mở đầu luồng vận chuyển — không cần quét đóng gói.
   shipToCarrier: (orderIds: number[]) =>
     apiPost<ShipToCarrierResult>('/api/orders/ship-to-carrier', { order_ids: orderIds }),
+  // Gửi MỘT đơn cho THE bằng chính mã vừa quét (mã nội bộ của đơn, hoặc mã tem
+  // item — server tự suy ra đơn). Trạm gửi hàng dùng cái này: quét là gửi.
+  shipScan: (code: string) => apiPost<ShipScanResult>('/api/orders/ship-scan', { code }),
 }
