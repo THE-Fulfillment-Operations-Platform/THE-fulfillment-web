@@ -6,7 +6,7 @@ import { useApiResource } from '~/composables/useApiResource'
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
-import { formatDateTime } from '~/utils/format'
+import { formatDateTime, formatDate, APP_TZ } from '~/utils/format'
 import { liveItemQty } from '~/utils/item'
 import { orderStatusBadge, orderInternalStatus } from '~/utils/enums'
 
@@ -27,17 +27,42 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 type Scope = 'missing' | 'has' | 'all'
-const filters = reactive({ q: '', scope: 'missing' as Scope, page: 1, page_size: 20 })
+const filters = reactive({
+  q: '',
+  scope: 'missing' as Scope,
+  // Khoảng ngày xuất xưởng (yyyy-mm-dd) — CS lọc "đơn đi ngày X" trước khi đối
+  // chiếu với file mã vận đơn của hãng.
+  date_from: '',
+  date_to: '',
+  page: 1,
+  page_size: 20,
+})
 
 const hasTrackingParam = computed(() =>
   filters.scope === 'missing' ? false : filters.scope === 'has' ? true : undefined,
 )
+
+// Ngày chọn là ngày theo giờ máy CS; đổi sang mốc thời gian thật (RFC3339) để
+// 00:00 nghĩa là 00:00 giờ Việt Nam, không phải 00:00 UTC (lệch 7 tiếng). Cận
+// trên gửi ĐẦU NGÀY KẾ TIẾP vì backend lọc nửa mở (<) — trọn ngày cuối vẫn tính.
+function dayStartISO(d: string): string | undefined {
+  if (!d) return undefined
+  return new Date(d + 'T00:00:00').toISOString()
+}
+function nextDayStartISO(d: string): string | undefined {
+  if (!d) return undefined
+  const dt = new Date(d + 'T00:00:00')
+  dt.setDate(dt.getDate() + 1)
+  return dt.toISOString()
+}
 
 const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>
   ordersApi.list({
     // Chỉ đơn đã bàn giao cho THE: trước đó chưa có gì để theo dõi.
     handed_over: true,
     has_tracking: hasTrackingParam.value,
+    handed_over_from: dayStartISO(filters.date_from),
+    handed_over_to: nextDayStartISO(filters.date_to),
     search: filters.q.trim() || undefined,
     page: filters.page,
     page_size: filters.page_size,
@@ -61,6 +86,34 @@ function changePageSize(size: number) {
 function pickScope(scope: Scope) {
   filters.scope = scope
   applyFilters()
+}
+function clearDates() {
+  filters.date_from = ''
+  filters.date_to = ''
+  applyFilters()
+}
+
+// Giờ xuất xưởng, tách khỏi ngày để cột hiển thị 2 tầng (ngày đậm, giờ mờ) —
+// cùng múi giờ nghiệp vụ với formatDate, không theo giờ máy người xem.
+function handedOverTime(v?: string | null): string {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: APP_TZ })
+}
+
+// ---- Gắn mã hàng loạt từ Excel ----------------------------------------------
+const importOpen = ref(false)
+const downloadingTemplate = ref(false)
+async function downloadImportTemplate() {
+  downloadingTemplate.value = true
+  try {
+    await trackingApi.downloadImportTemplate()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingTemplate.value = false
+  }
 }
 
 // ---- Đơn đang mở ------------------------------------------------------------
@@ -237,6 +290,21 @@ async function copyAddress() {
         <button class="btn-secondary" @click="reload">
           <UiIcon name="refresh" :size="16" /> Làm mới
         </button>
+        <template v-if="canEditTracking">
+          <button
+            class="btn-secondary"
+            :disabled="downloadingTemplate"
+            title="File mẫu 2 cột: OrderID + Mã vận đơn"
+            @click="downloadImportTemplate"
+          >
+            <UiSpinner v-if="downloadingTemplate" :size="16" />
+            <UiIcon v-else name="download" :size="16" />
+            Tải file mẫu
+          </button>
+          <button class="btn-primary" @click="importOpen = true">
+            <UiIcon name="upload" :size="16" /> Gắn mã từ Excel
+          </button>
+        </template>
       </template>
     </PageHeader>
 
@@ -264,7 +332,7 @@ async function copyAddress() {
       <!-- "Tất cả đơn đã gửi" đứng đầu vì nó là toàn bộ tập dữ liệu, hai cái sau
            là lát cắt của nó. Vị trí không đổi mặc định: màn vẫn mở ở "Chưa có mã
            vận đơn" — đó là việc CS cần làm. -->
-      <div class="mt-3 flex flex-wrap gap-2">
+      <div class="mt-3 flex flex-wrap items-center gap-2">
         <button
           v-for="opt in [
             { key: 'all', label: 'Tất cả đơn đã gửi' },
@@ -282,6 +350,36 @@ async function copyAddress() {
         >
           {{ opt.label }}
         </button>
+
+        <!-- Lọc theo ngày xuất xưởng: "đơn đi ngày nào" là câu hỏi CS đặt trước
+             khi đối chiếu file mã vận đơn của hãng. -->
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <span class="text-xs text-muted-foreground">Xuất xưởng</span>
+          <div class="w-36">
+            <UiDatePicker
+              v-model="filters.date_from"
+              aria-label="Xuất xưởng từ ngày"
+              :max="filters.date_to || undefined"
+              @change="applyFilters"
+            />
+          </div>
+          <span class="text-xs text-muted-foreground">–</span>
+          <div class="w-36">
+            <UiDatePicker
+              v-model="filters.date_to"
+              aria-label="Xuất xưởng đến ngày"
+              :min="filters.date_from || undefined"
+              @change="applyFilters"
+            />
+          </div>
+          <button
+            v-if="filters.date_from || filters.date_to"
+            class="text-xs font-medium text-primary hover:underline"
+            @click="clearDates"
+          >
+            Bỏ lọc ngày
+          </button>
+        </div>
       </div>
     </div>
 
@@ -304,6 +402,7 @@ async function copyAddress() {
                 <tr>
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th">Người nhận</th>
+                  <th class="table-th">Xuất xưởng</th>
                   <th class="table-th">Mã vận đơn</th>
                   <th class="table-th">Trạng thái</th>
                 </tr>
@@ -328,6 +427,13 @@ async function copyAddress() {
                   <td class="table-td">
                     <div class="text-foreground">{{ o.shipping_name || '—' }}</div>
                     <div class="text-xs text-muted-foreground">{{ o.shipping_city || '' }}</div>
+                  </td>
+                  <td class="table-td whitespace-nowrap">
+                    <template v-if="o.handed_over_at">
+                      <div class="text-foreground">{{ formatDate(o.handed_over_at) }}</div>
+                      <div class="text-xs text-muted-foreground">{{ handedOverTime(o.handed_over_at) }}</div>
+                    </template>
+                    <span v-else class="text-muted-foreground">—</span>
                   </td>
                   <td class="table-td font-mono text-xs">
                     <span v-if="o.tracking_number">{{ o.tracking_number }}</span>
@@ -480,5 +586,14 @@ async function copyAddress() {
         </template>
       </div>
     </div>
+
+    <!-- Upload file (orderID, mã vận đơn) → preview đối chiếu → xác nhận gắn.
+         Truyền khoảng ngày đang lọc để preview so được "file thiếu đơn nào". -->
+    <JourneysTrackingImportDialog
+      v-model="importOpen"
+      :date-from="filters.date_from"
+      :date-to="filters.date_to"
+      @done="reload"
+    />
   </div>
 </template>

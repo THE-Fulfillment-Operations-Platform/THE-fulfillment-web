@@ -298,6 +298,8 @@ export interface Order {
   // "STT trong ngày": stable per-day order number assigned at creation (business tz).
   order_date?: string
   daily_seq?: number
+  // Thời điểm xuất xưởng (chuyển HANDED_OFF lần đầu) — màn Hành trình lọc theo đây.
+  handed_over_at?: string | null
   // Tracking: entered at the shipping desk, then synced from 24hTrack.
   tracking_number?: string
   tracking_status?: TrackingStatus

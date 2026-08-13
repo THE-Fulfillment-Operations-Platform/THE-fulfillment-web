@@ -27,6 +27,12 @@ export interface OrderListParams extends ListParams {
   has_tracking?: boolean
   /** true = đơn đã gửi cho THE — tập của màn Hành trình đơn hàng. */
   handed_over?: boolean
+  /**
+   * Lọc theo thời điểm xuất xưởng (handed_over_at), dạng RFC3339. Cận trên là
+   * NỬA MỞ (<): gửi đầu ngày kế tiếp để lấy trọn ngày cuối, không dùng 23:59:59.
+   */
+  handed_over_from?: string
+  handed_over_to?: string
 }
 
 export interface DirectOrderInput {
