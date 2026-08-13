@@ -60,7 +60,9 @@ interface ProdRow {
   print_file_url: string
   cut_file_url: string
   status: InternalStatus
-  // Đơn gốc — chỉ dùng cho tem QR (mã đơn của store + tên người nhận + seller).
+  // Đơn gốc — hiện ở cột "Mã đơn shop" (orderID đi xuyên suốt vòng đời đơn,
+  // từ import tới hành trình) và in trên tem QR cùng người nhận + seller.
+  order_id: number | null
   store_order_id: string
   shipping_name: string
   seller_name: string
@@ -88,6 +90,7 @@ const prodRows = computed<ProdRow[]>(() =>
       status: bi.status,
       // Batch detail preload kèm order_item.order; hai nhánh sau là dự phòng cho
       // các shape phẳng (list endpoint / mock) không có object order lồng bên trong.
+      order_id: oi?.order_id ?? oi?.order?.id ?? null,
       store_order_id: oi?.order?.store_order_id || oi?.store_order_id || bi.store_order_id || '',
       shipping_name: oi?.order?.shipping_name ?? '',
       seller_name: oi?.order?.seller?.name ?? '',
@@ -560,6 +563,7 @@ async function printLabels() {
               <thead class="bg-card">
                 <tr>
                   <th class="table-th sticky left-0 z-20 bg-card">Mã nội bộ</th>
+                  <th class="table-th">Mã đơn shop</th>
                   <th class="table-th hidden sm:table-cell">SKU</th>
                   <th class="table-th hidden md:table-cell">Loại VL</th>
                   <th class="table-th hidden lg:table-cell">Mô tả QC</th>
@@ -577,6 +581,16 @@ async function printLabels() {
               <tbody class="divide-y divide-border">
                 <tr v-for="(r, idx) in prodRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.internal_code }}</td>
+                  <td class="table-td whitespace-nowrap">
+                    <!-- OrderID theo đơn từ import tới hành trình — bấm là sang
+                         thẳng trang đơn, khỏi tra lại bằng mã nội bộ. -->
+                    <NuxtLink
+                      v-if="r.order_id && r.store_order_id"
+                      :to="`/orders/${r.order_id}`"
+                      class="text-primary hover:underline"
+                    >{{ r.store_order_id }}</NuxtLink>
+                    <span v-else>{{ r.store_order_id || '—' }}</span>
+                  </td>
                   <td class="table-td hidden sm:table-cell">{{ r.sku_code }}</td>
                   <td class="table-td hidden md:table-cell">{{ r.material }}</td>
                   <td class="table-td hidden max-w-[16rem] truncate text-xs text-muted-foreground lg:table-cell" :title="r.qc_description">
