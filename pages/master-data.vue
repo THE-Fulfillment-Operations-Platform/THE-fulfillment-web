@@ -129,6 +129,7 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
     <MasterDataMaterialsTab
       v-if="tab === 'materials'"
       :materials="materials"
+      :skus="skus"
       :loading="loadingMaterials"
       @changed="reloadMaterials"
     />

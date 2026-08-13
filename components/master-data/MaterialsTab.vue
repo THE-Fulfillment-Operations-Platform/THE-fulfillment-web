@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { materialsApi } from '~/services/api'
 import type { MaterialInput } from '~/services/api'
-import type { Material } from '~/types'
+import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
 import { useToastStore } from '~/stores/toast'
@@ -11,8 +11,30 @@ import { useSelection } from '~/composables/useSelection'
 import { useClientPager } from '~/composables/useClientPager'
 import MaterialQuotaImport from './MaterialQuotaImport.vue'
 
-const props = defineProps<{ materials: Material[]; loading?: boolean }>()
+const props = defineProps<{ materials: Material[]; skus?: Sku[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
+
+// Cột "Mã SKU": người vận hành nghĩ theo SKU chứ không theo mã material tự sinh
+// (CERAMIC-TRON chỉ là slug của cột Tên đứng ngay cạnh). Đảo mapping SKU→NVL đã
+// tải sẵn cho tab Mapping thành NVL→[SKU] để mỗi dòng NVL trả lời được "NVL này
+// làm cho những SKU nào".
+const skuCodesByMaterial = computed(() => {
+  const map = new Map<number, string[]>()
+  for (const s of props.skus ?? []) {
+    for (const sm of s.materials ?? []) {
+      const arr = map.get(sm.material_id)
+      if (arr) arr.push(s.code)
+      else map.set(sm.material_id, [s.code])
+    }
+  }
+  return map
+})
+function skuCodes(m: Material): string[] {
+  return skuCodesByMaterial.value.get(m.id) ?? []
+}
+// Một NVL có thể map hàng chục SKU — hiện vài mã đầu, phần còn lại gom "+N"
+// (đầy đủ nằm trong tooltip), giữ bảng không bị một ô kéo dãn cả hàng.
+const SKU_CHIP_LIMIT = 3
 
 const toast = useToastStore()
 const auth = useAuthStore()
@@ -29,7 +51,9 @@ const filtered = computed(() => {
     (m) =>
       m.code.toLowerCase().includes(q) ||
       m.name.toLowerCase().includes(q) ||
-      (m.description ?? '').toLowerCase().includes(q),
+      (m.description ?? '').toLowerCase().includes(q) ||
+      // Cột hiển thị là mã SKU nên gõ mã SKU vào ô tìm cũng phải ra.
+      skuCodes(m).some((c) => c.toLowerCase().includes(q)),
   )
 })
 
@@ -211,7 +235,7 @@ async function remove(m: Material) {
                   @change="toggleAll"
                 />
               </th>
-              <th class="table-th">Mã</th>
+              <th class="table-th">Mã SKU</th>
               <th class="table-th">Tên</th>
               <th class="table-th">Định mức</th>
               <th class="table-th hidden md:table-cell">Mô tả</th>
@@ -235,7 +259,24 @@ async function remove(m: Material) {
                   @change="toggle(m.id)"
                 />
               </td>
-              <td class="table-td font-mono text-xs text-foreground">{{ m.code }}</td>
+              <td class="table-td">
+                <div
+                  v-if="skuCodes(m).length"
+                  class="flex max-w-xs flex-wrap gap-1"
+                  :title="skuCodes(m).join(', ')"
+                >
+                  <span
+                    v-for="c in skuCodes(m).slice(0, SKU_CHIP_LIMIT)"
+                    :key="c"
+                    class="inline-flex rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                  >{{ c }}</span>
+                  <span
+                    v-if="skuCodes(m).length > SKU_CHIP_LIMIT"
+                    class="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                  >+{{ skuCodes(m).length - SKU_CHIP_LIMIT }}</span>
+                </div>
+                <span v-else class="text-xs text-muted-foreground">Chưa map SKU</span>
+              </td>
               <td class="table-td font-medium text-foreground">{{ m.name }}</td>
               <td class="table-td">
                 <span v-if="m.products_per_unit" class="inline-flex items-center rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-primary">
