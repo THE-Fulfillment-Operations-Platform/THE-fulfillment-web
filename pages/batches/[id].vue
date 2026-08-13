@@ -328,29 +328,32 @@ async function printLabels() {
     )
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
       <style>
-        /* Tem NGANG 65x45mm in trên khổ decal 70x50mm (khổ ngang) — kích thước thật
-           bằng mm/pt để máy in không phải co giãn; mỗi tem một trang, căn giữa giấy.
+        /* Tem tự co giãn PHỦ KÍN tờ giấy được chọn trong hộp thoại in. Không khoá
+           @page size cứng nữa: bản cũ ghim trang 70x50mm nên hễ hộp thoại in để
+           khổ khác (A4…) là tem 65x45mm nằm lọt một góc, chỉnh mãi không hết.
+           Mọi kích thước dùng vmin (tỷ lệ theo cạnh ngắn của giấy) nên chữ/QR giữ
+           đúng tỷ lệ thiết kế 70x50mm gốc trên bất kỳ khổ giấy nào — decal 70x50
+           tràn kín decal, A4 phóng to kín A4. Khi in vẫn cần: margins = None và
+           tắt headers/footers trong hộp thoại in.
            Bố cục: QR bên trái + mã nội bộ/thông tin phụ bên cạnh, các trường
            Seller/Order/Người nhận chạy full chiều ngang bên dưới. */
-        @page { size: 70mm 50mm; margin: 0; }
-        body { margin: 0; font-family: ui-monospace, monospace; color: #000; }
-        .label { display: block; box-sizing: border-box; width: 65mm; height: 45mm;
-          margin: 2.5mm auto; border: 1px solid #ccc; border-radius: 2mm; padding: 2mm;
-          overflow: hidden; page-break-inside: avoid; page-break-after: always; }
+        @page { margin: 0; }
+        html, body { margin: 0; padding: 0; }
+        body { font-family: ui-monospace, monospace; color: #000; }
+        .label { display: block; box-sizing: border-box; width: 100vw; height: 100vh;
+          padding: 4vmin; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
         .label:last-child { page-break-after: auto; }
-        .top { display: flex; gap: 2.5mm; align-items: center; }
-        .qr { width: 18mm; height: 18mm; flex: 0 0 auto; }
+        .top { display: flex; gap: 5vmin; align-items: center; }
+        .qr { width: 36vmin; height: 36vmin; flex: 0 0 auto; }
         .meta { min-width: 0; flex: 1; }
-        /* Mã nội bộ là trường quét/đọc chính — chữ to nhất; cột cạnh QR rộng ~40mm
-           nên mã 12-13 ký tự vẫn một dòng. */
-        .code { font-size: 14pt; font-weight: bold; line-height: 1.15; word-break: break-all; }
-        .sub { font-size: 7.5pt; font-weight: bold; margin-top: 0.8mm; overflow-wrap: anywhere; }
+        /* Mã nội bộ là trường quét/đọc chính — chữ to nhất. */
+        .code { font-size: 10vmin; font-weight: bold; line-height: 1.15; word-break: break-all; }
+        .sub { font-size: 5.4vmin; font-weight: bold; margin-top: 1.6vmin; overflow-wrap: anywhere; }
         /* Các trường chạy hết chiều ngang tem nên giá trị dài vẫn đọc được;
            xuống dòng thay vì cắt cụt. */
-        .info { margin-top: 1.5mm; border-top: 1px dashed #999; padding-top: 1mm; }
-        .row { font-size: 9pt; font-weight: bold; margin-top: 0.8mm; overflow-wrap: anywhere; }
-        .desc { font-size: 7.5pt; font-weight: bold; color: #444; margin-top: 0.8mm; }
-        @media print { .label { border-color: #999; } }
+        .info { margin-top: 3vmin; border-top: 0.4vmin dashed #999; padding-top: 2vmin; }
+        .row { font-size: 6.4vmin; font-weight: bold; margin-top: 1.6vmin; overflow-wrap: anywhere; }
+        .desc { font-size: 5.4vmin; font-weight: bold; color: #444; margin-top: 1.6vmin; }
       </style></head>
       <body>${labels.join('')}
       <script>
