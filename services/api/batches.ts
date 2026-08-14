@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch, apiDownload } from '../http'
+import { apiGet, apiPost, apiPatch, apiDelete, apiDownload } from '../http'
 import type { Batch, BatchLink, BatchLinkKind, CreateBatchResult, InternalStatus, Priority, ListParams } from '~/types'
 
 export interface BatchListParams extends ListParams {
@@ -31,6 +31,9 @@ export const batchesApi = {
   create: (body: CreateBatchInput) => apiPost<CreateBatchResult>('/api/batches', body),
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),
+  // Xoá batch CHƯA sản xuất (PENDING toàn bộ, chưa QC/scrap) — item được thả về
+  // màn gom batch. Batch mẹ xoá cả cụm con; batch đã in/cắt bị BE từ chối (422).
+  remove: (id: number | string) => apiDelete<{ deleted: boolean }>(`/api/batches/${id}`),
   // Attach/replace the batch's print or cut link (entered once, shared by designs).
   setLink: (id: number | string, kind: BatchLinkKind, url: string) =>
     apiPatch<BatchLink>(`/api/batches/${id}/links`, { kind, url }),

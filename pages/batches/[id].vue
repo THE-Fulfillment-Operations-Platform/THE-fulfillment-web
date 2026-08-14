@@ -279,6 +279,46 @@ async function saveLink() {
   }
 }
 
+// ---- Xoá batch chưa sản xuất ------------------------------------------------
+// Chỉ hiện khi còn xoá được: PENDING toàn bộ, chưa đóng, không phải batch con
+// (con xoá qua batch mẹ — cụm chia định mức đi cùng nhau). Role khớp guard BE
+// (roleDesignOps). BE còn chặn lần cuối trong transaction nên bấm trễ sau khi
+// xưởng đã chuyển trạng thái chỉ nhận 422, không mất dữ liệu.
+const canDelete = computed(() =>
+  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') &&
+  !!batch.value &&
+  batch.value.status === 'PENDING' &&
+  !batch.value.parent_batch_id &&
+  !batch.value.closed_at,
+)
+const deleting = ref(false)
+async function deleteBatch() {
+  if (!batch.value || deleting.value) return
+  const childCount = batch.value.child_batches?.length ?? batch.value.child_count ?? 0
+  const scopeNote = batch.value.is_parent && childCount
+    ? ` (gồm cả ${childCount} batch con)`
+    : ''
+  const ok = await useConfirm().confirm({
+    title: `Xoá batch ${batch.value.code}`,
+    message: `Xoá batch${scopeNote}? Sản phẩm trong batch sẽ quay về màn gom batch để gom lại; tem QR đã in cho batch này (nếu có) phải bỏ, gom batch mới in tem mới. Chỉ xoá được batch chưa sản xuất.`,
+    tone: 'danger',
+    confirmText: 'Xoá batch',
+  })
+  if (!ok) return
+  deleting.value = true
+  try {
+    await batchesApi.remove(batch.value.id)
+    toast.success(`Đã xoá batch ${batch.value.code} — sản phẩm đã trả về hàng chờ gom batch`)
+    navigateTo('/batches')
+  } catch (e) {
+    toast.error(errorMessage(e))
+    // BE từ chối thường vì batch vừa đổi trạng thái — tải lại cho khớp thực tế.
+    await reload()
+  } finally {
+    deleting.value = false
+  }
+}
+
 const printingLabels = ref(false)
 async function printLabels() {
   if (!batch.value || printingLabels.value) return
@@ -426,6 +466,16 @@ async function printLabels() {
               <button class="btn-secondary" :disabled="downloadingDesignZip" @click="downloadBatchDesign">
                 <UiSpinner v-if="downloadingDesignZip" :size="16" />
                 <UiIcon v-else name="download" :size="16" /> Tải Design (ZIP)
+              </button>
+              <button
+                v-if="canDelete"
+                class="btn-danger"
+                :disabled="deleting"
+                title="Xoá batch chưa sản xuất — sản phẩm quay về màn gom batch"
+                @click="deleteBatch"
+              >
+                <UiSpinner v-if="deleting" :size="16" />
+                <UiIcon v-else name="trash" :size="16" /> Xoá batch
               </button>
             </div>
           </div>
