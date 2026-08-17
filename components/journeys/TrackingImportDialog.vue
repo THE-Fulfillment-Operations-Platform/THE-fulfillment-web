@@ -9,7 +9,11 @@
 //   3. "Gắn N mã": chỉ ghi các dòng đã duyệt; đơn ĐÃ có mã khác chỉ bị ghi đè
 //      khi CS tick ô đồng ý riêng.
 import { trackingApi } from '~/services/api'
-import type { TrackingImportPreview, TrackingImportCommitResult } from '~/services/api'
+import type {
+  TrackingImportPreview,
+  TrackingImportCommitResult,
+  TrackingImportIssue,
+} from '~/services/api'
 import { errorMessage } from '~/utils/api-error'
 import { formatDate, formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
@@ -126,8 +130,13 @@ async function runPreview() {
 }
 
 const s = computed(() => preview.value?.summary)
-const assigns = computed(() => preview.value?.matches.filter((m) => m.action === 'ASSIGN') ?? [])
-const overwrites = computed(() => preview.value?.matches.filter((m) => m.action === 'OVERWRITE') ?? [])
+// `?? []` trên CHÍNH mảng, không phải trên kết quả filter: Go trả mảng rỗng
+// thành JSON null, mà `null.filter(...)` là lỗi render — cả dialog (kể cả nút
+// xác nhận ở footer) biến mất, nhìn như bấm không ăn.
+const assigns = computed(() => (preview.value?.matches ?? []).filter((m) => m.action === 'ASSIGN'))
+const overwrites = computed(() => (preview.value?.matches ?? []).filter((m) => m.action === 'OVERWRITE'))
+const issueRows = computed(() => preview.value?.issues ?? [])
+const scopeMissingRows = computed(() => preview.value?.scope_missing ?? [])
 const commitCount = computed(() => assigns.value.length + (includeOverwrite.value ? overwrites.value.length : 0))
 
 // So khớp hai chiều cho alert tổng: file thừa (dòng lỗi) / file thiếu (đơn trong
@@ -169,6 +178,15 @@ const ISSUE_LABEL: Record<string, string> = {
   CONFLICT: 'Nhiều mã cho 1 đơn',
   SHARED_TRACKING: '1 mã dán nhiều đơn',
   TAKEN_TRACKING: 'Mã đã gắn đơn khác',
+}
+
+// Lý do từ backend chỉ hiện khi nó nói thêm được gì so với nhãn — vài mã lỗi
+// (EMPTY_TRACKING) có nhãn trùng y hệt lý do, để cả hai thành "Thiếu mã vận
+// đơn — Thiếu mã vận đơn".
+function issueDetail(it: TrackingImportIssue): string {
+  const label = ISSUE_LABEL[it.code] ?? it.code
+  const reason = (it.reason ?? '').trim()
+  return reason && reason !== label ? reason : ''
 }
 </script>
 
@@ -326,13 +344,17 @@ const ISSUE_LABEL: Record<string, string> = {
         </div>
 
         <!-- Dòng lỗi -->
-        <div v-if="preview.issues.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
+        <div v-if="issueRows.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
           <p class="border-b border-border bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
-            Dòng lỗi — sẽ không được gắn ({{ preview.issues.length }})
+            Dòng lỗi — sẽ không được gắn ({{ issueRows.length }})
           </p>
-          <div class="max-h-44 overflow-auto">
+          <div class="max-h-64 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
+              <!-- Nền phải nằm trên chính ô <th>, không phải trên <thead>: bảng
+                   dùng border-collapse nên nền của nhóm hàng không được vẽ, và
+                   dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
+                   luôn nằm trên nội dung. -->
+              <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr>
                   <th class="table-th">Dòng</th>
                   <th class="table-th">Mã đơn</th>
@@ -341,13 +363,17 @@ const ISSUE_LABEL: Record<string, string> = {
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
-                <tr v-for="(it, i) in preview.issues" :key="i" class="bg-rose-50/50 dark:bg-rose-500/5">
+                <tr v-for="(it, i) in issueRows" :key="i" class="bg-rose-50/50 dark:bg-rose-500/5">
                   <td class="table-td text-muted-foreground">{{ it.row }}</td>
                   <td class="table-td font-mono text-xs">{{ it.order_key || '—' }}</td>
                   <td class="table-td font-mono text-xs">{{ it.tracking_number || '—' }}</td>
-                  <td class="table-td whitespace-normal text-rose-700 dark:text-rose-300">
-                    <span class="font-medium">{{ ISSUE_LABEL[it.code] ?? it.code }}</span>
-                    <span class="text-xs opacity-80"> — {{ it.reason }}</span>
+                  <td class="table-td whitespace-normal">
+                    <span
+                      class="inline-flex rounded-md bg-rose-100 px-1.5 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
+                    >{{ ISSUE_LABEL[it.code] ?? it.code }}</span>
+                    <span v-if="issueDetail(it)" class="ml-1.5 text-xs text-rose-700/80 dark:text-rose-300/80">
+                      {{ issueDetail(it) }}
+                    </span>
                   </td>
                 </tr>
               </tbody>
@@ -356,15 +382,19 @@ const ISSUE_LABEL: Record<string, string> = {
         </div>
 
         <!-- Thiếu trong file -->
-        <div v-if="preview.scope_missing.length" class="rounded-md border border-amber-200/60 dark:border-amber-500/25">
+        <div v-if="scopeMissingRows.length" class="rounded-md border border-amber-200/60 dark:border-amber-500/25">
           <p class="border-b border-border bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
             Đơn xuất xưởng {{ rangeLabel }} chưa có trong file ({{ scopeMissing
-            }}<template v-if="scopeMissing > preview.scope_missing.length">
-              — hiện {{ preview.scope_missing.length }} đơn đầu</template>)
+            }}<template v-if="scopeMissing > scopeMissingRows.length">
+              — hiện {{ scopeMissingRows.length }} đơn đầu</template>)
           </p>
-          <div class="max-h-44 overflow-auto">
+          <div class="max-h-64 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
+              <!-- Nền phải nằm trên chính ô <th>, không phải trên <thead>: bảng
+                   dùng border-collapse nên nền của nhóm hàng không được vẽ, và
+                   dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
+                   luôn nằm trên nội dung. -->
+              <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr>
                   <th class="table-th">Mã nội bộ</th>
                   <th class="table-th">Mã đơn shop</th>
@@ -373,7 +403,7 @@ const ISSUE_LABEL: Record<string, string> = {
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
-                <tr v-for="o in preview.scope_missing" :key="o.id">
+                <tr v-for="o in scopeMissingRows" :key="o.id">
                   <td class="table-td font-mono text-xs">{{ o.internal_code }}</td>
                   <td class="table-td font-mono text-xs">{{ o.store_order_id }}</td>
                   <td class="table-td">{{ o.shipping_name || '—' }}</td>
@@ -401,7 +431,11 @@ const ISSUE_LABEL: Record<string, string> = {
           </label>
           <div class="max-h-36 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
+              <!-- Nền phải nằm trên chính ô <th>, không phải trên <thead>: bảng
+                   dùng border-collapse nên nền của nhóm hàng không được vẽ, và
+                   dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
+                   luôn nằm trên nội dung. -->
+              <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr>
                   <th class="table-th">Mã đơn</th>
                   <th class="table-th">Mã đang có</th>
@@ -429,7 +463,11 @@ const ISSUE_LABEL: Record<string, string> = {
           </summary>
           <div class="max-h-44 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
+              <!-- Nền phải nằm trên chính ô <th>, không phải trên <thead>: bảng
+                   dùng border-collapse nên nền của nhóm hàng không được vẽ, và
+                   dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
+                   luôn nằm trên nội dung. -->
+              <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr>
                   <th class="table-th">Dòng</th>
                   <th class="table-th">Mã đơn shop</th>
@@ -479,7 +517,11 @@ const ISSUE_LABEL: Record<string, string> = {
           </p>
           <div class="max-h-44 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
+              <!-- Nền phải nằm trên chính ô <th>, không phải trên <thead>: bảng
+                   dùng border-collapse nên nền của nhóm hàng không được vẽ, và
+                   dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
+                   luôn nằm trên nội dung. -->
+              <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr><th class="table-th">Order ID</th><th class="table-th">Lý do</th></tr>
               </thead>
               <tbody class="divide-y divide-border">

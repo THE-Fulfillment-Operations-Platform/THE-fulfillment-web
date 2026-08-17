@@ -10,6 +10,7 @@ import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import { exportCsv } from '~/utils/csv'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
 import {
   NOTE_SEVERITY,
   NOTE_STATUS,
@@ -185,10 +186,19 @@ const form = reactive<NoteInput>({
 })
 
 // Select option lists for the form (mirror the enum maps / arrays used above).
-const ownerRoleOptions = [
-  { value: '', label: '— Không gán —' },
-  ...Object.entries(ROLE_LABEL).map(([role, label]) => ({ value: role, label })),
-]
+//
+// CS chỉ được gán cho CS. Màn ghi chú của CS là việc khách báo về đơn, không phải
+// việc xưởng — BE lọc theo owner_role, nên nếu để CS gán note sang DESIGNER thì
+// note vừa ghi biến mất khỏi màn của chính họ ngay lúc lưu.
+const isCS = computed(() => useAuthStore().role === 'CS')
+const ownerRoleOptions = computed(() =>
+  isCS.value
+    ? [{ value: 'CS', label: ROLE_LABEL.CS }]
+    : [
+        { value: '', label: '— Không gán —' },
+        ...Object.entries(ROLE_LABEL).map(([role, label]) => ({ value: role, label })),
+      ],
+)
 const severityOptions = NOTE_SEVERITY_OPTIONS.map((s) => ({ value: s, label: NOTE_SEVERITY[s].label }))
 const statusOptions = NOTE_STATUS_OPTIONS.map((s) => ({ value: s, label: NOTE_STATUS[s].label }))
 const entityTypeOptions = [
@@ -215,7 +225,8 @@ function resetForm() {
   form.is_required_attention = false
   form.entity_type = undefined
   form.entity_id = undefined
-  form.owner_role = undefined
+  // CS chỉ có đúng một lựa chọn phụ trách — chọn sẵn để ô không hiện rỗng.
+  form.owner_role = isCS.value ? 'CS' : undefined
   form.due_date = ''
 }
 

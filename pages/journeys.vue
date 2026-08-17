@@ -396,8 +396,22 @@ async function copyAddress() {
           "
           @retry="reload"
         >
+          <!-- Bảng không cuộn ngang và không xén chữ. Panel phải chiếm 26rem nên
+               cột bảng chỉ còn ~800px, mà `.table-td` mặc định `whitespace-nowrap`
+               → hàng luôn rộng hơn khung, cột Trạng thái bị cắt. Ở đây khoá bề
+               rộng bằng table-fixed + tỉ lệ cột, và cho chữ xuống dòng: khung
+               chật thì ô cao thêm một dòng, không bao giờ mất thông tin.
+               min-w chỉ dành cho màn rất hẹp (mobile) — dưới ngưỡng đó 5 cột
+               không còn đọc được, thà cuộn còn hơn nát. -->
           <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-border">
+            <table class="w-full min-w-[36rem] table-fixed divide-y divide-border">
+              <colgroup>
+                <col class="w-[25%]" />
+                <col class="w-[19%]" />
+                <col class="w-[14%]" />
+                <col class="w-[22%]" />
+                <col class="w-[20%]" />
+              </colgroup>
               <thead class="bg-muted">
                 <tr>
                   <th class="table-th">Mã đơn shop</th>
@@ -415,31 +429,41 @@ async function copyAddress() {
                   :class="o.id === selectedId ? 'bg-muted' : ''"
                   @click="selectOrder(o)"
                 >
-                  <td class="table-td">
-                    <div class="font-medium text-foreground">{{ o.store_order_id }}</div>
-                    <div class="text-xs text-muted-foreground">
+                  <td class="table-td whitespace-normal align-top">
+                    <div class="break-words font-medium text-foreground">{{ o.store_order_id }}</div>
+                    <div class="break-words text-xs text-muted-foreground">
                       {{ o.internal_code }}
                       <!-- Số món hiện ngay trên hàng: đơn nhiều món là đơn dễ
                            đóng thiếu, nhìn danh sách phải thấy được. -->
                       <span v-if="liveItemQty(o.items)"> · {{ liveItemQty(o.items) }} sp</span>
                     </div>
                   </td>
-                  <td class="table-td">
-                    <div class="text-foreground">{{ o.shipping_name || '—' }}</div>
-                    <div class="text-xs text-muted-foreground">{{ o.shipping_city || '' }}</div>
+                  <td class="table-td whitespace-normal align-top">
+                    <div class="break-words text-foreground">{{ o.shipping_name || '—' }}</div>
+                    <div class="break-words text-xs text-muted-foreground">{{ o.shipping_city || '' }}</div>
                   </td>
-                  <td class="table-td whitespace-nowrap">
+                  <td class="table-td align-top">
                     <template v-if="o.handed_over_at">
                       <div class="text-foreground">{{ formatDate(o.handed_over_at) }}</div>
                       <div class="text-xs text-muted-foreground">{{ handedOverTime(o.handed_over_at) }}</div>
                     </template>
                     <span v-else class="text-muted-foreground">—</span>
                   </td>
-                  <td class="table-td font-mono text-xs">
-                    <span v-if="o.tracking_number">{{ o.tracking_number }}</span>
-                    <span v-else class="text-amber-600 dark:text-amber-400">chờ gắn mã</span>
+                  <!-- Mã vận đơn là 22 ký tự liền không có chỗ ngắt: hạ một nấc
+                       cỡ chữ để vừa một dòng ở khổ thường, chật hơn nữa thì
+                       break-all cho xuống dòng giữa số — vẫn đọc và bôi đen copy
+                       được, hơn là bị xén mất đuôi. -->
+                  <td class="table-td whitespace-normal align-top">
+                    <span
+                      v-if="o.tracking_number"
+                      class="break-all font-mono text-[11px] leading-5 tracking-tight text-foreground"
+                    >{{ o.tracking_number }}</span>
+                    <span
+                      v-else
+                      class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                    >chờ gắn mã</span>
                   </td>
-                  <td class="table-td">
+                  <td class="table-td whitespace-normal align-top">
                     <UiStatusBadge :kind="rowStatus(o).kind" :value="rowStatus(o).value" />
                   </td>
                 </tr>

@@ -147,8 +147,11 @@ export async function refreshActionCounts(force = true): Promise<void> {
         } satisfies Snapshot)
       }
       lastRefreshAt = Date.now()
-    } catch {
-      /* badge là thông tin phụ — im lặng, giữ số cũ */
+    } catch (e) {
+      // Badge là thông tin phụ — KHÔNG toast, không ném lên, giữ số cũ. Nhưng im
+      // hoàn toàn thì một lỗi cố định cũng không ai thấy: role CS từng bị 403 ở
+      // endpoint này 30 giây một lần suốt cả phiên mà màn hình vẫn như thường.
+      if (import.meta.dev) console.warn('[action-counts] không nạp được badge:', e)
     } finally {
       inFlight = null
     }
