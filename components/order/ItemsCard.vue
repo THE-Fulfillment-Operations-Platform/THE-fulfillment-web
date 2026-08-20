@@ -63,7 +63,6 @@ const summary = computed(() => {
           </p>
           <p class="mt-0.5 break-all font-mono text-xs text-muted-foreground">
             {{ it.sku_code }}
-            <span v-if="it.variant_code"> · {{ it.variant_code }}</span>
           </p>
           <!-- Nội dung khắc là thứ khách hay gọi hỏi lại nhất, và cũng là thứ
                không thể tra ở đâu khác ngoài dòng hàng. -->

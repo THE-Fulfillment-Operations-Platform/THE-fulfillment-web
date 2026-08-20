@@ -60,14 +60,17 @@ function onDrop(e: DragEvent) {
   setFile(e.dataTransfer?.files?.[0])
 }
 
+// Dán CSV: gửi NGUYÊN các cột có trong text, không lọc theo danh sách cột hiện
+// hành. Backend mới map cả nhãn template mới lẫn nhãn cũ (StoreOrderID,
+// ShippingName…), nên lọc ở đây chỉ làm mất dữ liệu của người còn dùng file cũ —
+// và mất im lặng, đúng thứ vừa được sửa ở backend.
 function rowsFromCsv(): ImportRow[] {
   const parsed = parseCsv(csvText.value)
   return parsed.map((r) => {
-    const row: Record<string, string | number> = {}
-    for (const col of IMPORT_COLUMNS) {
-      if (r[col] !== undefined && r[col] !== '') row[col] = r[col]
+    const row: Record<string, string> = {}
+    for (const [col, value] of Object.entries(r)) {
+      if (col && value !== undefined && value !== '') row[col] = value
     }
-    if (row.Quantity !== undefined) row.Quantity = Number(row.Quantity) || 0
     return row as unknown as ImportRow
   })
 }
@@ -165,12 +168,20 @@ function isSkuIssue(code?: string) {
 const errorRows = computed(() =>
   (preview.value?.errors ?? []).map((e) => ({ ...e, vi: importErrorVi(e) })),
 )
-// Non-blocking heads-up rows (duplicate StoreOrderID). They ARE imported — a store
-// order id is a repeatable reference label — but we surface them red so staff can
-// eyeball a possible re-send and confirm with the customer.
-const warningRows = computed(() =>
+// Cảnh báo KHÔNG chặn commit. Chia làm hai loại vì hai loại này đọc khác nhau:
+//  - fileNotices: nói về CẢ FILE (cột bị bỏ qua, cột lạ, không có cột DATE…),
+//    backend trả về với row_number = 0 và chỉ trả đúng một lần cho mỗi loại.
+//  - warningRows: nói về MỘT DÒNG cụ thể (trùng ORDER ID, ngày mập mờ…).
+// Trộn hai loại vào một bảng "Dòng" sẽ đẻ ra những dòng số 0 vô nghĩa.
+const allWarnings = computed(() =>
   (preview.value?.warnings ?? []).map((e) => ({ ...e, vi: importErrorVi(e) })),
 )
+const fileNotices = computed(() => allWarnings.value.filter((w) => !w.row_number))
+const warningRows = computed(() => allWarnings.value.filter((w) => !!w.row_number))
+// Cột lạ là thứ nguy hiểm nhất trong đám cảnh báo: dữ liệu trong cột đó KHÔNG
+// vào hệ thống mà file vẫn import "thành công". Nêu tên cột ra, không nói chung chung.
+const unknownColumns = computed(() => preview.value?.headers?.unknown ?? [])
+const retiredColumns = computed(() => preview.value?.headers?.retired ?? [])
 const skuIssues = computed(() => (preview.value?.errors ?? []).filter((e) => isSkuIssue(e.error_code)))
 const unmappedSkus = computed(() => [...new Set(skuIssues.value.map((e) => e.sku).filter(Boolean))] as string[])
 // Deep-link: unknown SKU → legacy import / create; existing-but-unmapped → mapping.
@@ -309,7 +320,7 @@ function masterDataLink(code?: string) {
               </p>
             </div>
             <p v-if="warningRows.length" class="mt-3 text-xs font-medium text-rose-600 dark:text-rose-400">
-              ⚠ {{ warningRows.length }} dòng trùng StoreOrderID — vẫn import (mã nội bộ riêng), xem chi tiết bên dưới.
+              ⚠ {{ warningRows.length }} dòng có cảnh báo — vẫn import, xem chi tiết bên dưới.
             </p>
           </div>
 
@@ -351,14 +362,50 @@ function masterDataLink(code?: string) {
             </div>
           </div>
 
-          <!-- Duplicate StoreOrderID — non-blocking heads-up (rows are still imported) -->
+          <!-- Cột trong file: nói ngay nếu có cột hệ thống KHÔNG đọc, vì im lặng ở
+               đây là cách dữ liệu biến mất mà file vẫn báo "import thành công". -->
+          <div
+            v-if="fileNotices.length"
+            class="card border-amber-200/60 bg-amber-50 p-4 dark:border-amber-500/25 dark:bg-amber-500/10"
+          >
+            <div class="flex items-start gap-3">
+              <div class="mt-0.5 shrink-0 rounded-full bg-amber-100 p-1.5 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+                <UiIcon name="alert" :size="18" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  Lưu ý về file ({{ fileNotices.length }})
+                </p>
+                <ul class="mt-1.5 space-y-1.5">
+                  <li v-for="(n, i) in fileNotices" :key="i" class="text-xs text-amber-800/90 dark:text-amber-200/90">
+                    <span class="font-medium">{{ n.vi.label }}:</span> {{ n.message || n.vi.detail }}
+                    <span v-if="n.vi.suggestion" class="block text-amber-700/80 dark:text-amber-300/80">
+                      → {{ n.vi.suggestion }}
+                    </span>
+                  </li>
+                </ul>
+                <p v-if="unknownColumns.length" class="mt-2 flex flex-wrap items-center gap-1">
+                  <span class="text-xs font-medium text-amber-800 dark:text-amber-200">Cột bị bỏ qua:</span>
+                  <span
+                    v-for="c in [...unknownColumns, ...retiredColumns]"
+                    :key="c"
+                    class="inline-flex rounded-md bg-amber-100 px-2 py-0.5 font-mono text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                  >
+                    {{ c }}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cảnh báo theo dòng — không chặn, dòng vẫn được import -->
           <div v-if="warningRows.length" class="card overflow-hidden border-rose-300/60 dark:border-rose-500/30">
             <div class="border-b border-rose-200/60 bg-rose-50 px-4 py-2.5 dark:border-rose-500/25 dark:bg-rose-500/10">
               <h3 class="flex items-center gap-1.5 text-sm font-semibold text-rose-700 dark:text-rose-300">
-                <UiIcon name="alert" :size="16" /> Trùng StoreOrderID ({{ warningRows.length }}) — vẫn import, cần kiểm tra
+                <UiIcon name="alert" :size="16" /> Cảnh báo theo dòng ({{ warningRows.length }}) — vẫn import, cần kiểm tra
               </h3>
               <p class="mt-0.5 text-xs text-rose-600/90 dark:text-rose-300/80">
-                Các đơn dưới đây trùng StoreOrderID với đơn đã có. Hệ thống vẫn tạo đơn mới (mã nội bộ riêng) — kiểm tra kẻo up nhầm, nghi trùng thì báo lại khách.
+                Những dòng dưới đây vẫn được tạo đơn. Đọc qua một lượt trước khi commit — trùng đơn hay sai ngày chỉ lộ ra khi kiện đã đi.
               </p>
             </div>
             <div class="overflow-x-auto">
@@ -366,7 +413,7 @@ function masterDataLink(code?: string) {
                 <thead class="bg-card">
                   <tr>
                     <th class="table-th">Dòng</th>
-                    <th class="table-th">Mã đơn (StoreOrderID)</th>
+                    <th class="table-th">Mã đơn (ORDER ID)</th>
                     <th class="table-th">SKU</th>
                     <th class="table-th">Ghi chú</th>
                   </tr>
@@ -376,7 +423,10 @@ function masterDataLink(code?: string) {
                     <td class="table-td">{{ w.row_number }}</td>
                     <td class="table-td font-medium text-rose-700 dark:text-rose-300">{{ w.store_order_id || '—' }}</td>
                     <td class="table-td">{{ w.sku || '—' }}</td>
-                    <td class="table-td max-w-xs whitespace-normal text-muted-foreground">{{ w.vi.suggestion || w.vi.detail }}</td>
+                    <td class="table-td max-w-xs whitespace-normal">
+                      <span class="font-medium text-rose-700 dark:text-rose-300">{{ w.vi.label }}</span>
+                      <span class="block text-muted-foreground">{{ w.vi.suggestion || w.vi.detail }}</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>

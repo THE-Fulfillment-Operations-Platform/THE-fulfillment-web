@@ -62,14 +62,17 @@ function onDrop(e: DragEvent) {
   setFile(e.dataTransfer?.files?.[0])
 }
 
+// Dán CSV: gửi NGUYÊN các cột có trong text, không lọc theo danh sách cột hiện
+// hành. Backend mới map cả nhãn template mới lẫn nhãn cũ (StoreOrderID,
+// ShippingName…), nên lọc ở đây chỉ làm mất dữ liệu của người còn dùng file cũ —
+// và mất im lặng, đúng thứ vừa được sửa ở backend.
 function rowsFromCsv(): ImportRow[] {
   const parsed = parseCsv(csvText.value)
   return parsed.map((r) => {
-    const row: Record<string, string | number> = {}
-    for (const col of IMPORT_COLUMNS) {
-      if (r[col] !== undefined && r[col] !== '') row[col] = r[col]
+    const row: Record<string, string> = {}
+    for (const [col, value] of Object.entries(r)) {
+      if (col && value !== undefined && value !== '') row[col] = value
     }
-    if (row.Quantity !== undefined) row.Quantity = Number(row.Quantity) || 0
     return row as unknown as ImportRow
   })
 }

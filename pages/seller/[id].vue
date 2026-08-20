@@ -86,9 +86,7 @@ const recipientRows = computed<[string, string][]>(() => {
     ['Mã bưu chính', dash(o.shipping_zip)],
     ['Quốc gia', dash(o.shipping_country)],
     ['Điện thoại', dash(o.shipping_phone)],
-    ['Email', dash(o.shipping_email)],
   ]
-  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
   return rows
 })
 
@@ -462,14 +460,8 @@ async function submit(reason: string) {
               </dd>
             </div>
           </dl>
-          <!-- Phương thức vận chuyển seller YÊU CẦU trên file up lên — không phải
-               hãng nào thực sự cầm kiện hàng. -->
-          <dl v-if="order.shipping_method || order.note" class="mt-3 space-y-2 border-t border-border pt-3 text-sm">
-            <div v-if="order.shipping_method" class="flex justify-between gap-3">
-              <dt class="shrink-0 text-muted-foreground">Vận chuyển yêu cầu</dt>
-              <dd class="text-right text-foreground">{{ order.shipping_method }}</dd>
-            </div>
-            <div v-if="order.note" class="flex justify-between gap-3">
+          <dl v-if="order.note" class="mt-3 space-y-2 border-t border-border pt-3 text-sm">
+            <div class="flex justify-between gap-3">
               <dt class="shrink-0 text-muted-foreground">Ghi chú đơn</dt>
               <dd class="break-words text-right text-foreground">{{ order.note }}</dd>
             </div>
@@ -589,8 +581,8 @@ async function submit(reason: string) {
           </div>
           <div class="divide-y divide-border">
             <div
-              v-for="it in items"
-              :key="itemId(it) ?? `${it.sku_code}-${it.variant_code ?? ''}`"
+              v-for="(it, idx) in items"
+              :key="itemId(it) ?? `${it.sku_code}-${idx}`"
               class="flex items-center gap-3 px-4 py-3 sm:gap-4"
               :class="itemCancelled(it) && 'opacity-60'"
             >
@@ -610,7 +602,7 @@ async function submit(reason: string) {
                   {{ it.product_name || it.sku_code }}
                 </p>
                 <p class="text-xs text-muted-foreground">
-                  {{ it.sku_code }}<span v-if="it.variant_code"> · {{ it.variant_code }}</span>
+                  {{ it.sku_code }}
                 </p>
                 <!-- Per-item cancellation state -->
                 <span

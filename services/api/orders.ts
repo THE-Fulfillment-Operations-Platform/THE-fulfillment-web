@@ -44,8 +44,6 @@ export interface DirectOrderInput {
   shipping_country?: string
   items: Array<{
     sku_code: string
-    product_name?: string
-    variant_code?: string
     quantity: number
     mockup_url?: string
     engrave_text?: string
@@ -57,8 +55,8 @@ export interface EditOrderItemInput {
   id: number
   sku_code?: string
   quantity?: number
-  product_name?: string
-  variant_code?: string
+  // Không sửa tên sản phẩm ở đây nữa: tên thuộc về SKU trong master data, sửa
+  // trên một đơn sẽ khiến đơn đó lệch với catalogue. Đổi SKU, hoặc sửa tên SKU.
   design_url?: string
   back_design_url?: string
   engrave_text?: string
@@ -69,7 +67,6 @@ export interface EditOrderItemInput {
 export interface UpdateOrderInput {
   store_order_id?: string
   store_name?: string
-  shipping_method?: string
   shipping_name?: string
   shipping_address1?: string
   shipping_address2?: string
@@ -78,8 +75,6 @@ export interface UpdateOrderInput {
   shipping_province?: string
   shipping_country?: string
   shipping_phone?: string
-  shipping_email?: string
-  ioss?: string
   note?: string
   items?: EditOrderItemInput[]
 }

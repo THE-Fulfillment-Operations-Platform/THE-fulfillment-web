@@ -24,8 +24,9 @@ const scanError = ref<string | null>(null)
 // Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
 const alreadyQC = computed(() => result.value?.internal_status === 'QC_PASSED')
 
-// Tên sản phẩm hiển thị: ưu tiên product_name, fallback về sku_product_name.
-const productName = computed(() => result.value?.product_name || result.value?.sku_product_name || '')
+// Tên sản phẩm hiển thị lấy từ SKU trong master data — dòng đơn không còn giữ
+// bản sao tên riêng (template mới của khách bỏ cột tên sản phẩm).
+const productName = computed(() => result.value?.sku_product_name || '')
 
 // QC là cổng cấp SẢN PHẨM, làm 1 lần: một sản phẩm có thể gồm nhiều NVL (mỗi NVL
 // một batch). PASS/FAIL áp cho cả sản phẩm. Chỉ QC được khi MỌI phần NVL đã đạt
@@ -262,7 +263,7 @@ onMounted(focusScan)
             <UiStatusBadge kind="internal" :value="result.internal_status" />
           </div>
 
-          <!-- Tên sản phẩm (ưu tiên product_name, fallback tên SKU) + mô tả NVL của
+          <!-- Tên sản phẩm (lấy từ SKU master data) + mô tả NVL của
                SKU (spec vật liệu/kích thước) ngay cạnh để QC đối chiếu hàng thật. -->
           <p v-if="productName || result.material_description" class="mt-4 text-base leading-snug">
             <span class="font-semibold text-foreground">{{ productName }}</span>
@@ -277,10 +278,6 @@ onMounted(focusScan)
             <div v-if="result.sku_code">
               <dt class="label">SKU</dt>
               <dd class="font-mono font-medium text-foreground">{{ result.sku_code }}</dd>
-            </div>
-            <div v-if="result.variant_code">
-              <dt class="label">Phân loại</dt>
-              <dd class="font-medium text-foreground">{{ result.variant_code }}</dd>
             </div>
             <div v-if="result.quantity != null">
               <dt class="label">Số lượng</dt>

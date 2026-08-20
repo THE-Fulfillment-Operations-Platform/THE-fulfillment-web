@@ -220,8 +220,9 @@ export interface OrderItem {
   // các dòng của cùng một đơn theo đúng thứ tự.
   line_no?: number
   sku_code: string
+  // Tên sản phẩm lấy từ SKU trong master data (không lưu trên dòng đơn nữa —
+  // template mới của khách không còn cột tên sản phẩm).
   product_name?: string
-  variant_code?: string
   quantity: number
   internal_status: InternalStatus
   design_status: DesignStatus
@@ -266,7 +267,6 @@ export interface Order {
   seller_id: number
   store_name?: string
   account?: string
-  shipping_method?: string
   seller_status: SellerStatus
   review_status?: ReviewStatus
   reviewed_by_id?: number | null
@@ -289,8 +289,6 @@ export interface Order {
   shipping_province?: string
   shipping_country?: string
   shipping_phone?: string
-  shipping_email?: string
-  ioss?: string
   note?: string
   // Computed by list endpoints: true when this StoreOrderID is shared by more than
   // one order for the same seller (a repeated store order id, not just many items).
@@ -323,21 +321,38 @@ export interface Order {
 
 // ---- Import ----------------------------------------------------------------
 
+// Một dòng của file import (dán CSV). Khoá là NHÃN CỘT trong file — backend map
+// nhãn → field, và chấp nhận cả nhãn template cũ (StoreOrderID, ShippingName…)
+// lẫn nhãn template mới, nên cả hai đều khai báo được ở đây.
 export interface ImportRow {
-  StoreOrderID: string
-  Account?: string
+  // --- Template 2026-08 (tiếng Việt) ---
+  'Seller ID'?: string
+  'Shop name'?: string
+  DATE?: string
+  name?: string
+  'Địa chỉ nhận'?: string
+  'Địa chỉ nhận (Phụ)'?: string
+  'Thành phố'?: string
+  'Mã vùng'?: string
+  Zipcode?: string
+  'Quốc Gia'?: string
+  'ORDER ID'?: string
+  'MÃ SKU'?: string
+  'Mã ảnh (nếu có)'?: string
+  'SỐ LƯỢNG'?: number | string
+  'DESIGN ORDER'?: string
+  designBack?: string
+  'EngraveText (if have)'?: string
+  Phone?: string
+  // --- Nhãn cũ, vẫn được backend chấp nhận ---
+  StoreOrderID?: string
   StoreName?: string
-  ShippingMethod?: string
   Quantity?: number | string
-  ProductName?: string
-  VariantCode?: string
   SKU?: string
   'Mã ảnh'?: string
   Design?: string
   'Front Design'?: string
   'Back Design'?: string
-  Mockup?: string
-  EngraveText?: string
   ShippingName?: string
   ShippingAddress1?: string
   ShippingAddress2?: string
@@ -345,9 +360,11 @@ export interface ImportRow {
   ShippingZip?: string
   ShippingProvince?: string
   ShippingCountry?: string
+  // --- Dùng chung cả hai template ---
+  Account?: string
+  Mockup?: string
+  EngraveText?: string
   ShippingPhone?: string
-  ShippingEmail?: string
-  IOSS?: string
   Note?: string
 }
 
@@ -374,6 +391,16 @@ export interface ImportPreview {
   // rows ARE imported — the UI highlights them so staff can double-check a possible
   // duplicate with the customer — and never gate the commit.
   warnings?: ImportError[]
+  // Backend đọc được gì từ dòng tiêu đề: cột thiếu, cột đã ngừng dùng, cột lạ.
+  // Cột lạ nghĩa là dữ liệu trong cột đó KHÔNG được nhập — phải nói ra, không im.
+  headers?: ImportHeaderReport
+}
+
+export interface ImportHeaderReport {
+  missing?: string[]
+  retired?: string[]
+  unknown?: string[]
+  present?: string[]
 }
 
 export interface ImportCommitResult {
@@ -744,8 +771,6 @@ export interface QcScanResult {
   order_code: string
   store_order_id: string
   sku_code: string
-  product_name: string
-  variant_code?: string
   quantity?: number
   material_name?: string
   material_description?: string
@@ -829,8 +854,8 @@ export interface SellerOrderItem {
   // two values before it offers a per-item cancellation action.
   item_id?: number
   sku_code: string
+  // Tên sản phẩm lấy từ SKU master data.
   product_name?: string
-  variant_code?: string
   quantity: number
   mockup_url?: string
   // Per-item cancellation state. Absent/NONE = active. SELLER_CANCELLED/APPROVED
@@ -896,9 +921,6 @@ export interface SellerOrder {
   shipping_zip?: string
   shipping_country?: string
   shipping_phone?: string
-  shipping_email?: string
-  ioss?: string
-  shipping_method?: string
   note?: string
 }
 

@@ -74,9 +74,7 @@ const shippingRows = computed<[string, string][]>(() => {
     ['Mã bưu chính', dash(o.shipping_zip)],
     ['Quốc gia', dash(o.shipping_country)],
     ['Điện thoại', dash(o.shipping_phone)],
-    ['Email', dash(o.shipping_email)],
   ]
-  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
   return rows
 })
 
@@ -112,8 +110,6 @@ const editForm = reactive({
   shipping_zip: '',
   shipping_country: '',
   shipping_phone: '',
-  shipping_email: '',
-  ioss: '',
 })
 const editItems = ref<EditItemForm[]>([])
 
@@ -130,8 +126,6 @@ function openEdit() {
   editForm.shipping_zip = o.shipping_zip ?? ''
   editForm.shipping_country = o.shipping_country ?? ''
   editForm.shipping_phone = o.shipping_phone ?? ''
-  editForm.shipping_email = o.shipping_email ?? ''
-  editForm.ioss = o.ioss ?? ''
   // `items` already excludes seller-cancelled / approved-cancellation lines.
   editItems.value = items.value.map((it) => ({
     id: it.id,
@@ -166,8 +160,6 @@ async function submitEdit() {
       shipping_zip: editForm.shipping_zip,
       shipping_country: editForm.shipping_country,
       shipping_phone: editForm.shipping_phone,
-      shipping_email: editForm.shipping_email,
-      ioss: editForm.ioss,
       items: editItems.value.map<EditOrderItemInput>((it) => ({
         id: it.id,
         sku_code: it.sku_code,
@@ -728,14 +720,6 @@ async function syncTracking() {
               <div>
                 <label class="label">Quốc gia</label>
                 <input v-model="editForm.shipping_country" class="input" />
-              </div>
-              <div class="sm:col-span-2">
-                <label class="label">Email</label>
-                <input v-model="editForm.shipping_email" type="email" class="input" />
-              </div>
-              <div>
-                <label class="label">IOSS</label>
-                <input v-model="editForm.ioss" class="input" />
               </div>
               <div class="sm:col-span-2">
                 <label class="label">Note xưởng</label>

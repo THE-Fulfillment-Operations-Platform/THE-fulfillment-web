@@ -110,40 +110,52 @@ export function parseCsv(text: string): Record<string, string>[] {
 }
 
 // Keep in sync with the backend orderImportTemplateHeaders (import_service.go).
-// "Design" (single column) is replaced by "Front Design" + "Back Design"; the
-// backend still accepts an old "Design" column as the front side for compatibility.
+// This is the 2026-08 seller template. The backend still accepts the previous
+// English headers (StoreOrderID, ShippingName, …) so older files keep importing;
+// this list is what we HAND OUT, and it must stay identical to the backend's —
+// the backend has a round-trip test that fails if a column here cannot be parsed.
 export const IMPORT_COLUMNS = [
-  'StoreOrderID',
+  'Seller ID',
   'Account',
-  'StoreName',
+  'Shop name',
+  'DATE',
+  'name',
+  'Địa chỉ nhận',
+  'Địa chỉ nhận (Phụ)',
+  'Thành phố',
+  'Mã vùng',
+  'Zipcode',
+  'Quốc Gia',
+  'ORDER ID',
+  'MÃ SKU',
+  'Mã ảnh (nếu có)',
+  'SỐ LƯỢNG',
+  'DESIGN ORDER',
+  'designBack',
+  'Mockup',
+  'EngraveText (if have)',
+  'ShippingPhone',
+  'Note',
+] as const
+
+// Columns the system no longer imports. A file may still carry them — the
+// backend reports them back as "ignored" rather than failing — but we never
+// hand out a template containing them.
+export const RETIRED_IMPORT_COLUMNS = [
   'ShippingMethod',
-  'Quantity',
   'ProductName',
   'VariantCode',
-  'SKU',
-  'Mã ảnh',
-  'Front Design',
-  'Back Design',
-  'Mockup',
-  'EngraveText',
-  'ShippingName',
-  'ShippingAddress1',
-  'ShippingAddress2',
-  'ShippingCity',
-  'ShippingZip',
-  'ShippingProvince',
-  'ShippingCountry',
-  'ShippingPhone',
-  'ShippingEmail',
   'IOSS',
-  'Note',
+  'ShippingEmail',
 ] as const
 
 export function importTemplateCsv(): string {
   const header = IMPORT_COLUMNS.join(',')
+  // Two rows of ONE order (same ORDER ID = one order, two products): a one-sided
+  // product and a two-sided one, so the designBack column has a worked example.
   const sample = [
-    'Etsy-9001,acc-001,Etsy-Demo,Standard,1,Personalized Wood Sign,VAR-1,WOOD-01,IMG-9001,https://designs.example.com/9001-front.png,,https://mockups.example.com/etsy-9001-1.png,Hello,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,First order',
-    'Etsy-9001,acc-001,Etsy-Demo,Standard,2,Mica Plate,VAR-2,MICA-02,IMG-9002,https://designs.example.com/9002-front.png,https://designs.example.com/9002-back.png,https://mockups.example.com/etsy-9001-2.png,,John Doe,12 Main St,,Austin,73301,TX,US,+1900000000,john@example.com,,',
+    'SELLER01,acc-001,Etsy-Demo,2026-08-20,John Doe,12 Main St,,Austin,TX,73301,US,Etsy-9001,WOOD-01,IMG-9001,1,https://designs.example.com/9001-front.png,,https://mockups.example.com/etsy-9001-1.png,Hello,+1900000000,First order',
+    'SELLER01,acc-001,Etsy-Demo,2026-08-20,John Doe,12 Main St,,Austin,TX,73301,US,Etsy-9001,MICA-02,IMG-9002,2,https://designs.example.com/9002-front.png,https://designs.example.com/9002-back.png,https://mockups.example.com/etsy-9001-2.png,,+1900000000,',
   ]
   return [header, ...sample].join('\n')
 }

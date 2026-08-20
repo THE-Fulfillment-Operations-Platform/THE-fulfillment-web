@@ -137,9 +137,7 @@ const shippingRows = computed<[string, string][]>(() => {
     ['Mã bưu chính', dash(o.shipping_zip)],
     ['Quốc gia', dash(o.shipping_country)],
     ['Điện thoại', dash(o.shipping_phone)],
-    ['Email', dash(o.shipping_email)],
   ]
-  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
   return rows
 })
 </script>

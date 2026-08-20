@@ -208,7 +208,6 @@ const recipientRows = computed<[string, string][]>(() => {
     ['Mã bưu chính', dash(o.shipping_zip)],
     ['Quốc gia', dash(o.shipping_country)],
   ]
-  if (o.ioss?.trim()) rows.push(['IOSS', o.ioss.trim()])
   return rows
 })
 
@@ -392,12 +391,6 @@ async function copy(text: string, label: string) {
                 </dd>
               </div>
               <div class="flex justify-between gap-3">
-                <dt class="shrink-0 text-muted-foreground">Email</dt>
-                <dd class="break-all text-right text-foreground">
-                  {{ selected.shipping_email || '—' }}
-                </dd>
-              </div>
-              <div class="flex justify-between gap-3">
                 <dt class="shrink-0 text-muted-foreground">Địa chỉ</dt>
                 <dd class="text-right text-foreground">
                   <button class="text-left hover:underline" @click="copy(fullAddress(selected), 'địa chỉ')">
@@ -412,10 +405,6 @@ async function copy(text: string, label: string) {
               >
                 <dt class="shrink-0 text-xs text-muted-foreground">{{ k }}</dt>
                 <dd class="break-words text-right text-xs text-foreground">{{ v }}</dd>
-              </div>
-              <div v-if="selected.shipping_method" class="flex justify-between gap-3">
-                <dt class="shrink-0 text-muted-foreground">Vận chuyển</dt>
-                <dd class="text-right text-foreground">{{ selected.shipping_method }}</dd>
               </div>
               <div v-if="selected.note" class="flex justify-between gap-3">
                 <dt class="shrink-0 text-muted-foreground">Ghi chú đơn</dt>
