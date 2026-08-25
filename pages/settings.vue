@@ -7,7 +7,7 @@ import { useAuthStore } from '~/stores/auth'
 // System settings. Currently a single "danger zone": wiping all order/production
 // data so the operator can re-import from scratch. Route is OWNER-gated in
 // utils/navigation.ts; the action itself is guarded again here and on the backend
-// (OWNER + ALLOW_DATA_RESET).
+// (OWNER role — bất kỳ ai giữ quyền chủ sở hữu đều chạy được).
 const auth = useAuthStore()
 const toast = useToastStore()
 const isOwner = computed(() => auth.role === 'OWNER')
