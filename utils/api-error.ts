@@ -13,6 +13,12 @@ export class ApiError extends Error {
   }
 }
 
+// Những mã lỗi mà câu tiếng Việt sẵn có ĐÚNG hơn nội dung backend gửi kèm: các
+// lỗi hạ tầng/phiên đăng nhập, nơi backend nói tiếng Anh kỹ thuật ("Invalid or
+// expired token", "You do not have permission…"). Mọi mã còn lại thì ngược lại
+// — backend gửi câu tiếng Việt cụ thể cho đúng nghiệp vụ, hiện nó ra mới có ích.
+const CODES_WITH_BETTER_VI = new Set(['NETWORK', 'NO_CLIENT', 'UNAUTHORIZED', 'FORBIDDEN'])
+
 // Vietnamese messages for error codes the app / backend commonly returns.
 const VI_BY_CODE: Record<string, string> = {
   NETWORK: 'Không kết nối được máy chủ. Kiểm tra kết nối mạng hoặc backend có đang chạy không.',
@@ -61,6 +67,24 @@ function detailText(d: unknown): string {
   return String(d)
 }
 
+/** Câu giải thích cho lỗi HTTP mà máy chủ KHÔNG trả kèm envelope lỗi.
+ *  Không có nội dung nào từ backend để hiện, nên ít nhất phải nói đúng chuyện
+ *  gì đã xảy ra và chỉ hướng xử lý — "Không kết nối được máy chủ" cho một cái
+ *  404 là sai sự thật và làm mất cả buổi đi dò mạng. */
+function httpStatusMessage(status: number, raw: string): string {
+  const tail = raw ? ` — máy chủ trả: ${raw}` : ''
+  switch (status) {
+    case 404:
+      return `Máy chủ không có endpoint này (404)${tail}. Thường là backend đang chạy bản cũ — khởi động lại backend rồi thử lại.`
+    case 502:
+    case 503:
+    case 504:
+      return `Máy chủ không phản hồi được (${status})${tail}. Backend đang khởi động lại hoặc bị treo.`
+    default:
+      return `Máy chủ trả lỗi ${status}${tail}.`
+  }
+}
+
 /** Human-friendly Vietnamese message for an arbitrary thrown error. */
 export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
@@ -70,9 +94,16 @@ export function errorMessage(e: unknown): string {
     for (const [re, vi] of VI_BY_PHRASE) {
       if (re.test(raw)) return vi
     }
+    // Lỗi HTTP không có envelope: code do tầng http đặt theo status, nên câu trả
+    // lời phải gọi tên status thay vì rơi vào một câu chung nào đó.
+    if (e.code.startsWith('HTTP_')) return httpStatusMessage(e.status, raw)
+    if (CODES_WITH_BETTER_VI.has(e.code) && VI_BY_CODE[e.code]) return VI_BY_CODE[e.code]
+    // Backend nói gì thì hiện đúng cái đó. Câu dịch sẵn theo mã chỉ là phương án
+    // cuối: nó chung chung hơn hẳn ("Không tìm thấy dữ liệu." thay cho "Không
+    // tìm thấy batch"), nên chỉ dùng khi thật sự không có nội dung nào để hiện.
+    if (raw) return raw
     if (VI_BY_CODE[e.code]) return VI_BY_CODE[e.code]
-    // Unknown error: relay whatever the backend said so nothing is lost.
-    return raw || 'Đã xảy ra lỗi không xác định.'
+    return 'Đã xảy ra lỗi không xác định.'
   }
   if (e instanceof Error) return e.message
   return 'Đã xảy ra lỗi không xác định.'

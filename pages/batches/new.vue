@@ -222,8 +222,8 @@ onMounted(() => {
               <thead class="bg-card">
                 <tr>
                   <th class="table-th w-10"></th>
-                  <th class="table-th">Item</th>
-                  <th class="table-th">Store Order</th>
+                  <th class="table-th">Mã nội bộ</th>
+                  <th class="table-th">Mã đơn shop</th>
                   <th class="table-th">
                     <button
                       type="button"
@@ -267,9 +267,9 @@ onMounted(() => {
 
       <!-- Preview / create -->
       <div class="card h-fit p-5">
-        <h3 class="mb-3 text-sm font-semibold text-foreground">Batch preview</h3>
+        <h3 class="mb-3 text-sm font-semibold text-foreground">Xem trước batch</h3>
         <dl class="space-y-2 text-sm">
-          <div class="flex justify-between"><dt class="text-muted-foreground">Material</dt><dd class="font-medium">{{ activeMaterial.material_name }}</dd></div>
+          <div class="flex justify-between"><dt class="text-muted-foreground">Loại VL</dt><dd class="font-medium">{{ activeMaterial.material_name }}</dd></div>
           <div class="flex justify-between">
             <dt class="text-muted-foreground">Định mức</dt>
             <dd class="font-medium">{{ activeCap ? `${activeCap} sp/đơn vị` : 'Không giới hạn' }}</dd>
@@ -299,12 +299,12 @@ onMounted(() => {
 
         <div class="mt-4 space-y-3">
           <div>
-            <label class="label">Priority</label>
-            <UiSelect v-model="priority" :options="priorityOptions" aria-label="Priority" />
+            <label class="label">Độ ưu tiên</label>
+            <UiSelect v-model="priority" :options="priorityOptions" aria-label="Độ ưu tiên" />
           </div>
           <div>
-            <label class="label">Due date</label>
-            <UiDatePicker v-model="dueDate" aria-label="Due date" />
+            <label class="label">Hạn hoàn thành</label>
+            <UiDatePicker v-model="dueDate" aria-label="Hạn hoàn thành" />
           </div>
           <div>
             <label class="label">Ghi chú</label>
@@ -318,8 +318,8 @@ onMounted(() => {
             creating
               ? 'Đang tạo…'
               : willSplit
-                ? `TẠO BATCH MẸ + ${splitGroups.length} CON`
-                : `CREATE BATCH (${selectedCount})`
+                ? `Tạo batch mẹ + ${splitGroups.length} con`
+                : `Tạo batch (${selectedCount})`
           }}
         </button>
       </div>

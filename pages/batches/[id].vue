@@ -9,6 +9,7 @@ import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
+import { refreshActionCounts } from '~/composables/useActionCounts'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -21,6 +22,10 @@ const items = computed(() =>
     (item) => item.order_item?.cancellation_status !== 'SELLER_CANCELLED' && item.order_item?.cancellation_status !== 'APPROVED',
   ),
 )
+// Phần đã ghi bỏ vẫn nằm trong batch làm bằng chứng "tấm này đã làm ra những gì"
+// (BE trả kèm khi batch đã đóng). Chúng không còn là việc phải làm, nên bảng
+// dưới đánh dấu rõ thay vì để lẫn với hàng đang sản xuất.
+const liveItemCount = computed(() => items.value.filter((i) => !i.scrapped_at).length)
 
 // Roles allowed to advance batch status (production + supervisors). Mirrors the
 // backend PATCH /batches/:id/status guard (Owner/Admin/Ops/Production/Designer).
@@ -31,6 +36,11 @@ const canChangeStatus = computed(() =>
 // Batch đã QC (roll-up từ item đã QC ở trạm QC) → khoá board, không cho hạ cấp
 // trạng thái sản xuất. QC_PASSED chỉ do trạm QC đặt, 1 lần cho cả sản phẩm.
 const qcLocked = computed(() => batch.value?.status === 'QC_PASSED')
+
+// Batch đã đóng: hoặc mọi phần bị huỷ lẻ ở QC, hoặc cả tấm bị huỷ. Không còn gì
+// để sản xuất — hàng làm lại nằm ở batch MỚI — nên mọi nút sửa đều tắt và màn
+// này chỉ còn là lịch sử của tấm đó.
+const closed = computed(() => !!batch.value?.closed_at)
 
 // Sản xuất tiến 1 chiều: một chặng ĐỨNG TRƯỚC trạng thái hiện tại đã qua rồi → làm
 // mờ + không cho bấm (lùi về sẽ hạ cấp batch-item và phá cổng QC "mọi NVL đã cắt").
@@ -60,6 +70,9 @@ interface ProdRow {
   print_file_url: string
   cut_file_url: string
   status: InternalStatus
+  // Phần đã ghi bỏ (QC fail lẻ hoặc huỷ cả batch) — dòng vẫn hiện để truy vết.
+  scrapped: boolean
+  scrap_reason: string
   // Đơn gốc — hiện ở cột "Mã đơn shop" (orderID đi xuyên suốt vòng đời đơn,
   // từ import tới hành trình) và in trên tem QR cùng người nhận + seller.
   order_id: number | null
@@ -88,6 +101,8 @@ const prodRows = computed<ProdRow[]>(() =>
       print_file_url: sharedPrintUrl || oi?.print_file_url || bi.print_file_url || '',
       cut_file_url: sharedCutUrl || oi?.cut_file_url || bi.cut_file_url || '',
       status: bi.status,
+      scrapped: !!bi.scrapped_at,
+      scrap_reason: bi.scrap_reason ?? '',
       // Batch detail preload kèm order_item.order; hai nhánh sau là dự phòng cho
       // các shape phẳng (list endpoint / mock) không có object order lồng bên trong.
       order_id: oi?.order_id ?? oi?.order?.id ?? null,
@@ -199,7 +214,7 @@ async function downloadBatchDesign() {
 // Chỉ OWNER/ADMIN/OPS/DESIGNER được thêm/sửa — BE guard giống hệt.
 const LINK_LABELS: Record<BatchLinkKind, string> = { PRINT: 'Link in', CUT: 'Link cắt' }
 const canEditLinks = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? ''),
+  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') && !closed.value,
 )
 
 function batchLink(kind: BatchLinkKind): BatchLink | undefined {
@@ -276,6 +291,66 @@ async function saveLink() {
     toast.error(errorMessage(e))
   } finally {
     savingLink.value = false
+  }
+}
+
+// ---- Huỷ batch ĐÃ sản xuất --------------------------------------------------
+// Hai lệnh khác hẳn nhau, đừng lẫn:
+//   Xoá  = undo của lệnh gom batch. Chưa ai đụng vào, xoá sạch dấu vết.
+//   Huỷ  = tấm đã in/cắt hỏng thật. Vật liệu đã tiêu, nên bản ghi phải ở lại:
+//          từng phần đánh dấu huỷ kèm lý do, batch đóng, sản phẩm về hàng chờ
+//          để làm lại ở một batch MỚI.
+// Hiện nút khi batch đã vào sản xuất (hoặc còn PENDING nhưng đã có phần bị huỷ
+// ở QC — trường hợp đó xoá cũng từ chối, không có nút này thì batch kẹt).
+// Role khớp guard BE: sản xuất và QC là người đứng cạnh cái tấm đó; DESIGNER thì
+// không — họ gom batch, không ghi bỏ vật liệu đã tiêu.
+const canScrap = computed(() =>
+  ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'QC'].includes(auth.role ?? '') &&
+  !!batch.value &&
+  !closed.value &&
+  (batch.value.status !== 'PENDING' || (batch.value.scrapped_count ?? 0) > 0),
+)
+const scrapOpen = ref(false)
+const scrapping = ref(false)
+const scrapForm = reactive({ reason: '', route: 'PRODUCTION' as 'PRODUCTION' | 'DESIGN' })
+const scrapReason = computed(() => scrapForm.reason.trim())
+// 60 ký tự là đúng sức chứa cột lý do ở BE — chặn ngay ở đây để không mất công gõ.
+const scrapReasonValid = computed(() => scrapReason.value.length > 0 && scrapReason.value.length <= 60)
+const scrapRouteOptions = [
+  { value: 'PRODUCTION', label: 'Làm lại sản xuất (file design giữ nguyên)' },
+  { value: 'DESIGN', label: 'Trả về Chờ thiết kế (cả tấm sai vì file sai)' },
+]
+const openChildCount = computed(
+  () => (batch.value?.child_batches ?? []).filter((c) => !c.closed_at).length,
+)
+
+function openScrap() {
+  scrapForm.reason = ''
+  scrapForm.route = 'PRODUCTION'
+  scrapOpen.value = true
+}
+
+async function submitScrap() {
+  if (!batch.value || scrapping.value || !scrapReasonValid.value) return
+  scrapping.value = true
+  try {
+    const { data } = await batchesApi.scrap(batch.value.id, {
+      reason: scrapReason.value,
+      route: scrapForm.route,
+    })
+    const where = data.route === 'DESIGN' ? 'hàng chờ thiết kế' : 'hàng chờ gom batch'
+    toast.success(
+      `Đã huỷ ${data.batch_codes.join(', ')} — ${data.scrapped_parts} phần sản xuất ghi bỏ, sản phẩm về ${where} để làm lại.`,
+    )
+    scrapOpen.value = false
+    await reload()
+    // Huỷ batch mở một ghi chú "cần xử lý" ở BE → badge sidebar vừa tăng.
+    void refreshActionCounts()
+  } catch (e) {
+    toast.error(errorMessage(e))
+    await reload()
+  } finally {
+    scrapping.value = false
   }
 }
 
@@ -446,7 +521,16 @@ async function printLabels() {
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <UiStatusBadge kind="internal" :value="batch.status" />
                 <UiStatusBadge kind="priority" :value="batch.priority || 'NORMAL'" />
-                <span class="text-xs text-muted-foreground">{{ batch.item_count ?? items.length }} item</span>
+                <span
+                  v-if="closed"
+                  class="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                >
+                  <UiIcon name="alert" :size="13" /> Đã đóng
+                </span>
+                <span class="text-xs text-muted-foreground">
+                  {{ liveItemCount }} item còn lại
+                  <template v-if="batch.scrapped_count"> · {{ batch.scrapped_count }} đã huỷ</template>
+                </span>
                 <span v-if="batch.due_date" class="text-xs text-muted-foreground">· Hạn: {{ formatDate(batch.due_date) }}</span>
               </div>
             </div>
@@ -468,6 +552,14 @@ async function printLabels() {
                 <UiIcon v-else name="download" :size="16" /> Tải Design (ZIP)
               </button>
               <button
+                v-if="canScrap"
+                class="btn-danger"
+                title="Huỷ cả tấm đã sản xuất — sản phẩm quay về hàng chờ để làm lại ở batch mới"
+                @click="openScrap"
+              >
+                <UiIcon name="alert" :size="16" /> Huỷ batch
+              </button>
+              <button
                 v-if="canDelete"
                 class="btn-danger"
                 :disabled="deleting"
@@ -477,6 +569,25 @@ async function printLabels() {
                 <UiSpinner v-if="deleting" :size="16" />
                 <UiIcon v-else name="trash" :size="16" /> Xoá batch
               </button>
+            </div>
+          </div>
+
+          <!-- Batch đã đóng: kể lý do ngay, nếu không màn này trông như một batch
+               trống rỗng không ai hiểu vì sao. -->
+          <div
+            v-if="closed"
+            class="mt-4 flex items-start gap-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/15 dark:text-rose-200"
+          >
+            <UiIcon name="alert" :size="16" class="mt-0.5 shrink-0" />
+            <div>
+              <p class="font-semibold">
+                Batch đã đóng{{ batch.close_reason ? ` — ${batch.close_reason}` : '' }}
+              </p>
+              <p class="mt-0.5 text-xs">
+                Không còn gì để sản xuất ở batch này. Sản phẩm đã quay về hàng chờ và được làm lại ở
+                một batch MỚI; bảng dưới giữ lại để truy vết tấm này đã làm ra những gì. Tem QR đã in
+                cho batch này bỏ đi, batch mới in tem mới.
+              </p>
             </div>
           </div>
 
@@ -490,7 +601,7 @@ async function printLabels() {
           </div>
 
           <!-- Status control -->
-          <div v-if="canChangeStatus" class="mt-4 border-t border-border pt-4">
+          <div v-if="canChangeStatus && !closed" class="mt-4 border-t border-border pt-4">
             <div v-if="qcLocked" class="flex items-center gap-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">
               <UiIcon name="check" :size="16" />
               Đã QC ở trạm QC — batch hoàn tất, không cần cập nhật trạng thái sản xuất nữa.
@@ -668,7 +779,16 @@ async function printLabels() {
                     <a v-if="r.cut_file_url" :href="r.cut_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
                     <span v-else class="text-xs text-muted-foreground">—</span>
                   </td>
-                  <td class="table-td"><UiStatusBadge kind="internal" :value="r.status" /></td>
+                  <td class="table-td">
+                    <span
+                      v-if="r.scrapped"
+                      class="inline-flex items-center gap-1 rounded-md bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
+                      :title="r.scrap_reason ? `Đã huỷ: ${r.scrap_reason}` : 'Đã huỷ'"
+                    >
+                      <UiIcon name="alert" :size="12" /> Đã huỷ
+                    </span>
+                    <UiStatusBadge v-else kind="internal" :value="r.status" />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -691,6 +811,55 @@ async function printLabels() {
       :steps="['Ghi trạng thái & cascade xuống item', 'Cập nhật lại bảng']"
       :active-step="busyStep"
     />
+
+    <!-- Huỷ batch đã sản xuất -->
+    <UiModal v-model="scrapOpen" :title="`Huỷ batch ${batch?.code ?? ''}`">
+      <div class="space-y-3">
+        <div class="rounded-md border border-rose-300 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+          <p class="font-semibold">Đây là huỷ hàng đã sản xuất, không phải xoá batch.</p>
+          <p class="mt-1 text-xs">
+            {{ liveItemCount }} phần sản xuất trong batch sẽ được đánh dấu huỷ (vẫn lưu ở batch này để
+            truy vết), batch đóng lại và sản phẩm quay về hàng chờ để làm lại ở một batch MỚI. Tem QR
+            đã in cho batch này bỏ đi.
+            <template v-if="batch?.is_parent">
+              Đây là batch mẹ: huỷ cả {{ openChildCount }} batch con đang mở.
+            </template>
+          </p>
+          <p class="mt-1 text-xs">
+            Sản phẩm nhiều NVL (combo): các phần NVL khác của cùng sản phẩm nếu đang “đã QC” sẽ được
+            hạ về “đã cắt” — sản phẩm còn phần đang làm lại thì chưa QC xong.
+          </p>
+        </div>
+        <div>
+          <label class="label" for="scrap-reason">Lý do huỷ <span class="text-rose-600">*</span></label>
+          <input
+            id="scrap-reason"
+            v-model="scrapForm.reason"
+            class="input"
+            maxlength="60"
+            placeholder="VD: cắt lệch cả tấm, máy in nhoè nửa tấm…"
+            @keyup.enter="submitScrap"
+          />
+          <p class="mt-1 flex justify-between text-[11px] text-muted-foreground">
+            <span>Lý do đi vào lịch sử sản xuất — tháng sau còn tra được vì sao mất tấm này.</span>
+            <span>{{ scrapReason.length }}/60</span>
+          </p>
+        </div>
+        <div>
+          <label class="label">Trả về đâu để làm lại</label>
+          <UiSelect v-model="scrapForm.route" :options="scrapRouteOptions" aria-label="Hướng xử lý" />
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            Cả tấm sai vì file sai thì phải sửa file trước, nếu không lần in lại hỏng y hệt.
+          </p>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="scrapOpen = false">Không huỷ</button>
+        <button class="btn-danger" :disabled="scrapping || !scrapReasonValid" @click="submitScrap">
+          <UiSpinner v-if="scrapping" :size="16" /> Xác nhận huỷ batch
+        </button>
+      </template>
+    </UiModal>
 
     <!-- Thêm/Sửa link sản xuất (Print/Cut) -->
     <UiModal

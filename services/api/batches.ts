@@ -1,5 +1,8 @@
 import { apiGet, apiPost, apiPatch, apiDelete, apiDownload } from '../http'
-import type { Batch, BatchLink, BatchLinkKind, CreateBatchResult, InternalStatus, Priority, ListParams } from '~/types'
+import type {
+  Batch, BatchLink, BatchLinkKind, CreateBatchResult, InternalStatus, Priority, ListParams,
+  ScrapBatchInput, ScrapBatchResult,
+} from '~/types'
 
 export interface BatchListParams extends ListParams {
   material_id?: number
@@ -34,6 +37,13 @@ export const batchesApi = {
   // Xoá batch CHƯA sản xuất (PENDING toàn bộ, chưa QC/scrap) — item được thả về
   // màn gom batch. Batch mẹ xoá cả cụm con; batch đã in/cắt bị BE từ chối (422).
   remove: (id: number | string) => apiDelete<{ deleted: boolean }>(`/api/batches/${id}`),
+  // Huỷ batch ĐÃ sản xuất: ngược lại với remove(). Xoá là undo của lệnh gom
+  // batch (chưa ai đụng vào, xoá sạch dấu vết); huỷ ghi nhận một tấm đã in/cắt
+  // hỏng thật — phần sản xuất được đánh dấu huỷ kèm lý do, batch đóng lại, sản
+  // phẩm quay về hàng chờ gom batch (hoặc hàng chờ thiết kế nếu lỗi từ file).
+  // Batch mẹ = huỷ mọi con còn mở; huỷ được từng con vì mỗi con là một tấm.
+  scrap: (id: number | string, body: ScrapBatchInput) =>
+    apiPost<ScrapBatchResult>(`/api/batches/${id}/scrap`, body),
   // Attach/replace the batch's print or cut link (entered once, shared by designs).
   setLink: (id: number | string, kind: BatchLinkKind, url: string) =>
     apiPatch<BatchLink>(`/api/batches/${id}/links`, { kind, url }),

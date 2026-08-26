@@ -70,16 +70,25 @@ export async function request<T>(
   } catch (e) {
     if (e instanceof ApiError) throw e
     const fe = e as {
-      data?: ApiEnvelope<unknown>
+      data?: ApiEnvelope<unknown> | string
       status?: number
       statusCode?: number
       message?: string
     }
-    const env = fe?.data
+    const status = fe?.statusCode || fe?.status || 0
+    // Chỉ đọc envelope khi body ĐÚNG là envelope. Máy chủ vẫn có thể trả lỗi
+    // dạng khác — gin trả "404 page not found" bằng text/plain khi route không
+    // tồn tại — và ép mọi thứ vào khuôn envelope là cách làm mất nội dung thật.
+    const env = fe?.data && typeof fe.data === 'object' ? (fe.data as ApiEnvelope<unknown>) : undefined
+    const bodyText = typeof fe?.data === 'string' ? fe.data.trim().slice(0, 200) : ''
     throw new ApiError(
-      env?.error?.message || fe?.message || 'Không kết nối được máy chủ',
-      env?.error?.code || 'NETWORK',
-      fe?.statusCode || fe?.status || 0,
+      env?.error?.message || bodyText || fe?.message || 'Không kết nối được máy chủ',
+      // NETWORK chỉ đúng khi KHÔNG có phản hồi nào (status 0): DNS hỏng, backend
+      // không chạy, CORS chặn. Có status nghĩa là máy chủ đã trả lời — gán
+      // NETWORK cho nó là nói dối người dùng và giấu mất mã lỗi thật, khiến một
+      // route thiếu (404) trông hệt như đứt mạng.
+      env?.error?.code || (status ? `HTTP_${status}` : 'NETWORK'),
+      status,
       env?.error?.details,
     )
   }

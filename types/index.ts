@@ -54,7 +54,11 @@ export type DesignStatus = 'PENDING' | 'IN_PROGRESS' | 'READY' | 'MISSING'
 
 export type Priority = 'NORMAL' | 'HIGH' | 'URGENT'
 
-export type QcResult = 'PASS' | 'FAIL'
+/**
+ * Kết quả một lần đối chiếu QC. UNDO là gỡ một lần PASS bấm nhầm — không phải
+ * FAIL: FAIL nghĩa là hàng hỏng, đã huỷ tấm và phải làm lại.
+ */
+export type QcResult = 'PASS' | 'FAIL' | 'UNDO'
 
 export type NoteSeverity = 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL'
 
@@ -612,6 +616,13 @@ export interface SKUBucket {
 export interface BatchItem {
   id: number
   order_item_id?: number
+  // Lần sản xuất của (sản phẩm, NVL) này: 1 là lần đầu, 2 là sau một lần làm lại.
+  attempt?: number
+  // Phần đã bị ghi bỏ (QC fail lẻ hoặc huỷ cả batch). Dòng vẫn nằm ở batch đã làm
+  // ra nó để truy vết, nhưng không còn tính vào trạng thái của batch/sản phẩm.
+  scrapped_at?: string | null
+  scrap_reason?: string
+  scrapped_by_id?: number | null
   item_code?: string
   order_code?: string
   store_order_id?: string
@@ -675,6 +686,33 @@ export interface BatchLink {
   updated_by_id?: number | null
   updated_by?: User | null
   link_updated_at?: string
+}
+
+/** Huỷ batch: lý do bắt buộc (≤60 ký tự), route mặc định PRODUCTION. */
+export interface ScrapBatchInput {
+  reason: string
+  route?: 'PRODUCTION' | 'DESIGN'
+}
+
+/** Kết quả một lần huỷ batch — đủ để trạm hiện một dòng tóm tắt. */
+export interface ScrapBatchResult {
+  /** Mã các batch đã huỷ (huỷ batch mẹ = huỷ mọi con còn mở). */
+  batch_codes: string[]
+  scrapped_parts: number
+  item_ids: number[]
+  /** Số batch anh em bị hạ khỏi "đã QC" vì sản phẩm combo chưa còn nguyên vẹn. */
+  unqced_parts: number
+  route: 'PRODUCTION' | 'DESIGN'
+  note?: Note | null
+}
+
+/** Kết quả hạ QC (bấm nhầm) — không huỷ tấm nào, chỉ mở lại cổng QC. */
+export interface QcUndoResult {
+  item_id: number
+  item_code: string
+  /** Số phần NVL được hạ từ "đã QC" về "đã cắt". */
+  parts: number
+  internal_status: InternalStatus
 }
 
 export interface CreateBatchResult {

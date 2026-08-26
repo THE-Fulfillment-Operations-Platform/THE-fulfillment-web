@@ -130,7 +130,7 @@ function exportBatches() {
     { label: 'Material', value: (b) => b.material_name || b.material?.name || b.material_code || '' },
     { label: 'Số lượng SP', value: (b) => productCount(b) ?? '' },
     { label: 'NVL cần (đv)', value: (b) => materialUnits(b) ?? '' },
-    { label: 'Đã huỷ (QC fail)', value: (b) => b.scrapped_count ?? 0 },
+    { label: 'Đã huỷ', value: (b) => b.scrapped_count ?? 0 },
     { label: 'Tạo lúc', value: (b) => (b.created_at ? formatDateTime(b.created_at) : '') },
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
     { label: 'SKU', value: (b) => skuSummary(b) },
@@ -274,7 +274,7 @@ function exportBatches() {
                   <span
                     v-if="(b.scrapped_count ?? 0) > 0"
                     class="ml-1 text-[11px] font-normal text-rose-600 dark:text-rose-400"
-                    :title="`${b.scrapped_count} sản phẩm của batch này đã bị huỷ do QC fail và đang được làm lại ở batch khác`"
+                    :title="`${b.scrapped_count} phần sản xuất của batch này đã bị huỷ (QC fail lẻ hoặc huỷ cả tấm) và đang được làm lại ở batch khác`"
                   >
                     ({{ b.scrapped_count }} huỷ)
                   </span>

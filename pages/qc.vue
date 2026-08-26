@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { qcApi } from '~/services/api'
 import type { QcScanResult } from '~/types'
+import { useAuthStore } from '~/stores/auth'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
@@ -14,6 +15,7 @@ import { DEFECT_CODE_OPTIONS } from '~/utils/enums'
 // several per-material batches). PASS marks the whole product QC-passed at once,
 // and is only allowed once every material part has been produced.
 const toast = useToastStore()
+const auth = useAuthStore()
 
 const code = ref('')
 const scanInput = ref<HTMLInputElement | null>(null)
@@ -126,6 +128,44 @@ const partOptions = computed(() =>
     label: `${b.material_code} · ${b.batch_code}`,
   })),
 )
+
+// ---- Hạ QC (bấm nhầm) -------------------------------------------------------
+// Khác hẳn FAIL. FAIL nghĩa là hàng hỏng: phần đã sản xuất bị huỷ, tính một lần
+// làm lại, mở note cho xưởng. Bấm nhầm thì hàng vẫn nguyên vẹn trên bàn — huỷ nó
+// là ghi vào sổ một lần huỷ vật lý không hề xảy ra (rework_count sai, KPI làm
+// lại sai, tấm vật liệu "đã tiêu" thực ra vẫn còn). Hạ QC chỉ mở lại cổng.
+// Chỉ OWNER/ADMIN, khớp guard BE: ranh giới giữa "bấm nhầm" và "hàng hỏng nhưng
+// ngại làm thủ tục huỷ" là thứ phải có người chịu trách nhiệm.
+const canUndoQC = computed(() => ['OWNER', 'ADMIN'].includes(auth.role ?? '') && alreadyQC.value)
+const undoOpen = ref(false)
+const undoing = ref(false)
+const undoReason = ref('')
+const undoReasonValid = computed(() => undoReason.value.trim().length <= 60)
+
+function openUndo() {
+  undoReason.value = ''
+  undoOpen.value = true
+}
+
+async function submitUndo() {
+  if (!result.value || undoing.value || !undoReasonValid.value) return
+  undoing.value = true
+  try {
+    const itemId = result.value.item_id
+    const itemCode = result.value.item_code
+    const { data } = await qcApi.undo({ item_id: itemId, reason: undoReason.value.trim() || undefined })
+    toast.success(`${itemCode}: đã hạ QC (${data.parts} phần NVL về “Đã cắt”) — QC lại rồi PASS.`)
+    undoOpen.value = false
+    // Quét lại chính sản phẩm đó: trạm phải hiện trạng thái mới ngay, người QC
+    // đang cầm hàng trên tay và sắp bấm PASS lại.
+    const { data: rescanned } = await qcApi.scan({ item_id: itemId })
+    result.value = rescanned
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    undoing.value = false
+  }
+}
 
 function openFail() {
   defect.defect_code = 'PRINT_WRONG'
@@ -387,10 +427,20 @@ onMounted(focusScan)
             >
               <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
             </button>
-            <button class="btn-danger" :disabled="failing || alreadyQC" :title="alreadyQC ? 'Item đã QC rồi' : ''" @click="openFail">
+            <button
+              class="btn-danger"
+              :disabled="failing"
+              :title="alreadyQC ? 'Sản phẩm đã QC — ghi lỗi sẽ huỷ phần đã sản xuất và trả về làm lại' : ''"
+              @click="openFail"
+            >
               <UiIcon name="alert" :size="16" /> FAIL — Ghi lỗi
             </button>
           </div>
+          <!-- Bấm nhầm PASS thì hàng vẫn tốt: mở lại cổng, đừng huỷ hàng. -->
+          <button v-if="canUndoQC" class="btn-secondary mt-2 w-full" :disabled="undoing" @click="openUndo">
+            <UiSpinner v-if="undoing" :size="16" />
+            <UiIcon v-else name="refresh" :size="16" /> Hạ QC (bấm nhầm — hàng vẫn tốt)
+          </button>
           <button class="btn-secondary mt-2 w-full" @click="clearStation">Bỏ qua / Quét mã khác</button>
         </div>
       </div>
@@ -404,6 +454,17 @@ onMounted(focusScan)
           sẽ bị huỷ (vẫn lưu ở batch cũ để truy vết), hệ thống mở note theo dõi và trả sản phẩm về để
           làm lại.
         </p>
+        <div
+          v-if="alreadyQC"
+          class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+        >
+          <p class="font-semibold">Sản phẩm này đã QC PASS rồi.</p>
+          <p class="mt-0.5">
+            Ghi lỗi ở đây là huỷ hàng thật: phần được chọn bị huỷ, các phần NVL còn lại của sản phẩm
+            được hạ khỏi “đã QC”, và đây tính là một lần làm lại. Nếu chỉ là BẤM NHẦM PASS thì đóng
+            hộp thoại này và dùng “Hạ QC”.
+          </p>
+        </div>
         <div>
           <label class="label">Loại lỗi</label>
           <UiSelect v-model="defect.defect_code" :options="DEFECT_CODE_OPTIONS" aria-label="Loại lỗi" />
@@ -436,6 +497,40 @@ onMounted(focusScan)
         <button class="btn-secondary" @click="failOpen = false">Huỷ</button>
         <button class="btn-danger" :disabled="failing" @click="submitFail">
           <UiSpinner v-if="failing" :size="16" /> Xác nhận lỗi
+        </button>
+      </template>
+    </UiModal>
+
+    <!-- Hạ QC: chỉ dành cho ca bấm nhầm -->
+    <UiModal v-model="undoOpen" title="Hạ QC đã bấm nhầm">
+      <div class="space-y-3">
+        <p class="text-sm text-foreground">
+          Sản phẩm <span class="font-mono font-semibold">{{ result?.item_code }}</span> sẽ quay về
+          “Đã cắt” để QC lại. Không tấm nào bị huỷ, không tính là một lần làm lại, không đụng tới
+          file design.
+        </p>
+        <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          Chỉ dùng khi hàng VẪN TỐT và chỉ là bấm nhầm. Hàng hỏng thật thì dùng “FAIL — Ghi lỗi”
+          (một sản phẩm) hoặc “Huỷ batch” ở màn batch (cả tấm) — nếu không, tấm hỏng sẽ không được
+          ghi nhận ở đâu cả.
+        </div>
+        <div>
+          <label class="label" for="qc-undo-reason">Lý do (tuỳ chọn)</label>
+          <input
+            id="qc-undo-reason"
+            v-model="undoReason"
+            class="input"
+            maxlength="60"
+            placeholder="VD: quét nhầm mã sản phẩm bên cạnh"
+            @keyup.enter="submitUndo"
+          />
+          <p class="mt-1 text-right text-[11px] text-muted-foreground">{{ undoReason.trim().length }}/60</p>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="undoOpen = false">Đóng</button>
+        <button class="btn-primary" :disabled="undoing || !undoReasonValid" @click="submitUndo">
+          <UiSpinner v-if="undoing" :size="16" /> Hạ QC
         </button>
       </template>
     </UiModal>

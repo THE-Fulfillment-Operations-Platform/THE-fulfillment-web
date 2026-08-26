@@ -4,6 +4,7 @@ import type {
   OrderItem,
   QcFailResult,
   QcResultsPayload,
+  QcUndoResult,
   ListParams,
 } from '~/types'
 
@@ -28,6 +29,12 @@ export interface QcFailInput extends QcScanInput {
   rework_route?: 'PRODUCTION' | 'DESIGN'
 }
 
+// Hạ QC: dành cho ca BẤM NHẦM, không phải hàng hỏng. Hàng vẫn nguyên vẹn nên
+// không tấm nào bị huỷ, không tính là một lần làm lại. Chỉ OWNER/ADMIN.
+export interface QcUndoInput extends QcScanInput {
+  reason?: string
+}
+
 export interface QcResultsParams extends ListParams {
   // done = đã QC đủ | partial = đạt một phần | none = chưa cái nào | rework = có hàng làm lại
   state?: string
@@ -46,6 +53,9 @@ export const qcApi = {
   scan: (input: QcScanInput) => apiPost<QcScanResult>('/api/qc/scan', input),
   pass: (input: QcPassInput) => apiPost<OrderItem>('/api/qc/pass', input),
   fail: (input: QcFailInput) => apiPost<QcFailResult>('/api/qc/fail', input),
+  // Gỡ một lần QC pass bấm nhầm — mọi phần còn sống về "Đã cắt", ghi lịch sử
+  // QC result=UNDO. Hàng hỏng thật thì dùng fail() hoặc huỷ batch.
+  undo: (input: QcUndoInput) => apiPost<QcUndoResult>('/api/qc/undo', input),
   // Kết quả QC theo đơn: mỗi đơn kèm trạng thái QC của từng sản phẩm trong đó.
   results: (params?: QcResultsParams) => apiGet<QcResultsPayload>('/api/qc/results', params),
 }
