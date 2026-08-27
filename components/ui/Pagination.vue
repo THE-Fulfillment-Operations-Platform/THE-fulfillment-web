@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiMeta } from '~/types'
+import { PAGE_SIZE_ALL } from '~/utils/pagination'
 
 // Shared pager. The page-size picker is opt-in: pass `:page-size` to show a
 // "Hiển thị N dòng" dropdown next to Trước/Sau. Pages that omit it keep the
@@ -24,7 +25,12 @@ const canNext = computed(() => (props.meta?.page ?? 1) < (props.meta?.total_page
 // on a single page so the user can raise it back down.
 const showNav = computed(() => (props.meta?.total_pages ?? 1) > 1)
 const showSizePicker = computed(() => props.pageSize != null && (props.meta?.total ?? 0) > 0)
-const sizeOptions = computed(() => props.pageSizes.map((n) => ({ value: n, label: String(n) })))
+// "Tất cả" luôn đứng cuối danh sách: nó gửi page_size = -1 và máy chủ bỏ LIMIT,
+// nên với bảng lớn đây là lựa chọn nặng nhất — để cuối cho khỏi bấm nhầm.
+const sizeOptions = computed(() => [
+  ...props.pageSizes.map((n) => ({ value: n, label: String(n) })),
+  { value: PAGE_SIZE_ALL, label: 'Tất cả' },
+])
 </script>
 
 <template>
@@ -38,7 +44,7 @@ const sizeOptions = computed(() => props.pageSizes.map((n) => ({ value: n, label
       </span>
       <label v-if="showSizePicker" class="flex items-center gap-1.5">
         <span class="shrink-0">Hiển thị</span>
-        <div class="w-20">
+        <div class="w-24">
           <UiSelect
             :model-value="pageSize"
             :options="sizeOptions"

@@ -966,8 +966,9 @@ async function setReady() {
         <p class="text-sm text-muted-foreground">
           <b>Chỉ tải file Design gốc (không gồm mockup).</b> Toàn bộ file nằm trong một
           thư mục (<b>Batch_&lt;mã&gt;</b> nếu đang lọc theo batch, ngược lại
-          <b>Design_&lt;ngày&gt;</b>), mỗi file đặt tên theo <b>Mã nội bộ_SKU_SốLượng</b>
-          (mặt trước/sau có hậu tố _FRONT/_BACK).
+          <b>Design_&lt;ngày&gt;</b>), mỗi file đặt tên theo <b>SKU_Mã nội bộ_SốLượng</b>
+          (mặt trước/sau có hậu tố _FRONT/_BACK). SKU đứng đầu nên giải nén ra là
+          các file cùng SKU tự nằm cạnh nhau.
         </p>
 
         <!-- Server-side filters over the WHOLE approved design queue (not the loaded

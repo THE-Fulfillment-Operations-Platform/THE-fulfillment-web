@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { itemsApi } from '~/services/api'
-import type { OrderItem } from '~/types'
+import { itemsApi, sellersApi } from '~/services/api'
+import type { OrderItem, Seller } from '~/types'
 import {
   INTERNAL_STATUS,
   INTERNAL_STATUS_ORDER,
@@ -27,6 +27,7 @@ const { rowLinkAttrs } = useRowLink()
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
 const filters = reactive({
+  seller_id: '',
   store_order_id: '',
   sku: '',
   internal_code: '',
@@ -64,6 +65,10 @@ const sort = reactive<{ by: '' | 'sku' | 'stt' | 'quantity' | 'created_at'; dir:
 
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   itemsApi.list({
+    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    // Màn này có cột Seller nên phải xin kèm: /api/items để seller ở chế độ
+    // opt-in, mặc định không trả (một round trip nữa tới DB ở đầu kia internet).
+    with_seller: true,
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku || undefined,
     internal_code: filters.internal_code || undefined,
@@ -92,6 +97,12 @@ function itemStt(it: OrderItem): string {
   const line = it.line_no ?? Number(it.internal_code?.split('_')[1]?.split('/')[0] ?? 0)
   return total > 1 && line > 0 ? `${seq}.${line}` : String(seq)
 }
+// Tên seller của sản phẩm. Đơn cũ/payload gọn có thể không kèm seller — trả về
+// dấu gạch thay vì để ô trống trông như dữ liệu lỗi.
+function itemSellerName(it: OrderItem): string {
+  return it.order?.seller?.name || it.order?.seller?.code || ''
+}
+
 function itemCreatedAt(it: OrderItem): string | undefined {
   return it.order?.created_at
 }
@@ -109,6 +120,22 @@ function sortIcon(col: string): string {
   if (sort.by !== col) return '↕'
   return sort.dir === 'asc' ? '↑' : '↓'
 }
+
+// Danh sách seller cho bộ lọc. GET /api/sellers mở cho mọi vai trò đọc được
+// đơn (gồm cả CS), nên ai vào được màn này đều dựng được bộ lọc.
+const sellers = ref<Seller[]>([])
+const sellerOptions = computed(() => [
+  { value: '', label: 'Tất cả seller' },
+  ...sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code })),
+])
+onMounted(async () => {
+  try {
+    const { data: rows } = await sellersApi.list()
+    sellers.value = rows ?? []
+  } catch {
+    /* Bộ lọc seller là phụ trợ: hỏng thì màn vẫn phải liệt kê được đơn. */
+  }
+})
 
 const statusOptions = computed(() => [
   { value: '', label: 'Tất cả' },
@@ -136,6 +163,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  filters.seller_id = ''
   filters.store_order_id = ''
   filters.sku = ''
   filters.internal_code = ''
@@ -202,6 +230,7 @@ function exportItems() {
     { label: 'STT ngày', value: (it) => itemStt(it) },
     { label: 'Internal Item', value: 'internal_code' },
     { label: 'Store Order', value: (it) => itemStoreOrderId(it) },
+    { label: 'Seller', value: (it) => itemSellerName(it) },
     { label: 'Trùng StoreOrderID', value: (it) => (itemStoreOrderDup(it) ? 'Có' : '') },
     { label: 'SKU', value: 'sku_code' },
     { label: 'Sản phẩm', value: (it) => it.product_name ?? '' },
@@ -238,6 +267,15 @@ function exportItems() {
     <!-- Filters -->
     <div class="card mb-4 p-4">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+        <div>
+          <label class="label">Seller</label>
+          <UiSelect
+            v-model="filters.seller_id"
+            :options="sellerOptions"
+            aria-label="Seller"
+            @update:model-value="applyFilters"
+          />
+        </div>
         <div>
           <label class="label">Store Order ID</label>
           <input v-model="filters.store_order_id" class="input" placeholder="Etsy-7821…" @keyup.enter="applyFilters" />
@@ -305,6 +343,7 @@ function exportItems() {
                 </th>
                 <th class="table-th">Internal Item</th>
                 <th class="table-th hidden md:table-cell">Store Order</th>
+                <th class="table-th hidden lg:table-cell">Seller</th>
                 <th class="table-th">
                   <button class="inline-flex items-center gap-1 hover:text-foreground" @click="toggleSort('sku')">
                     SKU <span class="text-[10px] opacity-70">{{ sortIcon('sku') }}</span>
@@ -357,6 +396,7 @@ function exportItems() {
                   </span>
                 </td>
                 <td class="table-td hidden md:table-cell" :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''">{{ itemStoreOrderId(it) }}</td>
+                <td class="table-td hidden lg:table-cell">{{ itemSellerName(it) || '—' }}</td>
                 <td class="table-td">{{ it.sku_code }}</td>
                 <td class="table-td tabular-nums">{{ it.quantity }}</td>
                 <td class="table-td hidden lg:table-cell">{{ itemMaterial(it) }}</td>

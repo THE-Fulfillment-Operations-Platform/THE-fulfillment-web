@@ -21,7 +21,7 @@ const CODES_WITH_BETTER_VI = new Set(['NETWORK', 'NO_CLIENT', 'UNAUTHORIZED', 'F
 
 // Vietnamese messages for error codes the app / backend commonly returns.
 const VI_BY_CODE: Record<string, string> = {
-  NETWORK: 'Không kết nối được máy chủ. Kiểm tra kết nối mạng hoặc backend có đang chạy không.',
+  NETWORK: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
   NO_CLIENT: 'Ứng dụng chưa khởi tạo xong, vui lòng tải lại trang.',
   UNAUTHORIZED: 'Phiên đăng nhập đã hết hạn hoặc thông tin đăng nhập không đúng.',
   FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này.',
@@ -34,9 +34,9 @@ const VI_BY_CODE: Record<string, string> = {
 // First match wins; keep patterns specific so we don't mistranslate.
 const VI_BY_PHRASE: Array<[RegExp, string]> = [
   [/(email).*(exist|taken|duplicate|unique)|(exist|taken|duplicate|unique).*(email)|đã tồn tại/i,
-    'Email này đã được dùng cho tài khoản khác. Hãy nhập email khác.'],
+    'Email này đã được dùng cho tài khoản khác.'],
   [/(seller[ _-]?id).*(not\s*found|invalid|does not exist)|(not\s*found|invalid|does not exist).*(seller[ _-]?id)/i,
-    'Seller ID không tồn tại. Hãy nhập đúng ID của seller đã có trong hệ thống.'],
+    'Seller ID không tồn tại trong hệ thống.'],
   // Login failures (wrong email/password). Must come BEFORE the password rule
   // below, otherwise a "invalid email or password" 401 gets mistranslated into a
   // password-length validation message.
@@ -44,10 +44,10 @@ const VI_BY_PHRASE: Array<[RegExp, string]> = [
     'Sai email hoặc mật khẩu.'],
   // Password *validation* (create/update user) — too short/weak. Narrow so it
   // only fires for length/format complaints, not login credential failures.
-  [/password[^.]*(short|least|minimum|at least|char|length|weak|\b8\b)|(short|least|minimum|char|length|weak)[^.]*password/i,
-    'Mật khẩu không hợp lệ (thường cần tối thiểu 8 ký tự).'],
+  [/password[^.]*(short|least|minimum|at least|char|length|weak)|(short|least|minimum|char|length|weak)[^.]*password/i,
+    'Mật khẩu phải có tối thiểu 6 ký tự.'],
   [/could not create user|create user failed/i,
-    'Không tạo được người dùng. Nguyên nhân thường gặp: email đã tồn tại, Seller ID không hợp lệ, hoặc mật khẩu quá ngắn.'],
+    'Không tạo được người dùng. Kiểm tra lại email, Seller ID và mật khẩu.'],
   [/could not update user|update user failed/i, 'Không cập nhật được người dùng. Vui lòng kiểm tra lại thông tin.'],
 ]
 
@@ -68,20 +68,22 @@ function detailText(d: unknown): string {
 }
 
 /** Câu giải thích cho lỗi HTTP mà máy chủ KHÔNG trả kèm envelope lỗi.
- *  Không có nội dung nào từ backend để hiện, nên ít nhất phải nói đúng chuyện
- *  gì đã xảy ra và chỉ hướng xử lý — "Không kết nối được máy chủ" cho một cái
- *  404 là sai sự thật và làm mất cả buổi đi dò mạng. */
-function httpStatusMessage(status: number, raw: string): string {
-  const tail = raw ? ` — máy chủ trả: ${raw}` : ''
+ *  Vẫn phải gọi tên status — "Không kết nối được máy chủ" cho một cái 404 là sai
+ *  sự thật — nhưng chỉ một câu. Chuỗi thô của ofetch ([POST] "http://…": 404 Not
+ *  Found) lộ URL nội bộ và không giúp người dùng làm gì, nên nó ở lại tab Network
+ *  cho người phát triển, không lên màn hình. */
+function httpStatusMessage(status: number): string {
   switch (status) {
     case 404:
-      return `Máy chủ không có endpoint này (404)${tail}. Thường là backend đang chạy bản cũ — khởi động lại backend rồi thử lại.`
+      return 'Máy chủ không có chức năng này (404).'
+    case 500:
+      return 'Máy chủ gặp lỗi (500). Vui lòng thử lại.'
     case 502:
     case 503:
     case 504:
-      return `Máy chủ không phản hồi được (${status})${tail}. Backend đang khởi động lại hoặc bị treo.`
+      return `Máy chủ đang bận hoặc khởi động lại (${status}). Thử lại sau ít phút.`
     default:
-      return `Máy chủ trả lỗi ${status}${tail}.`
+      return `Máy chủ trả lỗi ${status}.`
   }
 }
 
@@ -96,7 +98,7 @@ export function errorMessage(e: unknown): string {
     }
     // Lỗi HTTP không có envelope: code do tầng http đặt theo status, nên câu trả
     // lời phải gọi tên status thay vì rơi vào một câu chung nào đó.
-    if (e.code.startsWith('HTTP_')) return httpStatusMessage(e.status, raw)
+    if (e.code.startsWith('HTTP_')) return httpStatusMessage(e.status)
     if (CODES_WITH_BETTER_VI.has(e.code) && VI_BY_CODE[e.code]) return VI_BY_CODE[e.code]
     // Backend nói gì thì hiện đúng cái đó. Câu dịch sẵn theo mã chỉ là phương án
     // cuối: nó chung chung hơn hẳn ("Không tìm thấy dữ liệu." thay cho "Không

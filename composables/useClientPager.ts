@@ -1,4 +1,5 @@
 import type { ApiMeta } from '~/types'
+import { isAllPageSize } from '~/utils/pagination'
 
 /**
  * Phân trang phía client cho các bảng đã tải sẵn toàn bộ danh sách (master data:
@@ -17,13 +18,19 @@ export function useClientPager<T>(rows: () => T[], initialSize = 20) {
   const pageSize = ref(initialSize)
 
   const total = computed(() => rows().length)
-  const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+  // "Tất cả" (page_size âm) = một trang duy nhất chứa hết. Nếu vẫn chia theo
+  // pageSize âm thì totalPages ra số âm và slice() bên dưới trả mảng rỗng.
+  const showAll = computed(() => isAllPageSize(pageSize.value))
+  const totalPages = computed(() =>
+    showAll.value ? 1 : Math.max(1, Math.ceil(total.value / pageSize.value)),
+  )
 
   watch([total, pageSize], () => {
     if (page.value > totalPages.value) page.value = totalPages.value
   })
 
   const paged = computed(() => {
+    if (showAll.value) return rows()
     const start = (page.value - 1) * pageSize.value
     return rows().slice(start, start + pageSize.value)
   })

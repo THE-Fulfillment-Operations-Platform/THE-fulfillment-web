@@ -2,6 +2,7 @@
 import { batchesApi } from '~/services/api'
 import type { Batch, InternalStatus } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
+import { formatDate } from '~/utils/format'
 import { useApiResource } from '~/composables/useApiResource'
 
 const { data, loading, error, reload } = useApiResource<Batch[]>(() =>
@@ -17,6 +18,12 @@ const columns = computed(() => {
   }
   for (const b of data.value ?? []) {
     if (grouped[b.status]) grouped[b.status].push(b)
+  }
+  // API trả batch mới nhất trước, nhưng xưởng làm theo thứ tự batch: mỗi cột xếp
+  // mã tăng dần từ trên xuống để batch đến lượt trước nằm trên cùng. numeric:true
+  // để 101099 đứng trước 101100 (so sánh chuỗi thuần thì ngược lại).
+  for (const list of Object.values(grouped)) {
+    list.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }) || a.id - b.id)
   }
   return INTERNAL_STATUS_ORDER.map((s) => ({ status: s, meta: INTERNAL_STATUS[s], batches: grouped[s] }))
 })
@@ -47,8 +54,12 @@ const columns = computed(() => {
               :to="`/batches/${b.id}`"
               class="block rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/60 hover:bg-accent/50"
             >
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between gap-2">
                 <span class="font-semibold text-foreground">{{ b.code }}</span>
+                <!-- Ngày tạo batch: xưởng nhìn card là biết batch nằm chờ bao lâu
+                     mà không phải mở chi tiết. min-w-0 + truncate để mã batch dài
+                     không đẩy badge ưu tiên rớt dòng. -->
+                <span v-if="b.created_at" class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{{ formatDate(b.created_at) }}</span>
                 <UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" />
               </div>
               <p class="mt-1 text-xs text-muted-foreground">

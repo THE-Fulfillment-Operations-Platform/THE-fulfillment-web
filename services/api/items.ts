@@ -15,6 +15,9 @@ export interface ItemListParams extends ListParams {
   internal_code?: string // partial match on the item's internal (QR) code
   batch_id?: number
   seller_id?: number
+  // Xin trả kèm seller của đơn (order.seller). Tắt mặc định ở backend vì đó là
+  // một round trip nữa tới DB; chỉ màn nào in tên seller mới bật.
+  with_seller?: boolean
   store_id?: number
   date_from?: string
   date_to?: string
