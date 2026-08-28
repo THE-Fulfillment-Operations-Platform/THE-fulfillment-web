@@ -60,10 +60,16 @@ export function isValidUrl(value?: string | null): boolean {
 // Drive "share" links (…/file/d/ID/view, open?id=ID, uc?id=ID) serve an HTML
 // viewer page, not the raw image, so <img> shows a broken icon — rewrite them to
 // the public thumbnail endpoint. Any other URL passes through unchanged.
+//
+// sz=w800 is deliberate: the largest box a mockup is ever painted into is the QC
+// station's ~28rem/448px frame, so 800px still covers a 2x display while asking
+// Drive for roughly half the bytes w1000 costs. Drive renders these thumbnails
+// on demand, so a smaller size is also a faster first byte — which is the whole
+// point at a station where someone is scanning one item after another.
 export function toDisplayImageUrl(value?: string | null): string {
   if (!value) return ''
   const m = value.match(/\/file\/d\/([\w-]+)/) || value.match(/[?&]id=([\w-]+)/)
-  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1000` : value
+  return m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w800` : value
 }
 
 export function pluralVi(count: number, noun: string): string {

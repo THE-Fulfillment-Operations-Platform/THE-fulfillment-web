@@ -64,6 +64,13 @@ services:
     # ⚠️ .env.docker production phải đặt PORT=8080 và trỏ DB_* tới Supabase.
     env_file:
       - ${BACKEND_ENV_FILE:-.env.docker}
+    volumes:
+      # Cache ảnh mockup đã thu nhỏ cho trạm QC (THUMB_CACHE_DIR=./data/thumbs,
+      # WORKDIR của image backend là /app). Named volume để cache sống qua mỗi
+      # lần rollout: rollout dựng container backend-NN mới, volume thì giữ.
+      # Mất volume không hỏng gì — chỉ là khay QC đầu tiên sau deploy phải dựng
+      # lại ảnh, rồi tự ấm lại.
+      - thumb_cache:/app/data
     expose:
       - "8080"                         # chỉ nội bộ network — KHÔNG publish ra host
     networks:
@@ -116,5 +123,6 @@ networks:
 
 # ----------------------------------------------------------------------- volumes
 volumes:
+  thumb_cache:                   # cache thumbnail mockup của trạm QC
   caddy_data:                          # KHÔNG có volume postgres — DB ở Supabase
   caddy_config:

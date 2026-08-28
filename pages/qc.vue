@@ -38,12 +38,44 @@ const parts = computed(() => result.value?.batches ?? [])
 const notReadyParts = computed(() => parts.value.filter((b) => !READY_STATUSES.includes(b.status)))
 const notProducedYet = computed(() => notReadyParts.value.length > 0)
 
-// Mockup preview: convert share links (e.g. Google Drive) to a directly-embeddable
-// URL, and track load failures so a broken/non-image link shows a clean fallback
-// instead of the browser's broken-image icon. Reset the error flag on each scan.
-const mockupSrc = computed(() => toDisplayImageUrl(result.value?.mockup_url))
+// Mockup preview. The picture is the one thing at this station that used to make
+// the operator wait: mockups live on the seller's Google Drive, and loading one
+// straight from there costs two handshakes, a redirect and however long Drive
+// takes to render a thumbnail of a file that may be tens of megabytes — seconds,
+// for a heavy one. So the API now caches a screen-sized copy and hands us a
+// signed URL to it, and that is what we render.
+//
+// Three sources, tried in order, because QC must never be stopped by our own
+// cache: our thumbnail → the origin (share links rewritten to something an <img>
+// can actually display) → a clean "can't show this" panel. A thumbnail that
+// 404s (an unshared link, a PSD the server cannot decode) silently falls through
+// to exactly the behaviour this screen had before the cache existed.
+const apiBaseUrl = useRuntimeConfig().public.apiBaseUrl as string
+const thumbFailed = ref(false)
 const mockupError = ref(false)
-watch(() => result.value?.mockup_url, () => { mockupError.value = false })
+
+const mockupSrc = computed(() => {
+  const thumb = result.value?.mockup_thumb_url
+  if (thumb && !thumbFailed.value) return `${apiBaseUrl}${thumb}`
+  return toDisplayImageUrl(result.value?.mockup_url)
+})
+
+function onMockupError() {
+  // First failure with a thumbnail in play means "retry against the origin",
+  // not "give up" — re-rendering with a new src is what triggers that retry.
+  if (result.value?.mockup_thumb_url && !thumbFailed.value) {
+    thumbFailed.value = true
+    return
+  }
+  mockupError.value = true
+}
+
+// Reset per scan, keyed on the result object rather than the URL: scanning two
+// items that happen to share a mockup must still clear a previous failure.
+watch(result, () => {
+  mockupError.value = false
+  thumbFailed.value = false
+})
 
 const failOpen = ref(false)
 const failing = ref(false)
@@ -277,7 +309,9 @@ onMounted(focusScan)
             :src="mockupSrc"
             :alt="`Mockup ${result.item_code}`"
             class="max-h-[14rem] max-w-full rounded object-contain sm:max-h-[20rem] lg:max-h-[28rem]"
-            @error="mockupError = true"
+            decoding="async"
+            fetchpriority="high"
+            @error="onMockupError"
           />
           <div v-else class="flex flex-col items-center gap-2 text-center text-slate-300">
             <UiIcon name="alert" :size="28" />

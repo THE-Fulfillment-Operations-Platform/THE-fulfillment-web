@@ -820,6 +820,13 @@ export interface QcScanResult {
   design_url?: string
   back_design_url?: string
   mockup_url: string
+  /**
+   * API path to our own cached, screen-sized copy of mockup_url. The station
+   * renders this; mockup_url stays the "open in a new tab" link so anyone who
+   * needs the seller's full-resolution original still gets it. Empty when the
+   * thumbnail cache is off or the item has no mockup.
+   */
+  mockup_thumb_url?: string
   print_file_url?: string
   cut_file_url?: string
   internal_status: InternalStatus
