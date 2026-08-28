@@ -394,9 +394,33 @@ async function deleteBatch() {
   }
 }
 
+// Tem chỉ in cho phần CÒN SỐNG. Batch đã đóng vẫn trả về cả phần đã huỷ để màn
+// chi tiết kể được tấm đó đã làm ra những gì, nhưng in tem cho một sản phẩm đã
+// vứt đi là dán nhãn lên hàng không tồn tại — và số trên tem lô sẽ sai theo.
+const labelRows = computed(() => prodRows.value.filter((r) => !r.scrapped))
+
+// Số trên tem lô là số SẢN PHẨM, không phải số dòng: một dòng có thể mang SL > 1,
+// mà người ở xưởng đếm hàng chứ không đếm dòng. Dữ liệu thiếu SL thì rơi về số
+// dòng để tem không hiện con số 0 vô nghĩa.
+const labelProductCount = computed(() => {
+  const total = labelRows.value.reduce((sum, r) => sum + (Number(r.quantity) || 0), 0)
+  return total > 0 ? total : labelRows.value.length
+})
+
 const printingLabels = ref(false)
 async function printLabels() {
   if (!batch.value || printingLabels.value) return
+  const rows = labelRows.value
+  // Kiểm tra TRƯỚC khi mở popup: mở rồi mới phát hiện không có gì để in thì
+  // người dùng phải tự đóng một cửa sổ trắng.
+  if (!rows.length) {
+    toast.info(
+      batch.value.is_parent
+        ? 'Batch mẹ không giữ sản phẩm — mở từng batch con để in tem.'
+        : 'Batch không còn sản phẩm nào để in tem.',
+    )
+    return
+  }
   // Open the print window synchronously (before any await) so popup blockers
   // don't kill it; fill in the real content once QR codes are generated.
   const w = window.open('', '_blank')
@@ -415,7 +439,7 @@ async function printLabels() {
       : new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const QRCode = (await import('qrcode')).default
     const labels = await Promise.all(
-      prodRows.value.map(async (r) => {
+      rows.map(async (r) => {
         const payload = r.internal_code || code
         let qr = ''
         try {
@@ -433,14 +457,50 @@ async function printLabels() {
               </div>
             </div>
             <div class="info">
-              ${r.seller_name ? `<div class="row"><span class="key">Seller:</span> ${esc(r.seller_name)}</div>` : ''}
-              <div class="row"><span class="key">Order:</span> ${esc(r.store_order_id || '—')}</div>
-              <div class="row"><span class="key">Người nhận:</span> ${esc(r.shipping_name || '—')}</div>
+              ${r.seller_name ? `<div class="row"><span class="key">Seller</span><span class="val">${esc(r.seller_name)}</span></div>` : ''}
+              <div class="row"><span class="key">Order</span><span class="val">${esc(r.store_order_id || '—')}</span></div>
+              <div class="row"><span class="key">Nhận</span><span class="val">${esc(r.shipping_name || '—')}</span></div>
               ${r.qc_description ? `<div class="desc">${esc(r.qc_description)}</div>` : ''}
             </div>
           </div>`
       }),
     )
+    // ---- Tem lô: tờ đầu tiên, dán lên khay/chồng hàng của cả batch ----------
+    //
+    // Đọc bằng MẮT TỪ XA, không phải để quét: nó nằm trên kệ, trên xe đẩy, và
+    // câu hỏi duy nhất người ta hỏi nó là "lô nào, bao nhiêu cái". Nên hai con
+    // số đó chiếm gần hết tem, phần còn lại chỉ đủ để không phải mở máy tra.
+    //
+    // Cố tình KHÔNG có QR: mã batch không tra được ở trạm QC (trạm đó quét mã
+    // tem sản phẩm), nên một ô QR ở đây chỉ mời người ta quét nhầm rồi nhận
+    // "không tìm thấy item". Khung viền + chữ "TEM LÔ" là để trong chồng tem
+    // vừa in ra, tờ này không bao giờ bị nhặt nhầm thành tem sản phẩm.
+    // Cỡ mã batch theo số ký tự. Mã thường là "#101041" (7); batch con thêm hậu
+    // tố thành "#101041-10" (10). Ở cỡ lớn nhất, mã 10 ký tự tràn chiều ngang
+    // giấy A4 và bị đẩy xuống dòng — nên mã càng dài thì hạ cỡ, thay vì để nó vỡ.
+    const batchCodeSize = (len: number): string => {
+      if (len <= 8) return '21vmin'
+      if (len <= 10) return '16.5vmin'
+      if (len <= 12) return '14vmin'
+      return '11vmin'
+    }
+    const materialName = batch.value.material_name || batch.value.material?.name || batch.value.material_code || ''
+    const productCount = labelProductCount.value
+    const sheetNote = productCount !== rows.length ? `${rows.length} tem sản phẩm` : ''
+    const batchLabel = `
+      <div class="label batch-label">
+        <div class="frame">
+          <div class="kind">Tem lô sản xuất</div>
+          <div class="bcode" style="font-size:${batchCodeSize(code.length)}">${esc(code)}</div>
+          <div class="bcount"><span class="num">${productCount}</span><span class="unit">sản phẩm</span></div>
+          <div class="bfoot">
+            ${materialName ? esc(materialName) + ' · ' : ''}${esc(labelDate)}${sheetNote ? ' · ' + esc(sheetNote) : ''}
+          </div>
+        </div>
+      </div>`
+
+    // Cửa sổ in không phân giải được đường dẫn tương đối → nhúng origin vào @font-face.
+    const origin = window.location.origin
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
       <style>
         /* Tem tự co giãn PHỦ KÍN tờ giấy được chọn trong hộp thoại in. Không khoá
@@ -454,29 +514,107 @@ async function printLabels() {
            Seller/Order/Người nhận chạy full chiều ngang bên dưới. */
         @page { margin: 0; }
         html, body { margin: 0; padding: 0; }
-        body { font-family: ui-monospace, monospace; color: #000; }
+        /* Font tem — KHÔNG được để số 0 có gạch chéo, CS đọc nhầm mã đơn.
+           Cửa sổ in là about:blank mở bằng window.open nên KHÔNG kế thừa CSS của
+           app: phải khai lại @font-face ở đây, và phải dùng URL tuyệt đối
+           (${origin}) vì đường dẫn tương đối không phân giải được trên
+           about:blank. Ba lớp bảo hiểm chồng nhau:
+             1. Inter tự host — số 0 trơn, không gạch chéo, có đủ dấu tiếng Việt;
+             2. chain dự phòng chỉ toàn font sans, chốt bằng sans-serif, tuyệt đối
+                không có font monospace nào (mono là thứ đẻ ra 0-gạch-chéo);
+             3. font-feature-settings "zero" 0 khoá biến thể 0-gạch-chéo ở bất kỳ
+                font nào có sẵn feature ấy.
+           Mất mạng hay font lỗi thì rơi xuống lớp 2 — vẫn không gạch chéo. */
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900;
+          font-display: block; src: url('${origin}/fonts/inter-vietnamese.woff2') format('woff2');
+          unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB; }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900;
+          font-display: block; src: url('${origin}/fonts/inter-latin-ext.woff2') format('woff2');
+          unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900;
+          font-display: block; src: url('${origin}/fonts/inter-latin.woff2') format('woff2');
+          unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+        body { font-family: 'Inter', "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+          color: #000; -webkit-font-smoothing: antialiased;
+          font-variant-numeric: normal; font-feature-settings: "zero" 0; }
         .label { display: block; box-sizing: border-box; width: 100vw; height: 100vh;
           padding: 4vmin; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
         .label:last-child { page-break-after: auto; }
         .top { display: flex; gap: 5vmin; align-items: center; }
         .qr { width: 36vmin; height: 36vmin; flex: 0 0 auto; }
         .meta { min-width: 0; flex: 1; }
-        /* Mã nội bộ là trường quét/đọc chính — chữ to nhất. */
-        .code { font-size: 10vmin; font-weight: bold; line-height: 1.15; word-break: break-all; }
-        .sub { font-size: 5.4vmin; font-weight: bold; margin-top: 1.6vmin; overflow-wrap: anywhere; }
+        /* Phân cấp: mã nội bộ to đậm nhất, thông tin phụ nhẹ hơn. Bản cũ bold
+           tất cả mọi dòng nên mắt không bám được vào đâu.
+           Chỉ dùng 3 nấc 400/600/700 vì Segoe UI đúng có ngần ấy nét thật —
+           đặt 500 hay 800 là trình duyệt tự kéo béo chữ, in nhiệt ra nhoè. */
+        .code { font-size: 10.5vmin; font-weight: 700; letter-spacing: -0.02em;
+          line-height: 1.05; word-break: break-all; }
+        .sub { font-size: 5.2vmin; font-weight: 400; line-height: 1.25;
+          margin-top: 1.6vmin; overflow-wrap: anywhere; }
         /* Các trường chạy hết chiều ngang tem nên giá trị dài vẫn đọc được;
-           xuống dòng thay vì cắt cụt. */
-        .info { margin-top: 3vmin; border-top: 0.4vmin dashed #999; padding-top: 2vmin; }
-        .row { font-size: 6.4vmin; font-weight: bold; margin-top: 1.6vmin; overflow-wrap: anywhere; }
-        .desc { font-size: 5.4vmin; font-weight: bold; color: #444; margin-top: 1.6vmin; }
+           xuống dòng thay vì cắt cụt. Nhãn thành cột trái nhỏ, giá trị to đậm —
+           mắt nhảy thẳng vào tên/mã mà không phải đọc lại chữ "Seller:".
+           Dùng nét liền đen thay dashed xám: máy in nhiệt chỉ có đen/trắng nên
+           mọi sắc xám đều bị rỗ, khó nhìn. */
+        .info { margin-top: 3vmin; border-top: 0.5vmin solid #000; padding-top: 2.4vmin; }
+        .row { display: flex; gap: 2vmin; align-items: baseline; font-size: 6.6vmin;
+          font-weight: 600; line-height: 1.2; margin-top: 1.8vmin; }
+        .key { flex: 0 0 26vmin; font-size: 4.4vmin; font-weight: 400;
+          letter-spacing: 0.06em; text-transform: uppercase; }
+        .val { min-width: 0; overflow-wrap: anywhere; }
+        .desc { font-size: 5.2vmin; font-weight: 400; margin-top: 1.8vmin;
+          overflow-wrap: anywhere; }
+
+        /* ---- Tem lô (tờ đầu) --------------------------------------------
+           Khung viền nằm TRONG padding của .label chứ không đặt border thẳng
+           lên .label: viền sát mép hay rơi vào vùng máy in không in được, ra
+           tem cụt một cạnh. Nội dung căn giữa cả hai chiều để đọc được ở tư
+           thế bất kỳ khi tem nằm trên khay.
+           Không dùng xám ở đâu cả — máy in nhiệt chỉ có đen/trắng, mọi sắc xám
+           đều rỗ. Phân cấp làm bằng cỡ chữ và nét, không bằng độ đậm màu. */
+        .batch-label { padding: 3vmin; }
+        .batch-label .frame { box-sizing: border-box; height: 100%; width: 100%;
+          border: 1.1vmin solid #000; border-radius: 2vmin; padding: 3.4vmin;
+          display: flex; flex-direction: column; align-items: center;
+          justify-content: center; text-align: center; overflow: hidden; }
+        /* Nhãn loại tem: nhỏ, giãn chữ — đọc lướt là biết ngay tờ này không
+           phải tem sản phẩm, mà không cạnh tranh với mã batch bên dưới. */
+        .kind { font-size: 5.4vmin; font-weight: 400; letter-spacing: 0.22em;
+          text-transform: uppercase; line-height: 1; }
+        /* Mã batch: thứ to nhất trên tem, và KHÔNG BAO GIỜ được ngắt dòng —
+           "#101041-10" rớt thành "#101041" / "-10" đọc ra hai thứ khác nhau, đúng
+           kiểu nhầm lẫn mà tem lô sinh ra để dập tắt. Vì thế nowrap, và cỡ chữ do
+           JS chọn theo số ký tự (xem batchCodeSize): CSS không đo được chuỗi, mà
+           tem lại co giãn theo khổ giấy nên không có một cỡ nào vừa cho mọi mã. */
+        .bcode { font-weight: 700; letter-spacing: -0.02em; line-height: 1.02;
+          margin-top: 2.4vmin; max-width: 100%; white-space: nowrap; }
+        /* Số lượng: con số to ngang mã batch, đơn vị nhỏ hơn hẳn và đứng cùng
+           dòng — mắt bắt được "3" trước, "sản phẩm" chỉ để xác nhận đơn vị. */
+        .bcount { margin-top: 2.6vmin; display: flex; align-items: baseline;
+          justify-content: center; gap: 2.2vmin; flex-wrap: wrap; }
+        .bcount .num { font-size: 18vmin; font-weight: 700; line-height: 1; }
+        .bcount .unit { font-size: 7vmin; font-weight: 400; letter-spacing: 0.04em; }
+        /* Chân tem: NVL + ngày, đủ để đối chiếu mà không phải mở máy. */
+        .bfoot { margin-top: 3vmin; font-size: 5.2vmin; font-weight: 400;
+          line-height: 1.3; overflow-wrap: anywhere; }
       </style></head>
-      <body>${labels.join('')}
+      <body>${batchLabel}${labels.join('')}
       <script>
         (function () {
           var printed = false;
           function go() { if (!printed) { printed = true; window.print(); } }
-          window.addEventListener('load', go);
-          setTimeout(go, 1000); // fallback nếu sự kiện load không bắn (QR là data URL, có sẵn)
+          // Đợi Inter tải xong rồi mới bung hộp thoại in: in sớm thì tem ra font
+          // dự phòng, mỗi máy một kiểu chữ. document.fonts.ready có thể không
+          // bao giờ resolve nếu font lỗi nên chặn trần 3s.
+          if (document.fonts && document.fonts.ready) {
+            Promise.race([
+              document.fonts.ready,
+              new Promise(function (r) { setTimeout(r, 3000); }),
+            ]).then(go);
+          } else {
+            window.addEventListener('load', go);
+          }
+          setTimeout(go, 5000); // fallback cuối nếu mọi thứ trên đều câm
         })();
       <\/script></body></html>`
     w.document.open()
@@ -535,7 +673,12 @@ async function printLabels() {
               </div>
             </div>
             <div class="flex flex-wrap gap-2">
-              <button class="btn-secondary" :disabled="printingLabels" @click="printLabels">
+              <button
+                class="btn-secondary"
+                :disabled="printingLabels"
+                title="In 1 tem lô (mã batch + số sản phẩm) ở tờ đầu, rồi tem QR của từng sản phẩm"
+                @click="printLabels"
+              >
                 <UiSpinner v-if="printingLabels" :size="16" />
                 <UiIcon v-else name="qc" :size="16" /> In tem QR
               </button>
