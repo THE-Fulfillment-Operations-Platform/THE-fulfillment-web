@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import { batchesApi, materialsApi } from '~/services/api'
+import type { AutoCreateBatchesResult } from '~/services/api'
 import type { Batch, Material } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY, PRIORITY_OPTIONS } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
 import { isBatchOverdue, overdueDays } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
+import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
+import { useConfirm } from '~/composables/useConfirm'
 import { useRowLink } from '~/composables/useRowLink'
 
 // Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
 const { rowLinkAttrs } = useRowLink()
 
 const toast = useToastStore()
+const auth = useAuthStore()
 const materials = ref<Material[]>([])
+
+// Gom batch + gắn file sản xuất là việc của tổ thiết kế/vận hành — khớp guard
+// BE (roleDesignOps trên /api/batches/auto và /api/batches/links/*).
+const canDesignOps = computed(() =>
+  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? ''),
+)
 
 const filters = reactive({
   material_id: '',
@@ -142,6 +153,44 @@ function exportBatches() {
   ])
   toast.success(`Đã xuất ${list.length} batch ra CSV.`)
 }
+
+// ---- Tạo batch tự động ------------------------------------------------------
+// Hệ thống tự gom TOÀN BỘ pool design-ready: phân theo NVL, chia theo định mức,
+// tự sinh mã batch. Người vận hành không chọn từng sản phẩm, không đặt tên.
+const autoCreating = ref(false)
+const autoResult = ref<AutoCreateBatchesResult | null>(null)
+const autoResultOpen = ref(false)
+const linkImportOpen = ref(false)
+
+async function autoCreateBatches() {
+  if (autoCreating.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Tạo batch tự động',
+    message:
+      'Hệ thống sẽ tự gom TOÀN BỘ sản phẩm đã sẵn sàng thiết kế thành batch theo từng nguyên vật liệu và định mức, tự sinh mã batch. Tiếp tục?',
+    tone: 'primary',
+    confirmText: 'Tạo batch',
+  })
+  if (!ok) return
+  autoCreating.value = true
+  try {
+    const { data } = await batchesApi.autoCreate()
+    autoResult.value = data
+    const created = data.created ?? []
+    const skipped = data.skipped ?? []
+    if (!created.length && !skipped.length) {
+      toast.info('Không có sản phẩm nào đang chờ gom batch.')
+    } else {
+      autoResultOpen.value = true
+      toast.success(`Đã tạo ${data.total_batches} batch từ ${data.total_items} sản phẩm.`)
+    }
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    autoCreating.value = false
+  }
+}
 </script>
 
 <template>
@@ -151,8 +200,26 @@ function exportBatches() {
         <button class="btn-secondary" :disabled="!rows.length" title="Xuất các batch đang hiển thị ra CSV" @click="exportBatches">
           <UiIcon name="upload" :size="16" /> Xuất CSV
         </button>
-        <NuxtLink to="/batches/new" class="btn-primary">
-          <UiIcon name="plus" :size="16" /> Tạo batch
+        <button
+          v-if="canDesignOps"
+          class="btn-secondary"
+          title="Tải Excel danh sách batch chờ file, điền link in/cắt rồi upload lại"
+          @click="linkImportOpen = true"
+        >
+          <UiIcon name="link" :size="16" /> Excel link in/cắt
+        </button>
+        <button
+          v-if="canDesignOps"
+          class="btn-primary"
+          :disabled="autoCreating"
+          title="Hệ thống tự gom sản phẩm đã sẵn sàng thiết kế thành batch theo NVL và định mức"
+          @click="autoCreateBatches"
+        >
+          <UiSpinner v-if="autoCreating" :size="16" />
+          <UiIcon v-else name="layers" :size="16" /> Tạo batch tự động
+        </button>
+        <NuxtLink to="/batches/new" class="btn-secondary">
+          <UiIcon name="plus" :size="16" /> Tạo batch thủ công
         </NuxtLink>
       </template>
     </PageHeader>
@@ -315,5 +382,74 @@ function exportBatches() {
           /></div>
       </UiStateBlock>
     </div>
+
+    <!-- Kết quả tạo batch tự động: hệ thống đã gom gì, và NVL nào nó chưa tự
+         xử lý được (phải gom tay) — không im lặng bỏ qua. -->
+    <UiModal v-model="autoResultOpen" title="Kết quả tạo batch tự động" wide>
+      <div v-if="autoResult" class="space-y-4">
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+          <div class="rounded-md bg-muted p-2">
+            <div class="text-base font-semibold text-foreground">{{ autoResult.total_batches }}</div>
+            <div class="text-muted-foreground">Batch sản xuất</div>
+          </div>
+          <div class="rounded-md bg-muted p-2">
+            <div class="text-base font-semibold text-foreground">{{ autoResult.total_items }}</div>
+            <div class="text-muted-foreground">Sản phẩm đã gom</div>
+          </div>
+          <div class="rounded-md bg-muted p-2">
+            <div class="text-base font-semibold text-foreground">{{ (autoResult.created ?? []).length }}</div>
+            <div class="text-muted-foreground">Nguyên vật liệu</div>
+          </div>
+        </div>
+
+        <div v-if="(autoResult.created ?? []).length" class="space-y-2">
+          <div
+            v-for="c in autoResult.created ?? []"
+            :key="c.material_id"
+            class="rounded-md border border-border p-3"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="text-sm font-medium text-foreground">
+                {{ c.material_name }}
+                <span class="text-xs font-normal text-muted-foreground">({{ c.material_code }})</span>
+              </div>
+              <div class="text-xs text-muted-foreground">
+                {{ c.item_count }} sản phẩm
+                <template v-if="c.is_parent"> · batch mẹ {{ c.batch_code }} + {{ c.child_count }} con</template>
+              </div>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1">
+              <span
+                v-for="code in c.batch_codes ?? []"
+                :key="code"
+                class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground"
+              >{{ code }}</span>
+            </div>
+            <p v-if="(c.skipped_item_ids ?? []).length" class="mt-2 text-[11px] text-muted-foreground">
+              Bỏ qua {{ (c.skipped_item_ids ?? []).length }} sản phẩm (đã được gom ở nơi khác trong lúc chạy).
+            </p>
+          </div>
+        </div>
+
+        <div v-if="(autoResult.skipped ?? []).length" class="space-y-2">
+          <p class="text-xs font-medium text-amber-700 dark:text-amber-400">
+            Nguyên vật liệu hệ thống chưa tự gom được — xử lý thủ công ở màn "Tạo batch thủ công":
+          </p>
+          <div
+            v-for="sk in autoResult.skipped ?? []"
+            :key="sk.material_code"
+            class="rounded-md border border-amber-200/60 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            <span class="font-semibold">{{ sk.material_name }} ({{ sk.material_code }}):</span>
+            {{ sk.reason }}
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="autoResultOpen = false">Đóng</button>
+      </template>
+    </UiModal>
+
+    <BatchesLinkImportDialog v-model="linkImportOpen" @done="reload" />
   </div>
 </template>

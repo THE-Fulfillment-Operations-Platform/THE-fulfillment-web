@@ -8,7 +8,16 @@ export interface UserInput {
   role: Role
   seller_id?: number
   is_active?: boolean
+  /**
+   * Xác nhận dùng lại một tài khoản ĐÃ XOÁ đang giữ email này. Thiếu cờ thì
+   * backend từ chối với code USER_DELETED_EMAIL kèm tên tài khoản cũ, để người
+   * dùng biết mình sắp nhận lại lịch sử công việc của ai trước khi đồng ý.
+   */
+  restore_deleted?: boolean
 }
+
+/** Code backend trả khi email trùng một tài khoản đã xoá (cần xác nhận khôi phục). */
+export const ERR_USER_DELETED_EMAIL = 'USER_DELETED_EMAIL'
 
 export const usersApi = {
   list: (params?: { page?: number; page_size?: number }) => apiGet<User[]>('/api/users', params),

@@ -189,7 +189,16 @@ export interface Material {
 
 export interface SkuMaterial {
   material_id: number
+  // Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư).
   quantity_per_unit: number
+  // Định mức sản xuất của CẶP (SKU, NVL): một đơn vị NVL (một tấm/một lot) ra
+  // được bao nhiêu sản phẩm của SKU này — khái niệm ngược với
+  // quantity_per_unit. Cùng một tấm mica ra 10 khay nhỏ nhưng chỉ 4 khay to,
+  // nên định mức không thể nằm ở NVL. null/undefined = cặp này không khai
+  // riêng → rơi về Material.products_per_unit. Chỉ OWNER được đặt.
+  // CHIỀU ĐÃ CHỐT (khách xác nhận 2026-09-01): "sản phẩm trên một tấm" — số sản
+  // phẩm LÀM RA từ một đơn vị NVL, KHÔNG phải lượng NVL cần cho một sản phẩm.
+  products_per_unit?: number | null
   note?: string
   material?: Material
 }

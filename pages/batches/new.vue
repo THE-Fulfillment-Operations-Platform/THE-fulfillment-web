@@ -4,7 +4,8 @@ import type { MaterialBucket, OrderItem, Priority } from '~/types'
 import { PRIORITY_OPTIONS, PRIORITY } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { itemStoreOrderId } from '~/utils/item'
-import { planBatchSplit, productCount } from '~/utils/batch'
+import { planBatchSplitByQuota, productCount } from '~/utils/batch'
+import { PAGE_SIZE_ALL } from '~/utils/pagination'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 
@@ -43,17 +44,38 @@ async function loadMaterialCaps() {
   }
 }
 
-// Định mức của NVL đang chọn (null = không giới hạn).
+// Định mức của NVL đang chọn — chỉ còn là GIÁ TRỊ MẶC ĐỊNH cho những cặp
+// (SKU, NVL) chưa khai riêng (null = không giới hạn).
 const activeCap = computed(() =>
   activeMaterial.value ? capByMaterial.value.get(activeMaterial.value.material_id) ?? null : null,
 )
+
+// Định mức thật của một item = định mức của cặp (SKU của item, NVL đang chọn),
+// rơi về định mức cấp NVL khi cặp chưa khai. Khớp resolveProductionQuota ở BE.
+function quotaForItem(it: OrderItem): number | null {
+  const materialId = activeMaterial.value?.material_id
+  if (!materialId) return activeCap.value
+  const pair = (it.sku?.materials ?? []).find((m) => m.material_id === materialId)
+  const pairQuota = pair?.products_per_unit
+  if (pairQuota != null && pairQuota > 0) return pairQuota
+  return activeCap.value
+}
+
 // Các item đang được chọn (giữ nguyên thứ tự hiển thị để chia nhóm ổn định).
 const selectedItems = computed(() => items.value.filter((it) => selectedIds.value.has(it.id)))
 // Tổng sản phẩm = Σ quantity các item đã chọn.
 const selectedProducts = computed(() => productCount(selectedItems.value))
-// Kế hoạch chẻ: mỗi phần tử là 1 batch con. ≤ định mức → đúng 1 nhóm (batch phẳng).
-const splitGroups = computed(() => planBatchSplit(selectedItems.value, activeCap.value))
+// Kế hoạch chẻ: mỗi phần tử là 1 batch con. Sản phẩm của các SKU khác nhau
+// chiếm chỗ khác nhau trên cùng một tấm, nên nhóm đầy theo mức chiếm dụng chứ
+// không theo số sản phẩm.
+const splitGroups = computed(() => planBatchSplitByQuota(selectedItems.value, quotaForItem))
 const willSplit = computed(() => splitGroups.value.length > 1)
+// Các SKU đang chọn có định mức khác nhau trên NVL này → nói rõ để người vận
+// hành không thắc mắc vì sao "20 sản phẩm" lại không vừa một tấm.
+const mixedQuotas = computed(() => {
+  const quotas = new Set(selectedItems.value.map((it) => quotaForItem(it) ?? 0))
+  return quotas.size > 1
+})
 
 async function loadBuckets() {
   bucketsLoading.value = true
@@ -76,7 +98,15 @@ async function fetchItems() {
   itemsLoading.value = true
   itemsError.value = null
   try {
-    const params = skuSort.value ? { sort: 'sku', order: skuSort.value } : undefined
+    // page_size -1 = lấy TRỌN pool: không truyền thì backend mặc định 20 dòng,
+    // bucket báo 50 item mà bảng (và "chọn tất cả") chỉ thấy 20 dòng đầu.
+    const params: { sort?: string; order?: 'asc' | 'desc'; page_size: number } = {
+      page_size: PAGE_SIZE_ALL,
+    }
+    if (skuSort.value) {
+      params.sort = 'sku'
+      params.order = skuSort.value
+    }
     const { data } = await designApi.materialItems(b.material_id, params)
     items.value = data ?? []
   } catch (e) {
@@ -146,7 +176,10 @@ async function createBatch() {
   try {
     const { data } = await batchesApi.create({
       material_id: activeMaterial.value.material_id,
-      order_item_ids: Array.from(selectedIds.value),
+      // Gửi theo THỨ TỰ HIỂN THỊ, không theo thứ tự tick: backend chia nhóm
+      // theo đúng thứ tự nhận được, nên gửi thứ tự khác preview sẽ cho ra cách
+      // phân bổ item vào từng batch con khác với cái người dùng vừa xem.
+      order_item_ids: selectedItems.value.map((it) => it.id),
       priority: priority.value,
       due_date: dueDate.value || undefined,
       note: note.value || undefined,
@@ -271,12 +304,23 @@ onMounted(() => {
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between"><dt class="text-muted-foreground">Loại VL</dt><dd class="font-medium">{{ activeMaterial.material_name }}</dd></div>
           <div class="flex justify-between">
-            <dt class="text-muted-foreground">Định mức</dt>
+            <dt class="text-muted-foreground">Định mức NVL</dt>
             <dd class="font-medium">{{ activeCap ? `${activeCap} sp/đơn vị` : 'Không giới hạn' }}</dd>
           </div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Số item đã chọn</dt><dd class="font-medium">{{ selectedCount }}</dd></div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Tổng sản phẩm</dt><dd class="font-medium">{{ selectedProducts }}</dd></div>
         </dl>
+
+        <!-- Định mức nằm ở cặp (SKU, NVL): các SKU khác nhau chiếm chỗ khác
+             nhau trên cùng một tấm, nên "tổng sản phẩm" không quyết định số tấm. -->
+        <p
+          v-if="mixedQuotas"
+          class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          Các SKU đang chọn có định mức khác nhau trên NVL này — số batch được
+          tính theo mức chiếm dụng của từng SKU trên một đơn vị NVL, không theo
+          tổng số sản phẩm.
+        </p>
 
         <!-- Kế hoạch chẻ batch mẹ–con -->
         <div

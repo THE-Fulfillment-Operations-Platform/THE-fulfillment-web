@@ -21,7 +21,14 @@ export interface MaterialInput {
 
 export interface SkuMaterialInput {
   material_id: number
+  /** Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư). */
   quantity_per_unit?: number
+  /**
+   * Định mức sản xuất của CẶP (SKU, NVL): một đơn vị NVL ra được bao nhiêu sản
+   * phẩm của SKU này — dùng để chia batch. Bỏ field = giữ nguyên định mức đang
+   * lưu; 0/null = xoá (cặp rơi về định mức của NVL). Chỉ OWNER đặt được.
+   */
+  products_per_unit?: number | null
   note?: string
 }
 

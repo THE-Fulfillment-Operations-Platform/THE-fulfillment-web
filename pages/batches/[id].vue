@@ -214,7 +214,10 @@ async function downloadBatchDesign() {
 // Chỉ OWNER/ADMIN/OPS/DESIGNER được thêm/sửa — BE guard giống hệt.
 const LINK_LABELS: Record<BatchLinkKind, string> = { PRINT: 'Link in', CUT: 'Link cắt' }
 const canEditLinks = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') && !closed.value,
+  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') &&
+  !closed.value &&
+  // khớp guard BE — bộ file khoá sau khi bắt đầu sản xuất.
+  batch.value?.status === 'PENDING',
 )
 
 function batchLink(kind: BatchLinkKind): BatchLink | undefined {
@@ -241,56 +244,106 @@ function statusBlockedReason(s: InternalStatus) {
   return `Batch chưa có ${missingProductionLinks.value.join(' và ')} — thêm link sản xuất dùng chung trước.`
 }
 
-const linkModalOpen = ref(false)
-const linkModalKind = ref<BatchLinkKind>('PRINT')
-const linkUrl = ref('')
-const savingLink = ref(false)
-// Link hiện có của kind đang mở — quyết định "Thêm" vs "Sửa/thay thế".
-const editingLink = computed(() => batchLink(linkModalKind.value))
-const normalizedLinkUrl = computed(() => linkUrl.value.trim())
-const linkUrlValid = computed(() => isValidUrl(normalizedLinkUrl.value))
-const linkUnchanged = computed(() => normalizedLinkUrl.value === (editingLink.value?.url ?? ''))
+// Trạng thái bộ file sản xuất — SUY RA từ status + link hiện có, không thêm
+// trạng thái mới nào vào database.
+const packageState = computed<{ tone: 'locked' | 'missing' | 'ready'; text: string }>(() => {
+  const b = batch.value
+  if (!b) return { tone: 'missing', text: '' }
+  if (closed.value) {
+    return { tone: 'locked', text: 'Bộ file đã khóa — batch đã đóng, chỉ còn là lịch sử của tấm này.' }
+  }
+  if (b.status !== 'PENDING') {
+    return {
+      tone: 'locked',
+      text: 'Bộ file đã khóa — batch đã bắt đầu sản xuất. Nếu sản xuất sai, dùng luồng huỷ/làm lại thay vì thay file lịch sử.',
+    }
+  }
+  const missing = missingProductionLinks.value
+  if (missing.length === 2) return { tone: 'missing', text: 'Chưa có bộ file sản xuất — đang chờ designer nộp.' }
+  if (missing.length === 1) return { tone: 'missing', text: `Thiếu ${missing[0]} — cần đủ cả hai link mới sản xuất được.` }
+  return { tone: 'ready', text: 'Đã đủ bộ file — batch sẵn sàng vào sản xuất.' }
+})
 
-function openLinkModal(kind: BatchLinkKind) {
-  linkModalKind.value = kind
-  linkUrl.value = batchLink(kind)?.url ?? ''
-  linkModalOpen.value = true
+// Nộp CẢ CẶP link in + cắt trong một lần: backend lưu nguyên tử (không bao giờ
+// có link in mới đi kèm link cắt cũ) và fan-out cả hai xuống từng sản phẩm.
+const pairModalOpen = ref(false)
+const pairPrintUrl = ref('')
+const pairCutUrl = ref('')
+const pairReason = ref('')
+const savingPair = ref(false)
+
+const currentPrintUrl = computed(() => batchLink('PRINT')?.url ?? '')
+const currentCutUrl = computed(() => batchLink('CUT')?.url ?? '')
+const normalizedPrintUrl = computed(() => pairPrintUrl.value.trim())
+const normalizedCutUrl = computed(() => pairCutUrl.value.trim())
+const printUrlValid = computed(() => isValidUrl(normalizedPrintUrl.value))
+const cutUrlValid = computed(() => isValidUrl(normalizedCutUrl.value))
+// Thay thế = ít nhất một link ĐANG CÓ bị đổi sang URL khác (thêm link còn thiếu
+// không tính là thay). Khớp luật REPLACE của backend.
+const isReplacingPair = computed(
+  () =>
+    (!!currentPrintUrl.value && currentPrintUrl.value !== normalizedPrintUrl.value) ||
+    (!!currentCutUrl.value && currentCutUrl.value !== normalizedCutUrl.value),
+)
+const pairUnchanged = computed(
+  () =>
+    normalizedPrintUrl.value === currentPrintUrl.value &&
+    normalizedCutUrl.value === currentCutUrl.value,
+)
+const pairReasonMissing = computed(() => isReplacingPair.value && !pairReason.value.trim())
+
+function openPairModal() {
+  pairPrintUrl.value = currentPrintUrl.value
+  pairCutUrl.value = currentCutUrl.value
+  pairReason.value = ''
+  pairModalOpen.value = true
 }
 
-async function saveLink() {
-  if (!batch.value || savingLink.value) return
-  const url = normalizedLinkUrl.value
-  if (!linkUrlValid.value) {
-    toast.error('Link không hợp lệ — cần URL bắt đầu bằng http:// hoặc https://')
+// Đóng modal là xoá sạch nháp: mở lại lần sau không dính lý do/URL cũ.
+watch(pairModalOpen, (v) => {
+  if (!v) {
+    pairPrintUrl.value = ''
+    pairCutUrl.value = ''
+    pairReason.value = ''
+  }
+})
+
+async function savePair() {
+  if (!batch.value || savingPair.value) return
+  if (!printUrlValid.value || !cutUrlValid.value) {
+    toast.error('Cả hai link đều phải là URL bắt đầu bằng http:// hoặc https://')
     return
   }
-  const label = LINK_LABELS[linkModalKind.value].toLowerCase()
-  // Nhập lại khi đã có link → thay thế link cũ, xác nhận trước.
-  if (editingLink.value) {
+  if (pairUnchanged.value) return
+  if (isReplacingPair.value) {
     const ok = await useConfirm().confirm({
-      title: `Thay thế ${label}`,
-      message: `Batch đã có ${label}. Lưu link mới sẽ thay thế link hiện tại. Tiếp tục?`,
+      title: 'Thay bộ file sản xuất',
+      message:
+        'Batch đã có bộ file. Thao tác này sẽ THAY file in/cắt hiện tại của batch và đóng dấu lại lên mọi sản phẩm trong batch. Tiếp tục?',
       tone: 'warning',
-      confirmText: 'Thay thế',
+      confirmText: 'Thay bộ file',
     })
     if (!ok) return
   }
-  savingLink.value = true
+  savingPair.value = true
   try {
-    const { data: saved } = await batchesApi.setLink(batch.value.id, linkModalKind.value, url)
-    // Update immediately so all item rows switch to the shared link without a
-    // visible stale interval; reload still refreshes updater/timestamps from BE.
-    batch.value.links = [
-      ...(batch.value.links ?? []).filter((link) => link.kind !== saved.kind),
-      saved,
-    ]
-    toast.success(`Đã lưu ${label}`)
-    linkModalOpen.value = false
+    const { data } = await batchesApi.setLinkPair(batch.value.id, {
+      print_url: normalizedPrintUrl.value,
+      cut_url: normalizedCutUrl.value,
+      reason: isReplacingPair.value ? pairReason.value.trim() : undefined,
+    })
+    // Cập nhật ngay để các dòng item đổi sang link dùng chung, không có khoảng
+    // hiển thị dữ liệu cũ; reload sau đó lấy lại người sửa + thời điểm từ BE.
+    batch.value.links = data.links ?? []
+    if (data.action === 'REPLACE') toast.success('Đã thay bộ file sản xuất')
+    else if (data.action === 'UNCHANGED') toast.info('Bộ link không đổi')
+    else toast.success('Đã nộp bộ file sản xuất')
+    pairModalOpen.value = false
     await reload()
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
-    savingLink.value = false
+    savingPair.value = false
   }
 }
 
@@ -785,43 +838,57 @@ async function printLabels() {
           </div>
         </div>
 
-        <!-- Link sản xuất theo Batch (Print/Cut) — nhập 1 lần, dùng chung cả batch -->
+        <!-- Bộ file sản xuất của batch (link in + link cắt) — nộp một lần cho cả batch -->
         <div v-if="!batch.is_parent" class="card mb-5 p-5">
-          <div class="mb-3">
-            <h3 class="text-sm font-semibold text-foreground">Link sản xuất dùng chung</h3>
-            <p class="mt-1 text-xs text-muted-foreground">
-              Lưu một lần và áp dụng cho toàn bộ {{ items.length }} item trong batch, gồm bảng bên dưới, file Excel và ZIP sản xuất.
-            </p>
+          <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-foreground">Bộ file sản xuất</h3>
+              <p class="mt-1 text-xs text-muted-foreground">
+                Link in + link cắt nộp một lần cho cả batch, áp dụng cho toàn bộ {{ items.length }} item, gồm bảng bên dưới, file Excel và ZIP sản xuất.
+              </p>
+            </div>
+            <button v-if="canEditLinks" class="btn-primary shrink-0" @click="openPairModal">
+              <UiIcon name="link" :size="16" />
+              {{ missingProductionLinks.length ? 'Nộp bộ file sản xuất' : 'Thay bộ file sản xuất' }}
+            </button>
           </div>
+
+          <!-- Trạng thái bộ file: suy ra từ status + link, không phải status DB -->
+          <div
+            class="mb-4 flex items-start gap-2 rounded-md px-3 py-2 text-xs"
+            :class="{
+              'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300': packageState.tone === 'ready',
+              'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300': packageState.tone === 'missing',
+              'bg-muted text-muted-foreground': packageState.tone === 'locked',
+            }"
+          >
+            <UiIcon
+              :name="packageState.tone === 'ready' ? 'check' : 'alert'"
+              :size="14"
+              class="mt-0.5 shrink-0"
+            />
+            <span>{{ packageState.text }}</span>
+          </div>
+
           <div class="grid gap-4 sm:grid-cols-2">
             <div v-for="row in linkRows" :key="row.kind" class="rounded-lg border border-border p-4">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="text-sm font-medium text-foreground">{{ row.label }}</p>
-                  <a
-                    v-if="row.link"
-                    :href="row.link.url"
-                    target="_blank"
-                    rel="noopener"
-                    class="mt-1 block truncate text-sm text-primary hover:underline"
-                    :title="row.link.url"
-                  >
-                    {{ row.link.url }}
-                  </a>
-                  <p v-else class="mt-1 text-sm text-muted-foreground">Chưa có</p>
-                  <p v-if="row.link" class="mt-1 text-xs text-muted-foreground">
-                    Người cập nhật: {{ row.link.updated_by?.full_name || row.link.updated_by?.email || '—' }}
-                    <span v-if="row.link.link_updated_at"> · {{ formatDateTime(row.link.link_updated_at) }}</span>
-                  </p>
-                </div>
-                <button
-                  v-if="canEditLinks"
-                  class="btn-secondary shrink-0"
-                  @click="openLinkModal(row.kind)"
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-foreground">{{ row.label }}</p>
+                <a
+                  v-if="row.link"
+                  :href="row.link.url"
+                  target="_blank"
+                  rel="noopener"
+                  class="mt-1 block truncate text-sm text-primary hover:underline"
+                  :title="row.link.url"
                 >
-                  <UiIcon :name="row.link ? 'link' : 'plus'" :size="16" />
-                  {{ row.link ? 'Sửa link' : 'Thêm link' }}
-                </button>
+                  {{ row.link.url }}
+                </a>
+                <p v-else class="mt-1 text-sm text-muted-foreground">Chưa có</p>
+                <p v-if="row.link" class="mt-1 text-xs text-muted-foreground">
+                  Người cập nhật: {{ row.link.updated_by?.full_name || row.link.updated_by?.email || '—' }}
+                  <span v-if="row.link.link_updated_at"> · {{ formatDateTime(row.link.link_updated_at) }}</span>
+                </p>
               </div>
             </div>
           </div>
@@ -1004,38 +1071,87 @@ async function printLabels() {
       </template>
     </UiModal>
 
-    <!-- Thêm/Sửa link sản xuất (Print/Cut) -->
-    <UiModal
-      v-model="linkModalOpen"
-      :title="editingLink ? `Sửa ${LINK_LABELS[linkModalKind]}` : `Thêm ${LINK_LABELS[linkModalKind]}`"
-    >
-      <div class="space-y-3">
+    <!-- Nộp bộ file sản xuất: cả link in + link cắt trong một lần, lưu nguyên tử -->
+    <UiModal v-model="pairModalOpen" title="Nộp bộ file sản xuất">
+      <div v-if="batch" class="space-y-3">
+        <!-- Designer phải thấy rõ đang nộp file cho batch nào -->
+        <div class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Batch <span class="font-semibold text-foreground">{{ batch.code }}</span>
+          · {{ batch.material_name || batch.material?.name || batch.material_code }}
+          · {{ liveItemCount }} sản phẩm
+        </div>
+
         <div>
-          <label class="label">{{ LINK_LABELS[linkModalKind] }} (URL)</label>
+          <label class="label">{{ LINK_LABELS.PRINT }} (URL) <span class="text-rose-600">*</span></label>
           <input
-            v-model="linkUrl"
+            v-model="pairPrintUrl"
             class="input"
-            :class="linkUrl && !linkUrlValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''"
+            :class="pairPrintUrl && !printUrlValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''"
             placeholder="https://…"
             autocomplete="url"
-            @keyup.enter="saveLink"
           />
-          <p v-if="linkUrl && !linkUrlValid" class="mt-1 text-xs text-red-600 dark:text-red-400">
+          <p v-if="pairPrintUrl && !printUrlValid" class="mt-1 text-xs text-red-600 dark:text-red-400">
             Link phải bắt đầu bằng http:// hoặc https://
           </p>
+          <p v-else-if="currentPrintUrl" class="mt-1 truncate text-[11px] text-muted-foreground" :title="currentPrintUrl">
+            Hiện tại: {{ currentPrintUrl }}
+          </p>
         </div>
-        <p v-if="editingLink" class="text-xs text-amber-600 dark:text-amber-400">
-          Batch đã có {{ LINK_LABELS[linkModalKind].toLowerCase() }}. Lưu link mới sẽ thay thế link hiện tại.
-        </p>
+
+        <div>
+          <label class="label">{{ LINK_LABELS.CUT }} (URL) <span class="text-rose-600">*</span></label>
+          <input
+            v-model="pairCutUrl"
+            class="input"
+            :class="pairCutUrl && !cutUrlValid ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : ''"
+            placeholder="https://…"
+            autocomplete="url"
+          />
+          <p v-if="pairCutUrl && !cutUrlValid" class="mt-1 text-xs text-red-600 dark:text-red-400">
+            Link phải bắt đầu bằng http:// hoặc https://
+          </p>
+          <p v-else-if="currentCutUrl" class="mt-1 truncate text-[11px] text-muted-foreground" :title="currentCutUrl">
+            Hiện tại: {{ currentCutUrl }}
+          </p>
+        </div>
+
+        <div
+          v-if="isReplacingPair"
+          class="rounded-md border border-amber-200/60 bg-amber-50 p-3 dark:border-amber-500/25 dark:bg-amber-500/10"
+        >
+          <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">
+            Thao tác sẽ THAY bộ file sản xuất hiện có của batch
+          </p>
+          <p class="mt-1 text-[11px] text-amber-800/90 dark:text-amber-300/90">
+            File mới được đóng dấu lại lên mọi sản phẩm trong batch. Lý do được lưu vào nhật ký.
+          </p>
+          <label class="label mt-2">Lý do thay thế <span class="text-rose-600">*</span></label>
+          <textarea
+            v-model="pairReason"
+            class="input"
+            rows="2"
+            placeholder="VD: file in cũ sai khổ, đã dựng lại bộ mới"
+          />
+          <p v-if="pairReasonMissing" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+            Bắt buộc nhập lý do khi thay bộ file sản xuất.
+          </p>
+        </div>
+
         <p class="text-[11px] text-muted-foreground">
-          Link dùng chung cho cả batch (nhập 1 lần). Cần URL bắt đầu bằng http:// hoặc https://.
+          Cả hai link được lưu cùng lúc: hoặc vào cả bộ, hoặc không đổi gì — batch không bao giờ
+          còn một nửa bộ file. Batch đủ hai link mới chuyển được sang “Đã in” / “Đã cắt”.
         </p>
       </div>
       <template #footer>
-        <button class="btn-secondary" @click="linkModalOpen = false">Huỷ</button>
-        <button class="btn-primary" :disabled="savingLink || !linkUrlValid || linkUnchanged" @click="saveLink">
-          <UiSpinner v-if="savingLink" :size="16" />
-          {{ editingLink ? 'Thay thế' : 'Lưu link' }}
+        <button class="btn-secondary" @click="pairModalOpen = false">Huỷ</button>
+        <button
+          class="btn-primary"
+          :disabled="savingPair || !printUrlValid || !cutUrlValid || pairUnchanged || pairReasonMissing"
+          :title="pairUnchanged ? 'Bộ link không đổi' : ''"
+          @click="savePair"
+        >
+          <UiSpinner v-if="savingPair" :size="16" />
+          {{ isReplacingPair ? 'Thay bộ file' : 'Nộp bộ file' }}
         </button>
       </template>
     </UiModal>

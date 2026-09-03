@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { usersApi, sellersApi } from '~/services/api'
+import { usersApi, sellersApi, ERR_USER_DELETED_EMAIL } from '~/services/api'
 import type { UserInput } from '~/services/api'
 import type { Role, User, Seller } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
-import { errorMessage } from '~/utils/api-error'
+import { ApiError, errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
+import { useConfirm } from '~/composables/useConfirm'
 import { ROLE_LABEL } from '~/utils/enums'
 
 // User management (Wireframe: Users/Audit). Owner/Admin create staff & seller
@@ -130,15 +132,7 @@ async function submit() {
       await usersApi.update(editing.value.id, payload)
       toast.success('Đã cập nhật người dùng')
     } else {
-      await usersApi.create({
-        email: form.email.trim(),
-        password: form.password,
-        full_name: form.full_name.trim(),
-        role: form.role,
-        seller_id: isSellerRole.value ? form.seller_id : undefined,
-        is_active: form.is_active,
-      })
-      toast.success('Đã tạo người dùng')
+      await createUser(false)
     }
     open.value = false
     await reload()
@@ -146,6 +140,38 @@ async function submit() {
     toast.error(errorMessage(e))
   } finally {
     saving.value = false
+  }
+}
+
+// Tạo tài khoản. Nếu email đang thuộc một tài khoản ĐÃ XOÁ, backend từ chối với
+// code USER_DELETED_EMAIL và nói rõ tài khoản cũ là ai — khôi phục nghĩa là
+// nhận lại toàn bộ lịch sử công việc của người đó, nên phải hỏi chứ không tự
+// quyết. Người dùng đồng ý thì gọi lại kèm cờ xác nhận.
+async function createUser(restoreDeleted: boolean) {
+  try {
+    await usersApi.create({
+      email: form.email.trim(),
+      password: form.password,
+      full_name: form.full_name.trim(),
+      role: form.role,
+      seller_id: isSellerRole.value ? form.seller_id : undefined,
+      is_active: form.is_active,
+      ...(restoreDeleted ? { restore_deleted: true } : {}),
+    })
+    toast.success(restoreDeleted ? 'Đã khôi phục tài khoản cũ' : 'Đã tạo người dùng')
+  } catch (e) {
+    if (!restoreDeleted && e instanceof ApiError && e.code === ERR_USER_DELETED_EMAIL) {
+      const ok = await useConfirm().confirm({
+        title: 'Email thuộc một tài khoản đã xoá',
+        message: `${e.message}\n\nKhôi phục tài khoản cũ với thông tin vừa nhập?`,
+        tone: 'warning',
+        confirmText: 'Khôi phục tài khoản',
+      })
+      if (!ok) throw e
+      await createUser(true)
+      return
+    }
+    throw e
   }
 }
 
@@ -160,6 +186,44 @@ async function toggleActive(u: User) {
     toast.error(errorMessage(e))
   } finally {
     togglingId.value = null
+  }
+}
+
+// Xoá người dùng: xoá MỀM ở backend — tài khoản biến khỏi danh sách và không
+// đăng nhập được nữa, nhưng mọi dấu vết người đó để lại (batch đã tạo, lượt QC,
+// nhật ký) vẫn trỏ đúng người. Tuyển lại đúng email này về sau thì hệ thống
+// khôi phục chính tài khoản cũ.
+//
+// Backend còn từ chối ba trường hợp và trả message tiếng Việt: tự xoá chính
+// mình, xoá OWNER cuối cùng, và ADMIN xoá OWNER. Nút dưới đây ẩn sẵn trường hợp
+// tự xoá cho đỡ bấm nhầm, phần còn lại để backend quyết.
+const deletingId = ref<number | null>(null)
+const auth = useAuthStore()
+function isSelf(u: User): boolean {
+  return auth.user?.id === u.id
+}
+
+async function removeUser(u: User) {
+  if (deletingId.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Xoá người dùng',
+    message:
+      `Xoá tài khoản ${u.full_name || u.email} (${u.email})?\n\n` +
+      'Người này sẽ không đăng nhập được nữa. Lịch sử công việc của họ vẫn được giữ ' +
+      'để truy vết. Nếu chỉ muốn tạm dừng, hãy dùng "Khoá" thay vì xoá.',
+    tone: 'danger',
+    confirmText: 'Xoá người dùng',
+  })
+  if (!ok) return
+  deletingId.value = u.id
+  try {
+    await usersApi.remove(u.id)
+    toast.success(`Đã xoá ${u.email}`)
+    await reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -236,6 +300,15 @@ const ROLE_BADGE: Record<Role, string> = {
                       {{ u.is_active ? 'Khoá' : 'Mở khoá' }}
                     </button>
                     <button class="text-xs font-medium text-primary hover:underline" @click="openEdit(u)">Sửa</button>
+                    <button
+                      v-if="!isSelf(u)"
+                      class="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50 dark:text-rose-400"
+                      :disabled="deletingId === u.id"
+                      title="Xoá tài khoản — người này không đăng nhập được nữa, lịch sử công việc vẫn giữ"
+                      @click="removeUser(u)"
+                    >
+                      {{ deletingId === u.id ? 'Đang xoá…' : 'Xoá' }}
+                    </button>
                   </div>
                 </td>
               </tr>

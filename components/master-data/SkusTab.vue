@@ -56,6 +56,11 @@ const form = reactive<Required<Omit<SkuInput, 'materials'>>>({
 // selected material ids + per-material quantity
 const selectedMats = ref<number[]>([])
 const qtyByMat = reactive<Record<number, number>>({})
+// Định mức sản xuất của CẶP (SKU, NVL): một tấm/lot NVL ra được bao nhiêu sản
+// phẩm của chính SKU này. Khác hẳn "SL/đơn vị" bên cạnh (một sản phẩm ăn bao
+// nhiêu NVL). Chỉ OWNER được đặt — khớp guard BE; role khác gửi lên cũng bị bỏ.
+const quotaByMat = reactive<Record<number, number | null>>({})
+const canSetQuota = computed(() => auth.role === 'OWNER')
 
 function toggleMat(id: number) {
   const i = selectedMats.value.indexOf(id)
@@ -84,14 +89,23 @@ function openEdit(s: Sku) {
   form.description = s.description ?? ''
   form.is_active = s.is_active ?? true
   selectedMats.value = (s.materials ?? []).map((m) => m.material_id)
-  for (const m of s.materials ?? []) qtyByMat[m.material_id] = m.quantity_per_unit || 1
+  for (const m of s.materials ?? []) {
+    qtyByMat[m.material_id] = m.quantity_per_unit || 1
+    quotaByMat[m.material_id] = m.products_per_unit ?? null
+  }
   open.value = true
 }
 
 const canSubmit = computed(() => !!form.name.trim() && (!!editing.value || !!form.code.trim()))
 
 function buildMaterials() {
-  return selectedMats.value.map((id) => ({ material_id: id, quantity_per_unit: qtyByMat[id] || 1 }))
+  return selectedMats.value.map((id) => ({
+    material_id: id,
+    quantity_per_unit: qtyByMat[id] || 1,
+    // Chỉ gửi khi OWNER đang sửa: bỏ field đi thì BE giữ nguyên định mức cũ,
+    // gửi 0 thì BE xoá (cặp rơi về định mức cấp NVL).
+    ...(canSetQuota.value ? { products_per_unit: quotaByMat[id] ?? 0 } : {}),
+  }))
 }
 
 async function submit() {
@@ -407,10 +421,24 @@ async function remove(s: Sku) {
                 type="number"
                 min="1"
                 class="input w-20 py-1 text-sm"
-                title="Số lượng / đơn vị"
+                title="SL NVL cho MỘT sản phẩm"
+              />
+              <input
+                v-if="selectedMats.includes(m.id) && canSetQuota"
+                v-model.number="quotaByMat[m.id]"
+                type="number"
+                min="0"
+                class="input w-24 py-1 text-sm"
+                placeholder="Định mức"
+                title="Định mức: một đơn vị NVL này ra được bao nhiêu sản phẩm của SKU. Để trống/0 = dùng định mức của NVL."
               />
             </label>
           </div>
+          <p v-if="canSetQuota && selectedMats.length" class="mt-1 text-[11px] text-muted-foreground">
+            Ô thứ nhất: một sản phẩm ăn bao nhiêu NVL. Ô thứ hai (định mức): một
+            đơn vị NVL ra được bao nhiêu sản phẩm của SKU này — dùng để chia batch.
+            Để trống = dùng định mức chung của NVL.
+          </p>
           <p v-if="selectedMats.length > 1" class="mt-1 text-[11px] text-violet-600 dark:text-violet-400">
             SKU nhiều nguyên vật liệu sẽ được đánh dấu là Combo.
           </p>

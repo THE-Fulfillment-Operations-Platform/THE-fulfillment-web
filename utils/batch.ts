@@ -48,37 +48,71 @@ export interface BatchSplitGroup<T> {
   product_count: number
 }
 
+/** Ước chung lớn nhất — dùng để rút gọn phân số chiếm dụng. */
+function gcd(a: number, b: number): number {
+  while (b) {
+    ;[a, b] = [b, a % b]
+  }
+  return a
+}
+
 /**
- * Chia danh sách item thành các nhóm theo định mức `cap`, theo nguyên tắc:
- *  - Đếm theo sản phẩm (Σ quantity), KHÔNG cắt đôi một item — một item luôn nằm
- *    trọn trong một nhóm. Vì vậy một item lẻ có quantity > cap sẽ chiếm riêng một
- *    nhóm vượt định mức (không thể chia nhỏ hơn).
- *  - cap rỗng/≤0 → không giới hạn → trả đúng 1 nhóm (batch phẳng như cũ).
- * Greedy fill: nhồi vào nhóm hiện tại đến khi thêm item kế sẽ vượt cap thì mở
- * nhóm mới. Giữ nguyên thứ tự item đầu vào.
+ * Chia danh sách item thành các nhóm, mỗi nhóm vừa trong MỘT đơn vị NVL.
+ *
+ * Định mức nằm ở cặp (SKU, NVL) chứ không ở NVL: cùng một tấm mica ra 10 khay
+ * nhỏ nhưng chỉ 4 khay to. Vì thế một nhóm KHÔNG phải "tối đa N sản phẩm" —
+ * mỗi sản phẩm chiếm 1/định mức của một tấm, và nhóm đầy khi tổng chiếm dụng
+ * chạm đúng một tấm. `quotaFor` trả 0/null nghĩa là item đó không có định mức
+ * (không chiếm chỗ).
+ *
+ * Tổng chiếm dụng cộng bằng PHÂN SỐ NGUYÊN (num/den, rút gọn) chứ không bằng
+ * số thực: đúng ở biên là chỗ quyết định chẻ hay không, mà 1/10 + 1/10 trong
+ * float đã là 0.30000000000000004 — sai một chút ở đó là đẻ ra một batch thừa.
+ * Giữ nguyên logic của backend (planBatchSplitByQuota) để preview và số batch
+ * thật luôn khớp.
+ *
+ * Một item tự nó vượt định mức không bị cắt đôi — nó chiếm riêng một nhóm vượt
+ * định mức (tách một dòng đơn sang nhiều batch là quyết định nghiệp vụ chưa chốt).
  */
-export function planBatchSplit<T extends { quantity?: number }>(
+export function planBatchSplitByQuota<T extends { quantity?: number }>(
   items: T[],
-  cap?: number | null,
+  quotaFor: (item: T) => number | null | undefined,
 ): BatchSplitGroup<T>[] {
   if (!items.length) return []
-  const limit = Number(cap)
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return [{ items: [...items], product_count: productCount(items) }]
-  }
   const groups: BatchSplitGroup<T>[] = []
   let current: T[] = []
-  let count = 0
+  let count = 0 // số sản phẩm trong nhóm (chỉ để hiển thị)
+  // Chiếm dụng đã dùng của nhóm hiện tại, dạng phân số num/den.
+  let num = 0
+  let den = 1
+
   for (const it of items) {
     const q = Math.max(1, Number(it.quantity) || 1)
-    // Mở nhóm mới khi nhóm hiện tại đã có item và thêm item này sẽ vượt định mức.
-    if (current.length && count + q > limit) {
+    const quota = Number(quotaFor(it))
+    // Chiếm dụng của item: q/quota; không có định mức → 0.
+    const sNum = Number.isFinite(quota) && quota > 0 ? q : 0
+    const sDen = Number.isFinite(quota) && quota > 0 ? quota : 1
+
+    // num/den + sNum/sDen
+    let nextNum = num * sDen + sNum * den
+    let nextDen = den * sDen
+    const g = gcd(Math.abs(nextNum), Math.abs(nextDen)) || 1
+    nextNum /= g
+    nextDen /= g
+
+    // Mở nhóm mới khi nhóm hiện tại đã có item và item này không còn vừa.
+    if (current.length && nextNum > nextDen) {
       groups.push({ items: current, product_count: count })
       current = []
       count = 0
+      const g2 = gcd(sNum, sDen) || 1
+      nextNum = sNum / g2
+      nextDen = sDen / g2
     }
     current.push(it)
     count += q
+    num = nextNum
+    den = nextDen
   }
   if (current.length) groups.push({ items: current, product_count: count })
   return groups
