@@ -15,7 +15,8 @@ const toast = useToastStore()
 // Seller portal — order list (Wireframe: Seller View). Confined to /seller/* by
 // global middleware; the backend returns only seller-safe fields (no internal
 // status, no production detail).
-definePageMeta({ layout: 'seller' })
+// wide: bảng 10 cột không nhét vừa khung 5xl mặc định của layout seller.
+definePageMeta({ layout: 'seller', wide: true })
 
 const filters = reactive({ status: '', search: '', page: 1, page_size: 20 })
 
@@ -29,9 +30,23 @@ const { data, meta, loading, error, reload } = useApiResource<SellerOrder[]>(() 
 )
 const orders = computed(() => data.value ?? [])
 
-function skuSummary(o: SellerOrder): string {
-  return (o.skus ?? []).map((s) => (s.quantity > 1 ? `${s.sku_code} ×${s.quantity}` : s.sku_code)).join(' · ')
+// STT là số thứ tự DÒNG, chạy liên tục qua các trang. Không dùng "STT trong ngày"
+// của màn nội bộ: bộ đếm đó chung cho mọi seller, đưa ra đây thì seller thấy số
+// nhảy cóc và suy ra được lượng đơn của cả xưởng. Lấy trang từ meta (trang của
+// dữ liệu đang hiện), không từ filters — filters đổi trước khi dữ liệu mới về.
+function rowNumber(idx: number): number {
+  const page = meta.value?.page ?? filters.page
+  const size = meta.value?.page_size ?? filters.page_size
+  return (page - 1) * size + idx + 1
 }
+
+// Số lượng = tổng số món trong đơn (cộng quantity), không phải số dòng SKU.
+function totalQuantity(o: SellerOrder): number {
+  return (o.skus ?? []).reduce((sum, s) => sum + s.quantity, 0)
+}
+
+// Đơn nhiều SKU chỉ in vài dòng đầu cho bảng khỏi cao; phần còn lại nằm ở chi tiết.
+const SKU_PREVIEW = 3
 
 const SELLER_STATUS_OPTIONS = ['PRODUCTION', 'PACKED', 'HANDED_OFF', 'SHIPPED', 'DELIVERED'] as const
 
@@ -144,24 +159,29 @@ async function submitCancel(reason: string) {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
-                <th class="table-th">Mã đơn</th>
-                <th class="table-th">Cửa hàng</th>
-                <th class="table-th">Số sản phẩm</th>
+                <th class="table-th w-12 text-right">STT</th>
+                <th class="table-th">Store Order</th>
+                <th class="table-th">Account</th>
+                <th class="table-th">Shop name</th>
+                <th class="table-th text-right">Số lượng</th>
+                <th class="table-th">Ngày tạo đơn</th>
+                <th class="table-th">SKU</th>
                 <th class="table-th">Trạng thái</th>
-                <th class="table-th">Ngày tạo</th>
+                <th class="table-th">Tracking</th>
                 <th class="table-th"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
               <tr
-                v-for="o in orders"
+                v-for="(o, idx) in orders"
                 :key="o.id"
                 v-bind="rowLinkAttrs(`/seller/${o.id}`)"
                 class="hover:bg-muted"
                 :class="{ 'bg-rose-50/60 dark:bg-rose-500/10': o.store_order_dup }"
               >
+                <td class="table-td text-right tabular-nums text-muted-foreground">{{ rowNumber(idx) }}</td>
                 <td class="table-td">
-                  <p class="flex items-center gap-1.5 font-medium" :class="o.store_order_dup ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'">
+                  <p class="flex items-center gap-1.5 whitespace-nowrap font-medium" :class="o.store_order_dup ? 'text-rose-700 dark:text-rose-300' : 'text-foreground'">
                     {{ o.store_order_id }}
                     <span
                       v-if="o.store_order_dup"
@@ -171,19 +191,25 @@ async function submitCancel(reason: string) {
                       <UiIcon name="alert" :size="10" /> Trùng
                     </span>
                   </p>
+                  <!-- Mã nội bộ giữ lại dạng chữ nhỏ: đây là mã seller đọc cho vận
+                       hành khi cần tra một đơn. -->
                   <p class="text-xs text-muted-foreground">{{ o.internal_code }}</p>
-                  <!-- SKU đi cạnh mã đơn: seller phân biệt đơn bằng sản phẩm, còn
-                       các mã đơn cùng một shop đọc gần như giống nhau. -->
-                  <p
-                    v-if="o.skus?.length"
-                    class="mt-0.5 max-w-xs truncate font-mono text-xs text-foreground"
-                    :title="skuSummary(o)"
-                  >
-                    {{ skuSummary(o) }}
-                  </p>
                 </td>
+                <td class="table-td text-foreground">{{ o.account || '—' }}</td>
                 <td class="table-td text-foreground">{{ o.store_name || '—' }}</td>
-                <td class="table-td text-foreground">{{ o.item_count }}</td>
+                <td class="table-td text-right tabular-nums text-foreground">{{ totalQuantity(o) }}</td>
+                <td class="table-td whitespace-nowrap text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
+                <td class="table-td">
+                  <template v-if="o.skus?.length">
+                    <p v-for="s in o.skus.slice(0, SKU_PREVIEW)" :key="s.sku_code" class="whitespace-nowrap font-mono text-xs text-foreground">
+                      {{ s.sku_code }}<span v-if="s.quantity > 1" class="text-muted-foreground"> ×{{ s.quantity }}</span>
+                    </p>
+                    <p v-if="o.skus.length > SKU_PREVIEW" class="text-xs text-muted-foreground">
+                      +{{ o.skus.length - SKU_PREVIEW }} SKU khác
+                    </p>
+                  </template>
+                  <span v-else class="text-muted-foreground">—</span>
+                </td>
                 <td class="table-td">
                   <div class="flex flex-wrap items-center gap-1.5">
                     <UiStatusBadge :kind="sellerDisplayBadge(o).kind" :value="sellerDisplayBadge(o).value" />
@@ -211,13 +237,11 @@ async function submitCancel(reason: string) {
                       Từ chối huỷ
                     </span>
                   </div>
-                  <!-- Mã vận đơn hiện ngay ở danh sách: trước đây chỉ có ở màn chi
-                       tiết, nên seller nhìn danh sách tưởng đơn chưa có tracking. -->
-                  <p v-if="o.tracking_number" class="mt-1 font-mono text-xs text-foreground" title="Mã vận đơn">
-                    {{ o.tracking_number }}
-                  </p>
                 </td>
-                <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
+                <td class="table-td whitespace-nowrap">
+                  <span v-if="o.tracking_number" class="font-mono text-xs text-foreground">{{ o.tracking_number }}</span>
+                  <span v-else class="text-muted-foreground">—</span>
+                </td>
                 <td class="table-td">
                   <!-- Chưa sản xuất: huỷ thẳng. Đã sản xuất: chỉ xin được, và nút
                        nói rõ là vẫn tính tiền để không ai bấm nhầm. -->

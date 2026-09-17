@@ -931,6 +931,8 @@ export interface SellerOrder {
   store_order_id: string
   store_order_dup?: boolean
   store_name?: string
+  // Cột "Account" seller tự điền trong file tải đơn lên.
+  account?: string
   status: SellerStatus
   review_status: ReviewStatus
   cancellation_status: CancellationStatus

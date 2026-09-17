@@ -43,7 +43,9 @@ function isActive(to: string) {
       </div>
     </header>
     <main class="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
-      <div class="mx-auto w-full max-w-5xl">
+      <!-- Trang có bảng nhiều cột (definePageMeta wide: true) được nới khung;
+           các trang còn lại giữ 5xl cho dễ đọc. -->
+      <div class="mx-auto w-full" :class="route.meta.wide ? 'max-w-screen-2xl' : 'max-w-5xl'">
         <slot />
       </div>
     </main>
