@@ -8,6 +8,7 @@ import type {
   MaterialDeleteResult,
   SkuDeleteResult,
 } from '~/types'
+import { PAGE_SIZE_ALL } from '~/utils/pagination'
 
 // ---- Catalog input payloads ------------------------------------------------
 export interface MaterialInput {
@@ -53,9 +54,10 @@ export interface SkuInput {
 
 // ---- Sellers ---------------------------------------------------------------
 export const sellersApi = {
-  // page_size=200 → fetch the whole list so the Users dropdown & seller tab
-  // don't silently drop sellers past the default page.
-  list: () => apiGet<Seller[]>('/api/sellers', { page_size: 200 }),
+  // PAGE_SIZE_ALL → fetch the whole list so the Users dropdown & seller tab
+  // don't silently drop sellers. Not 200: the API clamps page_size to 200, so
+  // row 201+ would vanish without any error.
+  list: () => apiGet<Seller[]>('/api/sellers', { page_size: PAGE_SIZE_ALL }),
   get: (id: number | string) => apiGet<Seller>(`/api/sellers/${id}`),
   create: (body: Partial<Seller>) => apiPost<Seller>('/api/sellers', body),
   update: (id: number | string, body: Partial<Seller>) => apiPut<Seller>(`/api/sellers/${id}`, body),
@@ -73,8 +75,8 @@ export const storesApi = {
 
 // ---- Materials -------------------------------------------------------------
 export const materialsApi = {
-  // page_size=200 → the catalog is small; fetch it all so client-side search works.
-  list: () => apiGet<Material[]>('/api/materials', { page_size: 200 }),
+  // PAGE_SIZE_ALL → fetch it all so client-side search works.
+  list: () => apiGet<Material[]>('/api/materials', { page_size: PAGE_SIZE_ALL }),
   get: (id: number | string) => apiGet<Material>(`/api/materials/${id}`),
   create: (body: MaterialInput) => apiPost<Material>('/api/materials', body),
   update: (id: number | string, body: Partial<MaterialInput>) => apiPut<Material>(`/api/materials/${id}`, body),
@@ -98,7 +100,11 @@ export const materialsApi = {
 
 // ---- SKUs ------------------------------------------------------------------
 export const skusApi = {
-  list: () => apiGet<Sku[]>('/api/skus', { page_size: 200 }),
+  // PAGE_SIZE_ALL, not 200: the SKUs and SKU → Material tabs search and page
+  // client-side over exactly this list. 200 is also the API's clamp, so once the
+  // catalog passed 200 SKUs, SKU #201+ disappeared from the table and the search
+  // box ("Chưa có SKU nào") while still existing in the DB.
+  list: () => apiGet<Sku[]>('/api/skus', { page_size: PAGE_SIZE_ALL }),
   get: (id: number | string) => apiGet<Sku>(`/api/skus/${id}`),
   create: (body: SkuInput) => apiPost<Sku>('/api/skus', body),
   update: (id: number | string, body: Partial<SkuInput>) => apiPut<Sku>(`/api/skus/${id}`, body),

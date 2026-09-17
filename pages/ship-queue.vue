@@ -33,6 +33,19 @@ const { data, meta, loading, error, reload } = useApiResource(() =>
 )
 const orders = computed<QcResultOrder[]>(() => data.value?.orders ?? [])
 
+// "QC xong lúc" = lần QC muộn nhất trong các sản phẩm của đơn: màn này chỉ liệt kê
+// đơn đã đạt hết, nên lần kiểm cuối cùng chính là lúc đơn QC xong. Bản cũ hiện
+// created_at của ĐƠN (giờ import) dưới nhãn này, nên xưởng thấy "QC 14/9" cho đơn
+// QC hôm nay. Giờ này do máy chủ ghi, không phụ thuộc đồng hồ máy ở xưởng.
+function qcDoneAt(o: QcResultOrder): string | undefined {
+  let latest: string | undefined
+  for (const it of o.items ?? []) {
+    const at = it.last_checked_at
+    if (at && (!latest || new Date(at) > new Date(latest))) latest = at
+  }
+  return latest
+}
+
 function applyFilters() {
   filters.page = 1
   reload()
@@ -258,7 +271,7 @@ function submitScan() {
                   <span class="text-muted-foreground">/{{ o.total_items }} đã QC</span>
                 </td>
                 <td class="table-td hidden text-xs text-muted-foreground sm:table-cell">
-                  {{ formatDateTime(o.created_at) }}
+                  {{ formatDateTime(qcDoneAt(o)) }}
                 </td>
               </tr>
             </tbody>
