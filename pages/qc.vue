@@ -345,6 +345,15 @@ onMounted(focusScan)
               {{ productName ? ' — ' : '' }}{{ result.material_description }}
             </span>
           </p>
+          <!-- Cả ba nguồn mô tả đều trống thì nói ra, thay vì im lặng như thể màn
+               hình không có chỗ hiện mô tả. Mô tả là dữ liệu Master data, không
+               phải thứ trạm QC tự sinh ra. -->
+          <p
+            v-if="!result.material_description && !result.sku_description && !result.qc_description"
+            class="mt-1 text-xs text-muted-foreground"
+          >
+            Chưa có mô tả chi tiết — nhập ở Master data (mô tả SKU hoặc mô tả Loại VL).
+          </p>
 
           <!-- Thông tin cấu trúc để QC đối chiếu với hàng thực tế.
                Các trường quan trọng luôn hiển thị ngay, bỏ qua trường trống. -->

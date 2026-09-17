@@ -1,4 +1,5 @@
-import type { Batch, InternalStatus } from '~/types'
+import type { Batch, BatchLinkKind, InternalStatus } from '~/types'
+import { INTERNAL_STATUS, type BadgeMeta } from '~/utils/enums'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -116,4 +117,64 @@ export function planBatchSplitByQuota<T extends { quantity?: number }>(
   }
   if (current.length) groups.push({ items: current, product_count: count })
   return groups
+}
+
+// ---- Số lượng & NVL của một batch (payload list) ----------------------------
+
+/**
+ * Tổng SỐ SẢN PHẨM của batch = cộng SL từng dòng (một item là một dòng, SL có thể
+ * >1). Batch mẹ không giữ item (hàng nằm ở các con) nên không tính được từ payload
+ * list → null.
+ */
+export function batchProductTotal(b: Batch): number | null {
+  const items = b.items ?? []
+  if (!items.length) return null
+  return items.reduce((sum, i) => sum + (i.order_item?.quantity ?? 1), 0)
+}
+
+/**
+ * Số ĐƠN VỊ NVL cần cho batch theo định mức (products_per_unit của material):
+ * batch thường = ceil(SP / định mức); batch mẹ = số batch con (mỗi con tối đa một
+ * đơn vị). NVL chưa khai định mức thì chịu → null.
+ */
+export function batchMaterialUnits(b: Batch): number | null {
+  if (b.is_parent) return b.child_count ?? b.child_batches?.length ?? null
+  const quota = b.material?.products_per_unit
+  const sp = batchProductTotal(b)
+  if (!quota || !sp) return null
+  return Math.ceil(sp / quota)
+}
+
+export function batchMaterialLabel(b: Batch): string {
+  return b.material_name || b.material?.name || b.material_code || ''
+}
+
+// ---- Bộ file sản xuất (link in + link cắt) ----------------------------------
+
+/**
+ * Link sản xuất batch còn thiếu. Batch phải có đủ CẢ link in lẫn link cắt mới vào
+ * sản xuất được — backend chặn chuyển sang Đã in/Đã cắt khi thiếu, và màn chi tiết
+ * batch dùng đúng luật này. Batch mẹ không giữ link nên không áp dụng.
+ */
+export function missingBatchLinks(b: Pick<Batch, 'links' | 'is_parent'>): BatchLinkKind[] {
+  if (b.is_parent) return []
+  return (['PRINT', 'CUT'] as const).filter((kind) => !b.links?.some((l) => l.kind === kind && l.url))
+}
+
+export const PRODUCTION_FILES_READY: BadgeMeta = {
+  label: 'Đã có file SX',
+  classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+}
+
+/**
+ * Nhãn trạng thái để HIỂN THỊ cho batch. Chờ xử lý tách làm hai: chưa ai đụng tới,
+ * và "Đã có file SX" — đã đủ link in + cắt, chỉ chờ xưởng làm. Đây là trạng thái
+ * SUY RA từ status + link, không lưu database: status thật vẫn là PENDING, nên lọc
+ * và đếm theo status ở backend vẫn gộp chung hai loại vào Chờ xử lý.
+ */
+export function batchStatusBadge(b: Batch): BadgeMeta {
+  if (b.status === 'PENDING' && !b.is_parent && !b.closed_at && missingBatchLinks(b).length === 0) {
+    return PRODUCTION_FILES_READY
+  }
+  return INTERNAL_STATUS[b.status] ?? { label: b.status, classes: 'bg-muted text-muted-foreground' }
 }

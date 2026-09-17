@@ -6,7 +6,7 @@ import { useApiResource } from '~/composables/useApiResource'
 import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
-import { isBatchOverdue, overdueDays } from '~/utils/batch'
+import { isBatchOverdue, overdueDays, missingBatchLinks } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 import { refreshActionCounts } from '~/composables/useActionCounts'
@@ -232,10 +232,9 @@ const linkRows = computed<{ kind: BatchLinkKind; label: string; link: BatchLink 
 // without them, and the backend refuses the transition. Mirrored here so the buttons
 // explain themselves instead of failing on click. Parent batches hold no items and
 // carry no links, so the rule doesn't apply to them (backend skips them too).
-const missingProductionLinks = computed(() => {
-  if (batch.value?.is_parent) return []
-  return linkRows.value.filter((r) => !r.link).map((r) => r.label.toLowerCase())
-})
+const missingProductionLinks = computed(() =>
+  batch.value ? missingBatchLinks(batch.value).map((kind) => LINK_LABELS[kind].toLowerCase()) : [],
+)
 function statusNeedsLinks(s: InternalStatus) {
   return s === 'PRINTED' || s === 'CUT'
 }

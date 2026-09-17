@@ -5,7 +5,15 @@ import type { Batch, Material } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY, PRIORITY_OPTIONS } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
-import { isBatchOverdue, overdueDays } from '~/utils/batch'
+import {
+  isBatchOverdue,
+  overdueDays,
+  batchProductTotal,
+  batchMaterialUnits,
+  batchMaterialLabel,
+  batchStatusBadge,
+  missingBatchLinks,
+} from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
@@ -80,26 +88,6 @@ function skuSummary(b: Batch): string {
   return codes.slice(0, 3).join(', ') + (codes.length > 3 ? '…' : '')
 }
 
-// Tổng SỐ SẢN PHẨM của batch = cộng SL từng dòng (một item là một dòng, SL có
-// thể >1) — khác cột Items đếm số dòng/phần. Batch mẹ không giữ item (hàng nằm
-// ở các con) nên không tính được từ payload list → trả null, hiện "—".
-function productCount(b: Batch): number | null {
-  const items = b.items ?? []
-  if (!items.length) return null
-  return items.reduce((sum, i) => sum + (i.order_item?.quantity ?? 1), 0)
-}
-
-// Số ĐƠN VỊ NVL cần cho batch theo định mức (products_per_unit của material):
-// batch thường = ceil(SP / định mức); batch mẹ = số batch con (mỗi con tối đa
-// một đơn vị). NVL chưa khai định mức thì chịu → "—".
-function materialUnits(b: Batch): number | null {
-  if (b.is_parent) return b.child_count ?? b.child_batches?.length ?? null
-  const quota = b.material?.products_per_unit
-  const sp = productCount(b)
-  if (!quota || !sp) return null
-  return Math.ceil(sp / quota)
-}
-
 const rows = computed(() => {
   let list = data.value ?? []
   if (filters.batch_id) list = list.filter((b) => b.code.includes(filters.batch_id))
@@ -138,14 +126,14 @@ function exportBatches() {
   }
   exportCsv(`batches-${new Date().toISOString().slice(0, 10)}`, list, [
     { label: 'Batch', value: 'code' },
-    { label: 'Material', value: (b) => b.material_name || b.material?.name || b.material_code || '' },
-    { label: 'Số lượng SP', value: (b) => productCount(b) ?? '' },
-    { label: 'NVL cần (đv)', value: (b) => materialUnits(b) ?? '' },
+    { label: 'Material', value: (b) => batchMaterialLabel(b) },
+    { label: 'Số lượng SP', value: (b) => batchProductTotal(b) ?? '' },
+    { label: 'NVL cần (đv)', value: (b) => batchMaterialUnits(b) ?? '' },
     { label: 'Đã huỷ', value: (b) => b.scrapped_count ?? 0 },
     { label: 'Tạo lúc', value: (b) => (b.created_at ? formatDateTime(b.created_at) : '') },
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
     { label: 'SKU', value: (b) => skuSummary(b) },
-    { label: 'Status', value: (b) => INTERNAL_STATUS[b.status]?.label ?? b.status },
+    { label: 'Status', value: (b) => batchStatusBadge(b).label },
     { label: 'Priority', value: (b) => PRIORITY[b.priority || 'NORMAL']?.label ?? b.priority ?? '' },
     { label: 'Hạn', value: (b) => (b.due_date ? formatDate(b.due_date) : '') },
     { label: 'Trễ (ngày)', value: (b) => (isBatchOverdue(b) ? overdueDays(b) : '') },
@@ -333,9 +321,9 @@ async function autoCreateBatches() {
                     </span>
                   </div>
                 </td>
-                <td class="table-td">{{ b.material_name || b.material?.name || b.material_code }}</td>
+                <td class="table-td">{{ batchMaterialLabel(b) }}</td>
                 <td class="table-td font-medium text-foreground">
-                  {{ productCount(b) ?? '—' }}
+                  {{ batchProductTotal(b) ?? '—' }}
                   <!-- Batch có thể còn 0 sản phẩm mà vẫn tồn tại: hàng nó làm ra đã
                        bị huỷ ở QC. Nói ra để không ai tưởng batch lỗi/trống. -->
                   <span
@@ -348,15 +336,27 @@ async function autoCreateBatches() {
                 </td>
                 <td class="table-td">
                   <span
-                    v-if="materialUnits(b) != null"
+                    v-if="batchMaterialUnits(b) != null"
                     :title="b.is_parent
                       ? 'Batch mẹ — mỗi batch con dùng tối đa một đơn vị NVL'
                       : `Định mức ${b.material?.products_per_unit} sp/đơn vị`"
-                  >{{ materialUnits(b) }} đv</span>
+                  >{{ batchMaterialUnits(b) }} đv</span>
                   <span v-else class="text-muted-foreground" title="NVL chưa khai định mức sp/đơn vị trong Master Data">—</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
-                <td class="table-td"><UiStatusBadge kind="internal" :value="b.status" /></td>
+                <td class="table-td">
+                  <span class="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium" :class="batchStatusBadge(b).classes">
+                    {{ batchStatusBadge(b).label }}
+                  </span>
+                  <!-- Có một link rồi mà thiếu link kia: vẫn là Chờ xử lý, nhưng nói
+                       rõ còn thiếu gì để designer biết mà nộp nốt. -->
+                  <p
+                    v-if="b.status === 'PENDING' && !b.closed_at && missingBatchLinks(b).length === 1"
+                    class="mt-0.5 whitespace-nowrap text-[11px] text-amber-600 dark:text-amber-400"
+                  >
+                    thiếu link {{ missingBatchLinks(b)[0] === 'PRINT' ? 'in' : 'cắt' }}
+                  </p>
+                </td>
                 <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" /></td>
                 <td class="table-td hidden md:table-cell">
                   <span v-if="!b.due_date" class="text-muted-foreground">—</span>

@@ -3,6 +3,7 @@ import { batchesApi } from '~/services/api'
 import type { Batch, InternalStatus } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER } from '~/utils/enums'
 import { formatDate } from '~/utils/format'
+import { batchMaterialLabel, batchMaterialUnits, batchStatusBadge, PRODUCTION_FILES_READY } from '~/utils/batch'
 import { useApiResource } from '~/composables/useApiResource'
 
 const { data, loading, error, reload } = useApiResource<Batch[]>(() =>
@@ -62,9 +63,25 @@ const columns = computed(() => {
                 <span v-if="b.created_at" class="min-w-0 flex-1 truncate text-xs text-muted-foreground">{{ formatDate(b.created_at) }}</span>
                 <UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" />
               </div>
-              <p class="mt-1 text-xs text-muted-foreground">
-                {{ b.material_name || b.material_code }} · {{ b.item_count ?? b.items?.length ?? 0 }} items
-              </p>
+              <!-- Vật liệu in đậm, to hơn phần còn lại: nhân viên nhìn thẻ để đi lấy
+                   NVL, nên đây là dòng phải đọc được đầu tiên. Số đơn vị NVL tính
+                   theo định mức — NVL chưa khai định mức thì không hiện. -->
+              <p class="mt-1.5 text-sm font-semibold text-foreground">{{ batchMaterialLabel(b) || '—' }}</p>
+              <div class="mt-0.5 flex flex-wrap items-center justify-between gap-1.5">
+                <p class="text-xs text-muted-foreground">
+                  <template v-if="batchMaterialUnits(b) != null">
+                    <span class="font-medium text-foreground">{{ batchMaterialUnits(b) }} đv NVL</span> ·
+                  </template>
+                  {{ b.item_count ?? b.items?.length ?? 0 }} items
+                </p>
+                <span
+                  v-if="batchStatusBadge(b) === PRODUCTION_FILES_READY"
+                  class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
+                  :class="PRODUCTION_FILES_READY.classes"
+                >
+                  {{ PRODUCTION_FILES_READY.label }}
+                </span>
+              </div>
             </NuxtLink>
           </div>
           <div v-else class="flex flex-1 items-center justify-center text-xs text-muted-foreground">Trống</div>
