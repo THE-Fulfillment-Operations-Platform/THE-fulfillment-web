@@ -29,6 +29,10 @@ const { data, meta, loading, error, reload } = useApiResource<SellerOrder[]>(() 
 )
 const orders = computed(() => data.value ?? [])
 
+function skuSummary(o: SellerOrder): string {
+  return (o.skus ?? []).map((s) => (s.quantity > 1 ? `${s.sku_code} ×${s.quantity}` : s.sku_code)).join(' · ')
+}
+
 const SELLER_STATUS_OPTIONS = ['PRODUCTION', 'PACKED', 'HANDED_OFF', 'SHIPPED', 'DELIVERED'] as const
 
 // "Đã huỷ" không phải một khâu sản xuất mà là trạng thái duyệt — backend biết
@@ -168,6 +172,15 @@ async function submitCancel(reason: string) {
                     </span>
                   </p>
                   <p class="text-xs text-muted-foreground">{{ o.internal_code }}</p>
+                  <!-- SKU đi cạnh mã đơn: seller phân biệt đơn bằng sản phẩm, còn
+                       các mã đơn cùng một shop đọc gần như giống nhau. -->
+                  <p
+                    v-if="o.skus?.length"
+                    class="mt-0.5 max-w-xs truncate font-mono text-xs text-foreground"
+                    :title="skuSummary(o)"
+                  >
+                    {{ skuSummary(o) }}
+                  </p>
                 </td>
                 <td class="table-td text-foreground">{{ o.store_name || '—' }}</td>
                 <td class="table-td text-foreground">{{ o.item_count }}</td>
@@ -198,6 +211,11 @@ async function submitCancel(reason: string) {
                       Từ chối huỷ
                     </span>
                   </div>
+                  <!-- Mã vận đơn hiện ngay ở danh sách: trước đây chỉ có ở màn chi
+                       tiết, nên seller nhìn danh sách tưởng đơn chưa có tracking. -->
+                  <p v-if="o.tracking_number" class="mt-1 font-mono text-xs text-foreground" title="Mã vận đơn">
+                    {{ o.tracking_number }}
+                  </p>
                 </td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.created_at) }}</td>
                 <td class="table-td">

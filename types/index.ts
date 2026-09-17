@@ -954,6 +954,9 @@ export interface SellerOrder {
   cancellation_resolved_at?: string | null
   item_count: number
   created_at: string
+  // Tóm tắt "đơn này gồm gì" để in cạnh mã đơn ở danh sách: mỗi SKU một dòng,
+  // cộng dồn số lượng, bỏ sản phẩm đã huỷ.
+  skus?: { sku_code: string; quantity: number }[]
   items?: SellerOrderItem[]
   // Vận chuyển: seller up đơn thì được biết kiện hàng đang ở đâu. Trạng thái chỉ
   // xuất hiện khi thực sự có kiện — backend bỏ hẳn NONE để "chưa có mã vận đơn"
