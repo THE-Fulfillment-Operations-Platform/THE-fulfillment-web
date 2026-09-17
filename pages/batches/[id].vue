@@ -529,13 +529,13 @@ async function printLabels() {
     // "không tìm thấy item". Khung viền + chữ "TEM LÔ" là để trong chồng tem
     // vừa in ra, tờ này không bao giờ bị nhặt nhầm thành tem sản phẩm.
     // Cỡ mã batch theo số ký tự. Mã thường là "#101041" (7); batch con thêm hậu
-    // tố thành "#101041-10" (10). Ở cỡ lớn nhất, mã 10 ký tự tràn chiều ngang
-    // giấy A4 và bị đẩy xuống dòng — nên mã càng dài thì hạ cỡ, thay vì để nó vỡ.
+    // tố thành "#101041-10" (10). Ở cỡ lớn nhất, mã 10 ký tự tràn bề ngang 70mm
+    // của tem và bị đẩy xuống dòng — nên mã càng dài thì hạ cỡ, thay vì để nó vỡ.
     const batchCodeSize = (len: number): string => {
-      if (len <= 8) return '21vmin'
-      if (len <= 10) return '16.5vmin'
-      if (len <= 12) return '14vmin'
-      return '11vmin'
+      if (len <= 8) return '10.5mm'
+      if (len <= 10) return '8.25mm'
+      if (len <= 12) return '7mm'
+      return '5.5mm'
     }
     const materialName = batch.value.material_name || batch.value.material?.name || batch.value.material_code || ''
     const productCount = labelProductCount.value
@@ -556,16 +556,20 @@ async function printLabels() {
     const origin = window.location.origin
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(code)} labels</title>
       <style>
-        /* Tem tự co giãn PHỦ KÍN tờ giấy được chọn trong hộp thoại in. Không khoá
-           @page size cứng nữa: bản cũ ghim trang 70x50mm nên hễ hộp thoại in để
-           khổ khác (A4…) là tem 65x45mm nằm lọt một góc, chỉnh mãi không hết.
-           Mọi kích thước dùng vmin (tỷ lệ theo cạnh ngắn của giấy) nên chữ/QR giữ
-           đúng tỷ lệ thiết kế 70x50mm gốc trên bất kỳ khổ giấy nào — decal 70x50
-           tràn kín decal, A4 phóng to kín A4. Khi in vẫn cần: margins = None và
-           tắt headers/footers trong hộp thoại in.
+        /* Tem KHOÁ CỨNG 70x50mm — khổ decal khách đã chốt (17/09/2026).
+           Lịch sử: 13/08 từng bỏ khoá để tem co giãn phủ kín mọi khổ giấy (đơn vị
+           vmin), vì hồi đó chưa biết khổ decal thật. Hệ quả: hộp thoại in để A4 là
+           tem phóng to kín A4, còn driver tự thu nhỏ trang thì tem teo lại — cỡ tem
+           in ra tuỳ vào máy nào đang cài gì, không ai kiểm soát được.
+           Giờ mọi kích thước bằng mm (quy đổi 1:1 từ thiết kế vmin cũ ở khổ 70x50:
+           1vmin = 0.5mm), nên in ở Tỉ lệ 100% thì máy nào tem cũng ra đúng 70x50mm,
+           in lên A4 là một tem 70x50 thật nằm giữa tờ. Tem ra sai cỡ → lỗi nằm ở cài
+           đặt máy in (khổ giấy driver, DPI, Scale), đo bằng thước là biết.
+           Khi in vẫn cần: khổ giấy 70x50 trong driver, Lề = Không có, Tỉ lệ 100%,
+           tắt Đầu trang và chân trang.
            Bố cục: QR bên trái + mã nội bộ/thông tin phụ bên cạnh, các trường
            Seller/Order/Người nhận chạy full chiều ngang bên dưới. */
-        @page { margin: 0; }
+        @page { size: 70mm 50mm; margin: 0; }
         html, body { margin: 0; padding: 0; }
         /* Font tem — KHÔNG được để số 0 có gạch chéo, CS đọc nhầm mã đơn.
            Cửa sổ in là about:blank mở bằng window.open nên KHÔNG kế thừa CSS của
@@ -590,32 +594,32 @@ async function printLabels() {
         body { font-family: 'Inter', "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
           color: #000; -webkit-font-smoothing: antialiased;
           font-variant-numeric: normal; font-feature-settings: "zero" 0; }
-        .label { display: block; box-sizing: border-box; width: 100vw; height: 100vh;
-          padding: 4vmin; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
+        .label { display: block; box-sizing: border-box; width: 70mm; height: 50mm;
+          padding: 2mm; overflow: hidden; page-break-inside: avoid; page-break-after: always; }
         .label:last-child { page-break-after: auto; }
-        .top { display: flex; gap: 5vmin; align-items: center; }
-        .qr { width: 36vmin; height: 36vmin; flex: 0 0 auto; }
+        .top { display: flex; gap: 2.5mm; align-items: center; }
+        .qr { width: 18mm; height: 18mm; flex: 0 0 auto; }
         .meta { min-width: 0; flex: 1; }
         /* Phân cấp: mã nội bộ to đậm nhất, thông tin phụ nhẹ hơn. Bản cũ bold
            tất cả mọi dòng nên mắt không bám được vào đâu.
            Chỉ dùng 3 nấc 400/600/700 vì Segoe UI đúng có ngần ấy nét thật —
            đặt 500 hay 800 là trình duyệt tự kéo béo chữ, in nhiệt ra nhoè. */
-        .code { font-size: 10.5vmin; font-weight: 700; letter-spacing: -0.02em;
+        .code { font-size: 5.25mm; font-weight: 700; letter-spacing: -0.02em;
           line-height: 1.05; word-break: break-all; }
-        .sub { font-size: 5.2vmin; font-weight: 400; line-height: 1.25;
-          margin-top: 1.6vmin; overflow-wrap: anywhere; }
+        .sub { font-size: 2.6mm; font-weight: 400; line-height: 1.25;
+          margin-top: 0.8mm; overflow-wrap: anywhere; }
         /* Các trường chạy hết chiều ngang tem nên giá trị dài vẫn đọc được;
            xuống dòng thay vì cắt cụt. Nhãn thành cột trái nhỏ, giá trị to đậm —
            mắt nhảy thẳng vào tên/mã mà không phải đọc lại chữ "Seller:".
            Dùng nét liền đen thay dashed xám: máy in nhiệt chỉ có đen/trắng nên
            mọi sắc xám đều bị rỗ, khó nhìn. */
-        .info { margin-top: 3vmin; border-top: 0.5vmin solid #000; padding-top: 2.4vmin; }
-        .row { display: flex; gap: 2vmin; align-items: baseline; font-size: 6.6vmin;
-          font-weight: 600; line-height: 1.2; margin-top: 1.8vmin; }
-        .key { flex: 0 0 26vmin; font-size: 4.4vmin; font-weight: 400;
+        .info { margin-top: 1.5mm; border-top: 0.25mm solid #000; padding-top: 1.2mm; }
+        .row { display: flex; gap: 1mm; align-items: baseline; font-size: 3.3mm;
+          font-weight: 600; line-height: 1.2; margin-top: 0.9mm; }
+        .key { flex: 0 0 13mm; font-size: 2.2mm; font-weight: 400;
           letter-spacing: 0.06em; text-transform: uppercase; }
         .val { min-width: 0; overflow-wrap: anywhere; }
-        .desc { font-size: 5.2vmin; font-weight: 400; margin-top: 1.8vmin;
+        .desc { font-size: 2.6mm; font-weight: 400; margin-top: 0.9mm;
           overflow-wrap: anywhere; }
 
         /* ---- Tem lô (tờ đầu) --------------------------------------------
@@ -625,30 +629,30 @@ async function printLabels() {
            thế bất kỳ khi tem nằm trên khay.
            Không dùng xám ở đâu cả — máy in nhiệt chỉ có đen/trắng, mọi sắc xám
            đều rỗ. Phân cấp làm bằng cỡ chữ và nét, không bằng độ đậm màu. */
-        .batch-label { padding: 3vmin; }
+        .batch-label { padding: 1.5mm; }
         .batch-label .frame { box-sizing: border-box; height: 100%; width: 100%;
-          border: 1.1vmin solid #000; border-radius: 2vmin; padding: 3.4vmin;
+          border: 0.55mm solid #000; border-radius: 1mm; padding: 1.7mm;
           display: flex; flex-direction: column; align-items: center;
           justify-content: center; text-align: center; overflow: hidden; }
         /* Nhãn loại tem: nhỏ, giãn chữ — đọc lướt là biết ngay tờ này không
            phải tem sản phẩm, mà không cạnh tranh với mã batch bên dưới. */
-        .kind { font-size: 5.4vmin; font-weight: 400; letter-spacing: 0.22em;
+        .kind { font-size: 2.7mm; font-weight: 400; letter-spacing: 0.22em;
           text-transform: uppercase; line-height: 1; }
         /* Mã batch: thứ to nhất trên tem, và KHÔNG BAO GIỜ được ngắt dòng —
            "#101041-10" rớt thành "#101041" / "-10" đọc ra hai thứ khác nhau, đúng
            kiểu nhầm lẫn mà tem lô sinh ra để dập tắt. Vì thế nowrap, và cỡ chữ do
-           JS chọn theo số ký tự (xem batchCodeSize): CSS không đo được chuỗi, mà
-           tem lại co giãn theo khổ giấy nên không có một cỡ nào vừa cho mọi mã. */
+           JS chọn theo số ký tự (xem batchCodeSize): CSS không đo được chuỗi, nên
+           không có một cỡ nào vừa bề ngang 70mm cho mọi độ dài mã. */
         .bcode { font-weight: 700; letter-spacing: -0.02em; line-height: 1.02;
-          margin-top: 2.4vmin; max-width: 100%; white-space: nowrap; }
+          margin-top: 1.2mm; max-width: 100%; white-space: nowrap; }
         /* Số lượng: con số to ngang mã batch, đơn vị nhỏ hơn hẳn và đứng cùng
            dòng — mắt bắt được "3" trước, "sản phẩm" chỉ để xác nhận đơn vị. */
-        .bcount { margin-top: 2.6vmin; display: flex; align-items: baseline;
-          justify-content: center; gap: 2.2vmin; flex-wrap: wrap; }
-        .bcount .num { font-size: 18vmin; font-weight: 700; line-height: 1; }
-        .bcount .unit { font-size: 7vmin; font-weight: 400; letter-spacing: 0.04em; }
+        .bcount { margin-top: 1.3mm; display: flex; align-items: baseline;
+          justify-content: center; gap: 1.1mm; flex-wrap: wrap; }
+        .bcount .num { font-size: 9mm; font-weight: 700; line-height: 1; }
+        .bcount .unit { font-size: 3.5mm; font-weight: 400; letter-spacing: 0.04em; }
         /* Chân tem: NVL + ngày, đủ để đối chiếu mà không phải mở máy. */
-        .bfoot { margin-top: 3vmin; font-size: 5.2vmin; font-weight: 400;
+        .bfoot { margin-top: 1.5mm; font-size: 2.6mm; font-weight: 400;
           line-height: 1.3; overflow-wrap: anywhere; }
       </style></head>
       <body>${batchLabel}${labels.join('')}
