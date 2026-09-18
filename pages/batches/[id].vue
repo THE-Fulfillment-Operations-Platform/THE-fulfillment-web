@@ -5,6 +5,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useApiResource } from '~/composables/useApiResource'
 import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
+import { designDownloadFailure, type DesignDownloadFailure } from '~/utils/design-download-error'
 import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
 import { isBatchOverdue, overdueDays, missingBatchLinks } from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
@@ -197,13 +198,22 @@ async function downloadBatchAssets() {
 
 // Tải riêng file Design gốc (front/back, KHÔNG kèm mockup) — tách khỏi bundle đầy đủ.
 const downloadingDesignZip = ref(false)
+// Không file nào tải được → dialog liệt kê từng link hỏng thay cho một toast bị cắt chữ.
+const designFailure = ref<DesignDownloadFailure | null>(null)
+const designFailureOpen = ref(false)
 async function downloadBatchDesign() {
   if (!batch.value || downloadingDesignZip.value) return
   downloadingDesignZip.value = true
   try {
     await batchesApi.downloadDesignZip(batch.value.id, batch.value.code)
   } catch (e) {
-    toast.error(errorMessage(e))
+    const failure = designDownloadFailure(e)
+    if (failure) {
+      designFailure.value = failure
+      designFailureOpen.value = true
+    } else {
+      toast.error(errorMessage(e))
+    }
   } finally {
     downloadingDesignZip.value = false
   }
@@ -1073,6 +1083,12 @@ async function printLabels() {
         </button>
       </template>
     </UiModal>
+
+    <DesignDownloadErrorDialog
+      v-model="designFailureOpen"
+      :failure="designFailure"
+      :source="batch ? `Batch ${batch.code}` : undefined"
+    />
 
     <!-- Nộp bộ file sản xuất: cả link in + link cắt trong một lần, lưu nguyên tử -->
     <UiModal v-model="pairModalOpen" title="Nộp bộ file sản xuất">

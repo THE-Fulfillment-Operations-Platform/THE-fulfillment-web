@@ -5,6 +5,7 @@ import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
 import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
+import { designDownloadFailure, type DesignDownloadFailure } from '~/utils/design-download-error'
 import { isValidUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 
@@ -474,6 +475,10 @@ function toggleSelectAll() {
 // subset, or the whole matching set if nothing is ticked.
 const canDownloadZip = computed(() => zipItems.value.length > 0)
 
+// Không file nào tải được → dialog liệt kê từng link hỏng thay cho một toast bị cắt chữ.
+const designFailure = ref<DesignDownloadFailure | null>(null)
+const designFailureOpen = ref(false)
+
 async function downloadZip() {
   if (!canDownloadZip.value || downloadingZip.value) return
   downloadingZip.value = true
@@ -489,7 +494,14 @@ async function downloadZip() {
     toast.success('Đang tải file ZIP…')
     zipOpen.value = false
   } catch (e) {
-    toast.error(errorMessage(e))
+    const failure = designDownloadFailure(e)
+    if (failure) {
+      zipOpen.value = false
+      designFailure.value = failure
+      designFailureOpen.value = true
+    } else {
+      toast.error(errorMessage(e))
+    }
   } finally {
     downloadingZip.value = false
   }
@@ -961,6 +973,12 @@ async function setReady() {
     </div>
 
     <!-- Bulk ZIP download dialog -->
+    <DesignDownloadErrorDialog
+      v-model="designFailureOpen"
+      :failure="designFailure"
+      :source="filters.appliedBatch ? `Batch ${filters.appliedBatch}` : undefined"
+    />
+
     <UiModal v-model="zipOpen" title="Tải ZIP file Design gốc">
       <div class="space-y-4">
         <p class="text-sm text-muted-foreground">

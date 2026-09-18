@@ -19,6 +19,10 @@ export class ApiError extends Error {
 // — backend gửi câu tiếng Việt cụ thể cho đúng nghiệp vụ, hiện nó ra mới có ích.
 const CODES_WITH_BETTER_VI = new Set(['NETWORK', 'NO_CLIENT', 'UNAUTHORIZED', 'FORBIDDEN'])
 
+// Mã lỗi mà `details` là dữ liệu cho một UI riêng (vd. bảng từng link design
+// hỏng), không phải câu chữ: nối nó vào toast chỉ ra một mớ JSON dài.
+const CODES_WITH_STRUCTURED_DETAILS = new Set(['DESIGN_DOWNLOAD_FAILED'])
+
 // Vietnamese messages for error codes the app / backend commonly returns.
 const VI_BY_CODE: Record<string, string> = {
   NETWORK: 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.',
@@ -92,7 +96,8 @@ export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     // Consider both the backend message and its details — the specific reason
     // often lives in `details`, which we must not hide.
-    const raw = [e.message, detailText(e.details)].filter(Boolean).join(' — ').trim()
+    const details = CODES_WITH_STRUCTURED_DETAILS.has(e.code) ? '' : detailText(e.details)
+    const raw = [e.message, details].filter(Boolean).join(' — ').trim()
     for (const [re, vi] of VI_BY_PHRASE) {
       if (re.test(raw)) return vi
     }
