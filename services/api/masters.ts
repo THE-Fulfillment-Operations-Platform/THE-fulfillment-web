@@ -73,6 +73,67 @@ export const storesApi = {
   remove: (id: number | string) => apiDelete<unknown>(`/api/stores/${id}`),
 }
 
+// ---- Định mức theo cặp SKU–NVL (OWNER) --------------------------------------
+// Định mức "SP/tấm" của từng cặp là căn cứ chia batch; cặp trống rơi về định mức
+// mặc định của NVL, NVL cũng trống thì không giới hạn (cả pool dồn một batch).
+// Luồng: xuất file mọi cặp → điền cột Định mức → import lại.
+export type PairQuotaAction = 'UPDATE' | 'NOCHANGE'
+
+export interface PairQuotaFileRow {
+  row_number?: number
+  sku: string
+  material: string
+  material_code?: string
+  quota: number | null
+}
+
+export interface PairQuotaItem {
+  sku_code: string
+  material_code: string
+  material_name: string
+  mapping_id: number
+  current_quota: number | null // định mức riêng đang có của cặp (null = chưa có)
+  material_quota: number | null // định mức mặc định của NVL — áp dụng khi cặp chưa có
+  quota: number
+  action: PairQuotaAction
+  row_numbers: number[]
+}
+
+export interface PairQuotaRowError {
+  row_number: number
+  sku: string
+  material: string
+  error_code: string
+  message: string
+  row_numbers?: number[]
+}
+
+export interface PairQuotaPreview {
+  filename: string
+  items: PairQuotaItem[]
+  errors: PairQuotaRowError[]
+  summary: {
+    total_rows: number
+    updates: number
+    unchanged: number
+    error_rows: number
+    duplicate_rows: number
+    blank_rows: number
+  }
+  applied?: { updated: number }
+}
+
+export const pairQuotaApi = {
+  exportXlsx: () => apiDownload('/api/materials/pair-quota/export.xlsx', 'dinh-muc-theo-sku.xlsx'),
+  previewFile: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiPost<PairQuotaPreview>('/api/materials/pair-quota/import/preview', fd)
+  },
+  commit: (rows: PairQuotaFileRow[]) =>
+    apiPost<PairQuotaPreview>('/api/materials/pair-quota/import/commit', { rows }),
+}
+
 // ---- Materials -------------------------------------------------------------
 export const materialsApi = {
   // PAGE_SIZE_ALL → fetch it all so client-side search works.

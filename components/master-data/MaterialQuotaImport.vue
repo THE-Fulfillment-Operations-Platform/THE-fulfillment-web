@@ -8,6 +8,7 @@ import type {
 } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
+import PairQuotaImportPanel from './PairQuotaImportPanel.vue'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'imported'): void }>()
@@ -28,9 +29,19 @@ const downloadingTemplate = ref(false)
 const previewError = ref<string | null>(null)
 const preview = ref<MaterialImportPreview | null>(null)
 
+// Hai loại định mức: mặc định của NVL (file Loại VL + Định mức), và riêng cho
+// từng cặp SKU–NVL (file SKU + Loại VL + Định mức) — cặp nào có số riêng thì hệ
+// thống chia batch theo số đó, không theo mặc định của NVL.
+const mode = ref<'material' | 'pair'>('material')
+const pairPanel = ref<InstanceType<typeof PairQuotaImportPanel> | null>(null)
+
 // Reset mọi state mỗi khi đóng modal, để lần mở sau bắt đầu sạch.
 watch(open, (v) => {
-  if (!v) reset()
+  if (!v) {
+    reset()
+    pairPanel.value?.reset()
+    mode.value = 'material'
+  }
 })
 function reset() {
   file.value = null
@@ -199,8 +210,25 @@ const ACTION_LABEL: Record<MaterialImportAction, string> = {
 </script>
 
 <template>
-  <UiModal v-model="open" title="Import định mức NVL (Excel)">
-    <div class="space-y-4">
+  <UiModal v-model="open" title="Import định mức (Excel)" :wide="mode === 'pair'">
+    <div class="mb-4 flex gap-1 rounded-xl bg-muted p-1 text-sm">
+      <button
+        class="flex-1 rounded-lg px-3 py-1.5 font-medium transition-colors"
+        :class="mode === 'material' ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'"
+        @click="mode = 'material'"
+      >
+        Mặc định theo NVL
+      </button>
+      <button
+        class="flex-1 rounded-lg px-3 py-1.5 font-medium transition-colors"
+        :class="mode === 'pair' ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'"
+        @click="mode = 'pair'"
+      >
+        Theo từng SKU
+      </button>
+    </div>
+    <PairQuotaImportPanel v-show="mode === 'pair'" ref="pairPanel" @imported="emit('imported')" />
+    <div v-show="mode === 'material'" class="space-y-4">
       <p class="text-xs text-muted-foreground">
         Cột <span class="font-medium text-foreground">Loại VL</span> (tên NVL) và
         <span class="font-medium text-foreground">Định mức</span> (số sản phẩm tối đa 1 đơn vị NVL
@@ -392,11 +420,25 @@ const ACTION_LABEL: Record<MaterialImportAction, string> = {
     </div>
 
     <template #footer>
-      <button class="btn-secondary" @click="open = false">{{ committed ? 'Đóng' : 'Huỷ' }}</button>
-      <button v-if="!committed" class="btn-success" :disabled="!canCommit || committing" @click="commit">
-        <UiSpinner v-if="committing" :size="16" />
-        Áp dụng{{ changedCount ? ` (${changedCount})` : '' }}
-      </button>
+      <template v-if="mode === 'pair'">
+        <button class="btn-secondary" @click="open = false">{{ pairPanel?.committed ? 'Đóng' : 'Huỷ' }}</button>
+        <button
+          v-if="!pairPanel?.committed"
+          class="btn-success"
+          :disabled="!pairPanel?.canCommit || pairPanel?.committing"
+          @click="pairPanel?.commit()"
+        >
+          <UiSpinner v-if="pairPanel?.committing" :size="16" />
+          Áp dụng{{ pairPanel?.changedCount ? ` (${pairPanel.changedCount})` : '' }}
+        </button>
+      </template>
+      <template v-else>
+        <button class="btn-secondary" @click="open = false">{{ committed ? 'Đóng' : 'Huỷ' }}</button>
+        <button v-if="!committed" class="btn-success" :disabled="!canCommit || committing" @click="commit">
+          <UiSpinner v-if="committing" :size="16" />
+          Áp dụng{{ changedCount ? ` (${changedCount})` : '' }}
+        </button>
+      </template>
     </template>
   </UiModal>
 </template>
