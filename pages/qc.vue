@@ -337,14 +337,17 @@ onMounted(focusScan)
             <UiStatusBadge kind="internal" :value="result.internal_status" />
           </div>
 
-          <!-- Tên sản phẩm (lấy từ SKU master data) + mô tả NVL của
-               SKU (spec vật liệu/kích thước) ngay cạnh để QC đối chiếu hàng thật. -->
-          <p v-if="productName || result.material_description" class="mt-4 text-base leading-snug">
-            <span class="font-semibold text-foreground">{{ productName }}</span>
-            <span v-if="result.material_description" class="text-sm font-medium text-muted-foreground">
-              {{ productName ? ' — ' : '' }}{{ result.material_description }}
-            </span>
-          </p>
+          <!-- Tên sản phẩm (lấy từ SKU master data) và mô tả NVL của SKU
+               (spec vật liệu/kích thước) tách 2 dòng, chữ to để QC đứng xa
+               vẫn đọc được khi đối chiếu hàng thật. -->
+          <div v-if="productName || result.material_description" class="mt-4 space-y-1">
+            <p v-if="productName" class="break-words text-2xl font-bold leading-tight text-foreground">
+              {{ productName }}
+            </p>
+            <p v-if="result.material_description" class="break-words text-lg font-medium leading-snug text-foreground/80">
+              {{ result.material_description }}
+            </p>
+          </div>
           <!-- Cả ba nguồn mô tả đều trống thì nói ra, thay vì im lặng như thể màn
                hình không có chỗ hiện mô tả. Mô tả là dữ liệu Master data, không
                phải thứ trạm QC tự sinh ra. -->
