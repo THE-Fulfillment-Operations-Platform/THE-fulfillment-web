@@ -70,6 +70,21 @@ const IMPORT_ERROR_VI: Record<string, ImportErrorVi> = {
     suggestion:
       'Chọn đúng seller ở ô Seller, hoặc sửa cột Seller ID trong file. Import nhầm seller sẽ tạo đơn dưới tài khoản không bán chúng.',
   },
+  SELLER_MISSING: {
+    label: 'Thiếu Seller ID',
+    detail: 'Đang import tự chia theo seller mà dòng này để trống cột "Seller ID" — không biết đơn của ai.',
+    suggestion: 'Điền mã seller (vd. 005) vào cột Seller ID, hoặc chọn một seller cụ thể ở ô Seller rồi import riêng.',
+  },
+  SELLER_UNKNOWN: {
+    label: 'Seller ID không tồn tại',
+    detail: 'Giá trị cột "Seller ID" không khớp mã seller nào trong hệ thống.',
+    suggestion: 'Kiểm tra mã seller ở Master Data → Seller. Cột này ghi MÃ seller (vd. 005), không ghi tên.',
+  },
+  SELLER_AMBIGUOUS: {
+    label: 'Seller ID khớp nhiều seller',
+    detail: 'Excel bỏ số 0 ở đầu nên mã này khớp nhiều seller cùng lúc (vd. "6" vừa là 06 vừa là 006).',
+    suggestion: 'Ghi đủ mã seller và định dạng cột Seller ID là Text để Excel giữ số 0.',
+  },
   DATE_INVALID: {
     label: 'Ngày đặt (DATE) không đọc được',
     detail: 'Giá trị trong cột DATE không phải một ngày hợp lệ.',

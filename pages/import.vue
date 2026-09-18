@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { importsApi, sellersApi } from '~/services/api'
-import type { ImportPreview, ImportRow, Seller } from '~/types'
+import type { ImportPreview, ImportRow, MultiSellerImportPreview, Seller, SellerImportShare } from '~/types'
 import { parseCsv, importTemplateCsv, IMPORT_COLUMNS } from '~/utils/csv'
 import { importErrorVi } from '~/utils/import-errors'
 import { refreshActionCounts } from '~/composables/useActionCounts'
@@ -10,12 +10,18 @@ import { useToastStore } from '~/stores/toast'
 const toast = useToastStore()
 
 const sellers = ref<Seller[]>([])
-const sellerId = ref<number | null>(null)
-const sellerOptions = computed(() =>
-  sellers.value.length === 0
+// Ô Seller: một seller cụ thể (cả file về seller đó, như trước giờ) hoặc tự chia
+// theo cột "Seller ID" — một file lẫn đơn nhiều seller, mỗi dòng về đúng seller
+// của nó, khỏi phải chọn seller rồi upload từng lần.
+const BY_COLUMN = 'BY_COLUMN'
+const sellerId = ref<number | typeof BY_COLUMN | null>(BY_COLUMN)
+const byColumn = computed(() => sellerId.value === BY_COLUMN)
+const sellerOptions = computed(() => [
+  { value: BY_COLUMN, label: 'Tự chia theo cột Seller ID (nhiều seller)' },
+  ...(sellers.value.length === 0
     ? [{ value: 1, label: 'SELLER01 (mặc định)' }]
-    : sellers.value.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })),
-)
+    : sellers.value.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` }))),
+])
 const mode = ref<'file' | 'paste'>('file')
 const file = ref<File | null>(null)
 const fileName = ref('')
@@ -25,16 +31,34 @@ const dragging = ref(false)
 const previewing = ref(false)
 const committing = ref(false)
 const previewError = ref<string | null>(null)
-const preview = ref<ImportPreview | null>(null)
+const preview = ref<ImportPreview | MultiSellerImportPreview | null>(null)
 const committed = ref(false)
+// Preview nhiều seller: mỗi seller một import job; null khi là preview một seller.
+const multi = computed(() =>
+  preview.value && 'sellers' in preview.value ? preview.value : null,
+)
+
+// Kết quả commit của từng seller (theo import_job_id). Mỗi job là một transaction
+// riêng: seller lỗi giữ nguyên PREVIEW, bấm Commit lại là thử lại đúng seller đó.
+interface ShareState {
+  status: 'done' | 'error'
+  created?: number
+  error?: string
+}
+const shareState = ref<Record<number, ShareState>>({})
+const committingJob = ref<number | null>(null)
+const pendingShares = computed(() =>
+  (multi.value?.sellers ?? []).filter(
+    (s) => s.valid_rows > 0 && shareState.value[s.import_job_id]?.status !== 'done',
+  ),
+)
 
 onMounted(async () => {
   try {
     const { data } = await sellersApi.list()
     sellers.value = data ?? []
-    sellerId.value = sellers.value[0]?.id ?? 1
   } catch {
-    sellerId.value = 1 // fall back to the seed seller
+    // Danh sách seller chỉ phục vụ chế độ chọn một seller; tự chia vẫn chạy.
   }
 })
 
@@ -84,13 +108,18 @@ async function runPreview() {
   previewError.value = null
   preview.value = null
   committed.value = false
+  shareState.value = {}
+  const sid = sellerId.value
   try {
     if (mode.value === 'file') {
       if (!file.value) {
         toast.error('Chưa chọn file CSV/XLSX')
         return
       }
-      const { data } = await importsApi.previewFile(file.value, sellerId.value)
+      const { data } =
+        typeof sid === 'number'
+          ? await importsApi.previewFile(file.value, sid)
+          : await importsApi.previewFileBySellerColumn(file.value)
       preview.value = data
     } else {
       const rows = rowsFromCsv()
@@ -98,12 +127,10 @@ async function runPreview() {
         toast.error('Không đọc được dòng nào từ CSV')
         return
       }
-      const { data } = await importsApi.preview({
-        seller_id: sellerId.value,
-        commit: false,
-        filename: 'pasted.csv',
-        rows,
-      })
+      const { data } =
+        typeof sid === 'number'
+          ? await importsApi.preview({ seller_id: sid, commit: false, filename: 'pasted.csv', rows })
+          : await importsApi.previewBySellerColumn(rows, 'pasted.csv')
       preview.value = data
     }
   } catch (e) {
@@ -114,23 +141,63 @@ async function runPreview() {
 }
 
 async function commit() {
-  if (!preview.value) return
+  const p = preview.value
+  if (!p) return
   committing.value = true
   try {
-    const { data } = await importsApi.commitJob(preview.value.import_job_id)
-    const created = data.commit?.created_count ?? data.preview?.created_count ?? 0
+    if ('sellers' in p) await commitShares(p)
+    else await commitSingle(p)
+  } finally {
+    committing.value = false
+  }
+}
+
+async function commitSingle(p: ImportPreview) {
+  try {
+    // Endpoint commit trả về chính import job: created_count nằm ở cấp trên cùng.
+    const { data } = await importsApi.commitJob(p.import_job_id)
     committed.value = true
-    if (preview.value) preview.value.status = 'COMMITTED'
-    toast.success(`Đã commit ${created} đơn hợp lệ`)
+    p.status = 'COMMITTED'
+    toast.success(`Đã tạo ${data.created_count ?? 0} đơn`)
     // Đơn vừa import vào thẳng hàng "Chờ duyệt", và item thiếu mockup còn sinh
     // note "cần xử lý" — hai badge cùng TĂNG. Người vừa import cần thấy ngay số
     // việc mình vừa tạo ra.
     void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
-  } finally {
-    committing.value = false
   }
+}
+
+// Lần lượt từng seller, không song song: mỗi job là một transaction ghi số thứ
+// tự đơn trong ngày, chạy đồng thời chỉ làm chúng tranh nhau khoá.
+async function commitShares(p: MultiSellerImportPreview) {
+  const queue = [...pendingShares.value]
+  let created = 0
+  const failed: string[] = []
+  for (const sh of queue) {
+    committingJob.value = sh.import_job_id
+    try {
+      const { data } = await importsApi.commitJob(sh.import_job_id)
+      shareState.value[sh.import_job_id] = { status: 'done', created: data.created_count ?? 0 }
+      created += data.created_count ?? 0
+    } catch (e) {
+      shareState.value[sh.import_job_id] = { status: 'error', error: errorMessage(e) }
+      failed.push(sh.seller_code)
+    }
+  }
+  committingJob.value = null
+  if (created > 0) void refreshActionCounts()
+  if (failed.length) {
+    toast.error(`Commit lỗi ${failed.length} seller (${failed.join(', ')}) — bấm Commit lại để thử lại seller đó`)
+    return
+  }
+  committed.value = true
+  p.status = 'COMMITTED'
+  toast.success(`Đã tạo ${created} đơn cho ${queue.length} seller`)
+}
+
+function shareLabel(sh: SellerImportShare): string {
+  return sh.seller_name && sh.seller_name !== sh.seller_code ? `${sh.seller_code} — ${sh.seller_name}` : sh.seller_code
 }
 
 const downloadingTemplate = ref(false)
@@ -153,9 +220,26 @@ function loadSample() {
   csvText.value = importTemplateCsv()
 }
 
-const canCommit = computed(
-  () => !!preview.value && preview.value.valid_rows > 0 && !committed.value && preview.value.status !== 'COMMITTED',
-)
+const canCommit = computed(() => {
+  const p = preview.value
+  if (!p || committed.value || p.status === 'COMMITTED') return false
+  return multi.value ? pendingShares.value.length > 0 : p.valid_rows > 0
+})
+const commitLabel = computed(() => {
+  const p = preview.value
+  if (!p) return ''
+  if (committed.value || p.status === 'COMMITTED') return 'Đã commit'
+  if (!multi.value) return `Commit ${p.valid_rows} dòng hợp lệ`
+  const rows = pendingShares.value.reduce((n, s) => n + s.valid_rows, 0)
+  return `Commit ${rows} dòng hợp lệ · ${pendingShares.value.length} seller`
+})
+const previewTitle = computed(() => {
+  const p = preview.value
+  if (!p) return ''
+  return 'sellers' in p
+    ? `Kết quả preview · chia cho ${p.sellers.length} seller`
+    : `Kết quả preview · Job #${p.import_job_id}`
+})
 
 // SKU setup issues: SKU not in master (SKU_UNMAPPED) or SKU exists but has no
 // material yet (SKU_NO_MATERIAL). Both are resolved in Master Data, so surface a
@@ -208,6 +292,10 @@ function masterDataLink(code?: string) {
         <div class="mb-4">
           <label class="label">Seller</label>
           <UiSelect v-model="sellerId" :options="sellerOptions" aria-label="Seller" />
+          <p v-if="byColumn" class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            Mỗi dòng về đúng seller ghi ở cột <b class="text-foreground">Seller ID</b> (mã seller, vd. 005 —
+            Excel bỏ số 0 thành 5 vẫn nhận). Muốn cả file về một seller thì chọn seller đó.
+          </p>
         </div>
 
         <div class="mb-3 flex gap-1 rounded-xl bg-muted p-1 text-sm">
@@ -282,9 +370,7 @@ function masterDataLink(code?: string) {
         <div v-if="preview" class="space-y-4">
           <div class="card p-5">
             <div class="flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-foreground">
-                Kết quả preview · Job #{{ preview.import_job_id }}
-              </h3>
+              <h3 class="text-sm font-semibold text-foreground">{{ previewTitle }}</h3>
               <UiStatusBadge
                 v-if="preview.status === 'COMMITTED' || committed"
                 kind="design"
@@ -310,10 +396,65 @@ function masterDataLink(code?: string) {
               </div>
             </div>
 
+            <!-- Nhiều seller: mỗi seller một job, xem trước ai nhận bao nhiêu đơn
+                 rồi mới commit. Dòng không khớp seller nào không vào job nào. -->
+            <div v-if="multi" class="mt-4 overflow-x-auto rounded-lg border border-border">
+              <table class="min-w-full divide-y divide-border text-sm">
+                <thead class="bg-muted/60">
+                  <tr>
+                    <th class="table-th">Seller</th>
+                    <th class="table-th text-right">Dòng</th>
+                    <th class="table-th text-right">Đơn</th>
+                    <th class="table-th text-right">Hợp lệ</th>
+                    <th class="table-th text-right">Lỗi</th>
+                    <th class="table-th">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  <tr v-for="sh in multi.sellers" :key="sh.import_job_id">
+                    <td class="table-td font-medium text-foreground">{{ shareLabel(sh) }}</td>
+                    <td class="table-td text-right tabular-nums">{{ sh.total_rows }}</td>
+                    <td class="table-td text-right tabular-nums">{{ sh.order_count }}</td>
+                    <td class="table-td text-right tabular-nums text-emerald-700 dark:text-emerald-300">{{ sh.valid_rows }}</td>
+                    <td
+                      class="table-td text-right tabular-nums"
+                      :class="sh.error_rows ? 'text-red-600 dark:text-rose-400' : 'text-muted-foreground'"
+                    >{{ sh.error_rows }}</td>
+                    <td class="table-td text-xs">
+                      <span v-if="committingJob === sh.import_job_id" class="inline-flex items-center gap-1 text-muted-foreground">
+                        <UiSpinner :size="12" /> Đang commit…
+                      </span>
+                      <span
+                        v-else-if="shareState[sh.import_job_id]?.status === 'done'"
+                        class="font-medium text-emerald-600 dark:text-emerald-400"
+                      >✓ Đã tạo {{ shareState[sh.import_job_id]?.created ?? 0 }} đơn</span>
+                      <span
+                        v-else-if="shareState[sh.import_job_id]?.status === 'error'"
+                        class="block max-w-[16rem] whitespace-normal text-red-600 dark:text-rose-400"
+                      >Lỗi: {{ shareState[sh.import_job_id]?.error }}</span>
+                      <span v-else-if="!sh.valid_rows" class="text-muted-foreground">Không có dòng hợp lệ</span>
+                      <span v-else class="text-muted-foreground">Chờ commit</span>
+                    </td>
+                  </tr>
+                  <tr v-if="multi.unassigned_rows" class="bg-rose-50/50 dark:bg-rose-500/10">
+                    <td class="table-td font-medium text-red-700 dark:text-rose-300">Không rõ seller</td>
+                    <td class="table-td text-right tabular-nums">{{ multi.unassigned_rows }}</td>
+                    <td class="table-td text-right text-muted-foreground">—</td>
+                    <td class="table-td text-right tabular-nums text-muted-foreground">0</td>
+                    <td class="table-td text-right tabular-nums text-red-600 dark:text-rose-400">{{ multi.unassigned_rows }}</td>
+                    <td class="table-td text-xs text-red-600 dark:text-rose-400">Không import — sửa cột Seller ID</td>
+                  </tr>
+                  <tr v-if="!multi.sellers.length && !multi.unassigned_rows">
+                    <td colspan="6" class="table-td text-center text-muted-foreground">Không có dòng nào.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
             <div class="mt-4 flex items-center gap-2">
               <button class="btn-success" :disabled="!canCommit || committing" @click="commit">
                 <UiSpinner v-if="committing" :size="16" />
-                {{ committed || preview.status === 'COMMITTED' ? 'Đã commit' : `Commit ${preview.valid_rows} dòng hợp lệ` }}
+                {{ commitLabel }}
               </button>
               <p v-if="committed" class="text-sm text-emerald-600 dark:text-emerald-400">
                 ✓ Đã tạo đơn. Xem ở <NuxtLink to="/orders" class="underline">Orders</NuxtLink>.
@@ -413,6 +554,7 @@ function masterDataLink(code?: string) {
                 <thead class="bg-card">
                   <tr>
                     <th class="table-th">Dòng</th>
+                    <th v-if="multi" class="table-th">Seller</th>
                     <th class="table-th">Mã đơn (ORDER ID)</th>
                     <th class="table-th">SKU</th>
                     <th class="table-th">Ghi chú</th>
@@ -421,6 +563,7 @@ function masterDataLink(code?: string) {
                 <tbody class="divide-y divide-border">
                   <tr v-for="(w, i) in warningRows" :key="i" class="bg-rose-50/50 dark:bg-rose-500/10">
                     <td class="table-td">{{ w.row_number }}</td>
+                    <td v-if="multi" class="table-td">{{ w.seller_code || '—' }}</td>
                     <td class="table-td font-medium text-rose-700 dark:text-rose-300">{{ w.store_order_id || '—' }}</td>
                     <td class="table-td">{{ w.sku || '—' }}</td>
                     <td class="table-td max-w-xs whitespace-normal">
@@ -443,6 +586,7 @@ function masterDataLink(code?: string) {
                 <thead class="bg-card">
                   <tr>
                     <th class="table-th">Dòng</th>
+                    <th v-if="multi" class="table-th">Seller</th>
                     <th class="table-th">Mã đơn</th>
                     <th class="table-th">SKU</th>
                     <th class="table-th hidden sm:table-cell">Cột</th>
@@ -453,6 +597,7 @@ function masterDataLink(code?: string) {
                 <tbody class="divide-y divide-border">
                   <tr v-for="(err, i) in errorRows" :key="i" class="hover:bg-red-50/40 dark:bg-rose-500/10">
                     <td class="table-td">{{ err.row_number }}</td>
+                    <td v-if="multi" class="table-td">{{ err.seller_code || '—' }}</td>
                     <td class="table-td">{{ err.store_order_id || '—' }}</td>
                     <td class="table-td">{{ err.sku || '—' }}</td>
                     <td class="table-td hidden text-xs text-muted-foreground sm:table-cell">{{ err.field || '—' }}</td>

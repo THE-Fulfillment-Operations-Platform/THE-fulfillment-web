@@ -389,6 +389,8 @@ export interface ImportError {
   error_code: string
   message: string
   suggestion?: string
+  // Chỉ có ở preview nhiều seller: dòng này thuộc seller nào.
+  seller_code?: string
 }
 
 export interface ImportPreview {
@@ -407,6 +409,25 @@ export interface ImportPreview {
   // Backend đọc được gì từ dòng tiêu đề: cột thiếu, cột đã ngừng dùng, cột lạ.
   // Cột lạ nghĩa là dữ liệu trong cột đó KHÔNG được nhập — phải nói ra, không im.
   headers?: ImportHeaderReport
+}
+
+// Import một file nhiều seller (seller_mode=by_column): cột "Seller ID" quyết
+// định dòng nào về seller nào. Mỗi seller một import job riêng, commit từng job.
+export interface SellerImportShare {
+  seller_id: number
+  seller_code: string
+  seller_name: string
+  import_job_id: number
+  total_rows: number
+  order_count: number
+  valid_rows: number
+  error_rows: number
+}
+
+export interface MultiSellerImportPreview extends Omit<ImportPreview, 'import_job_id'> {
+  // Dòng không khớp seller nào — đã nằm trong errors, không thuộc job nào.
+  unassigned_rows: number
+  sellers: SellerImportShare[]
 }
 
 export interface ImportHeaderReport {
