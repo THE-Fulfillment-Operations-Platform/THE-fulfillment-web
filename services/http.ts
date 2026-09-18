@@ -116,12 +116,28 @@ export async function apiDownload(url: string, filename: string): Promise<void> 
     setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
   } catch (e) {
     if (e instanceof ApiError) throw e
-    const fe = e as { status?: number; statusCode?: number; message?: string }
+    const fe = e as { data?: unknown; status?: number; statusCode?: number; message?: string }
+    const status = fe?.statusCode || fe?.status || 0
+    // responseType 'blob' cũng áp cho response lỗi: envelope JSON của máy chủ tới
+    // đây dưới dạng Blob. Không đọc nó ra thì lý do thật ("24 link lỗi, ví dụ …")
+    // bị thay bằng "[GET] …: 422 Unprocessable Entity".
+    const env = await blobEnvelope(fe?.data)
     throw new ApiError(
-      fe?.message || 'Không tải được file',
-      'DOWNLOAD_FAILED',
-      fe?.statusCode || fe?.status || 0,
+      env?.error?.message || fe?.message || 'Không tải được file',
+      env?.error?.code || (status ? `HTTP_${status}` : 'DOWNLOAD_FAILED'),
+      status,
+      env?.error?.details,
     )
+  }
+}
+
+async function blobEnvelope(data: unknown): Promise<ApiEnvelope<unknown> | undefined> {
+  if (!(data instanceof Blob)) return undefined
+  try {
+    const parsed = JSON.parse(await data.text())
+    return parsed && typeof parsed === 'object' ? (parsed as ApiEnvelope<unknown>) : undefined
+  } catch {
+    return undefined
   }
 }
 
