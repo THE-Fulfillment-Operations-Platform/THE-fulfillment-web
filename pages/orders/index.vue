@@ -56,9 +56,9 @@ function inclusiveEnd(d: string): string | undefined {
 }
 
 // Server-side sort. Empty `by` = backend default (newest first). Sorting SKU/date/
-// quantity/STT runs in the backend so it covers the whole dataset, not just this
+// quantity runs in the backend so it covers the whole dataset, not just this
 // page (never a front-end array sort of the current page).
-const sort = reactive<{ by: '' | 'sku' | 'stt' | 'quantity' | 'created_at'; dir: 'asc' | 'desc' }>({
+const sort = reactive<{ by: '' | 'sku' | 'quantity' | 'created_at'; dir: 'asc' | 'desc' }>({
   by: '',
   dir: 'asc',
 })
@@ -85,17 +85,15 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   }),
 )
 
-// STT trong ngày là số của ĐƠN trong ngày, mà bảng này liệt kê SẢN PHẨM: một đơn
-// 3 sản phẩm sẽ chiếm 3 dòng. Hiện trần số đơn thì cột đọc ra "1, 1, 1, 2, 3" —
-// trông như đánh số sai. Nên với đơn nhiều dòng, thêm vị trí dòng: 1.1, 1.2, 1.3.
-// Đơn 1 sản phẩm giữ nguyên "2", "3" cho gọn.
-function itemStt(it: OrderItem): string {
-  const seq = it.order?.daily_seq
-  if (!seq || seq <= 0) return '—'
-  // Tổng số dòng của đơn nằm sẵn trong mã nội bộ dạng "100001_2/3".
-  const total = Number(it.internal_code?.split('/')[1] ?? 1)
-  const line = it.line_no ?? Number(it.internal_code?.split('_')[1]?.split('/')[0] ?? 0)
-  return total > 1 && line > 0 ? `${seq}.${line}` : String(seq)
+// STT là số thứ tự DÒNG, chạy liên tục qua các trang (trang 2 cỡ 20 bắt đầu từ
+// 21) — giống màn seller. Không dùng "STT trong ngày" (daily_seq): bộ đếm đó
+// reset mỗi ngày nên cột đọc ra "1, 2, 3, 1, 2…" trông như đánh số sai; số đó
+// vẫn xem được ở chi tiết đơn. Lấy trang từ meta (trang của dữ liệu đang hiện),
+// không từ filters — filters đổi trước khi dữ liệu mới về.
+function rowNumber(idx: number): number {
+  const page = meta.value?.page ?? filters.page
+  const size = meta.value?.page_size ?? filters.page_size
+  return (page - 1) * size + idx + 1
 }
 // Tên seller của sản phẩm. Đơn cũ/payload gọn có thể không kèm seller — trả về
 // dấu gạch thay vì để ô trống trông như dữ liệu lỗi.
@@ -106,7 +104,7 @@ function itemSellerName(it: OrderItem): string {
 function itemCreatedAt(it: OrderItem): string | undefined {
   return it.order?.created_at
 }
-function toggleSort(col: 'sku' | 'stt' | 'quantity' | 'created_at') {
+function toggleSort(col: 'sku' | 'quantity' | 'created_at') {
   if (sort.by === col) {
     sort.dir = sort.dir === 'asc' ? 'desc' : 'asc'
   } else {
@@ -226,8 +224,9 @@ function exportItems() {
   }
   // Exports the rows currently loaded (this page). Increase rows-per-page to
   // export more in one go.
+  const rowNo = new Map(rows.map((it, i) => [it.id, rowNumber(i)]))
   exportCsv(`orders-items-${new Date().toISOString().slice(0, 10)}`, rows, [
-    { label: 'STT ngày', value: (it) => itemStt(it) },
+    { label: 'STT', value: (it) => rowNo.get(it.id) },
     { label: 'Internal Item', value: 'internal_code' },
     { label: 'Store Order', value: (it) => itemStoreOrderId(it) },
     { label: 'Seller', value: (it) => itemSellerName(it) },
@@ -336,11 +335,7 @@ function exportItems() {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
-                <th class="table-th">
-                  <button class="inline-flex items-center gap-1 hover:text-foreground" @click="toggleSort('stt')" title="Số thứ tự trong ngày">
-                    STT <span class="text-[10px] opacity-70">{{ sortIcon('stt') }}</span>
-                  </button>
-                </th>
+                <th class="table-th w-12">STT</th>
                 <th class="table-th">Internal Item</th>
                 <th class="table-th hidden md:table-cell">Store Order</th>
                 <th class="table-th hidden lg:table-cell">Seller</th>
@@ -369,13 +364,13 @@ function exportItems() {
             </thead>
             <tbody class="divide-y divide-border">
               <tr
-                v-for="it in items"
+                v-for="(it, idx) in items"
                 :key="it.id"
                 v-bind="rowLinkAttrs(itemOrderId(it) ? `/orders/${itemOrderId(it)}` : null)"
                 class="hover:bg-muted"
                 :class="{ 'opacity-55': itemDead(it), 'bg-rose-50/60 dark:bg-rose-500/10': itemStoreOrderDup(it) }"
               >
-                <td class="table-td font-semibold tabular-nums text-foreground" :title="`STT trong ngày ${formatDate(itemCreatedAt(it))}`">{{ itemStt(it) }}</td>
+                <td class="table-td font-semibold tabular-nums text-foreground">{{ rowNumber(idx) }}</td>
                 <td class="table-td font-medium text-foreground">
                   {{ it.internal_code }}
                   <!-- Sản phẩm từng QC fail: nói ngay đang ở lần sản xuất thứ mấy,
