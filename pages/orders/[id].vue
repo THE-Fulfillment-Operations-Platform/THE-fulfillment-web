@@ -79,11 +79,12 @@ const shippingRows = computed<[string, string][]>(() => {
 })
 
 // ---- Role gating (UX only — the backend enforces the real guard) -----------
-const can = (roles: Role[]) => !!auth.role && roles.includes(auth.role)
-const canEdit = computed(() => can(['OWNER', 'ADMIN', 'OPS']))
-const canCancel = computed(() => can(['OWNER', 'ADMIN', 'OPS']))
-const canDelete = computed(() => can(['OWNER', 'ADMIN']))
-const canEditTracking = computed(() => can(['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING']))
+// Sửa/huỷ = "Thao tác" màn Đơn hàng; xoá cần thêm vai trò Admin/Owner.
+const isAdminOwner = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
+const canEdit = computed(() => auth.can('orders.manage'))
+const canCancel = computed(() => auth.can('orders.manage'))
+const canDelete = computed(() => isAdminOwner.value && auth.can('orders.manage'))
+const canEditTracking = computed(() => auth.can('journeys.manage') || auth.can('cs.manage'))
 const hasActions = computed(
   () => canEdit.value || canCancel.value || canDelete.value || canEditTracking.value,
 )

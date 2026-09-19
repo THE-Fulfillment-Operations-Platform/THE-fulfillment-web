@@ -32,10 +32,10 @@ export function overdueCount(batches: Batch[]): number {
 }
 
 // ---- Chẻ batch mẹ–con theo định mức NVL ------------------------------------
-// Định mức (Material.products_per_unit) = số sản phẩm tối đa 1 đơn vị NVL làm ra.
-// Khi tổng sản phẩm của các item được chọn vượt định mức, batch bị chẻ thành
-// nhiều batch con, mỗi con ≤ định mức. Dùng chung ở màn tạo batch (preview) nên
-// số con hiển thị luôn khớp với số con backend tạo.
+// Định mức = số sản phẩm một tấm NVL làm ra, TÍNH từ kích thước (xem
+// utils/quota.ts). Khi tổng chiếm dụng của các item được chọn vượt một tấm,
+// batch bị chẻ thành nhiều batch con, mỗi con ≤ một tấm. Dùng chung ở màn tạo
+// batch (preview) nên số con hiển thị luôn khớp với số con backend tạo.
 
 /** Sản phẩm = tổng quantity các item (item không có quantity coi là 1). */
 export function productCount<T extends { quantity?: number }>(items: T[]): number {
@@ -133,16 +133,14 @@ export function batchProductTotal(b: Batch): number | null {
 }
 
 /**
- * Số ĐƠN VỊ NVL cần cho batch theo định mức (products_per_unit của material):
- * batch thường = ceil(SP / định mức); batch mẹ = số batch con (mỗi con tối đa một
- * đơn vị). NVL chưa khai định mức thì chịu → null.
+ * Số TẤM NVL batch cần. Server tính (Batch.material_units) từ kích thước SKU
+ * của từng phần và kích thước tấm — FE không có đủ dữ liệu để tính lại. Batch
+ * mẹ = số batch con. null = có phần chưa có định mức (thiếu kích thước).
  */
 export function batchMaterialUnits(b: Batch): number | null {
+  if (b.material_units != null) return b.material_units
   if (b.is_parent) return b.child_count ?? b.child_batches?.length ?? null
-  const quota = b.material?.products_per_unit
-  const sp = batchProductTotal(b)
-  if (!quota || !sp) return null
-  return Math.ceil(sp / quota)
+  return null
 }
 
 export function batchMaterialLabel(b: Batch): string {

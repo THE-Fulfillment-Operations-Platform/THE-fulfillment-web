@@ -2,13 +2,18 @@
 import { skusApi } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
+import { parentSkuIds } from '~/utils/sku'
+import { productionQuota } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
 import { useClientPager } from '~/composables/useClientPager'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const toast = useToastStore()
+// Sửa mapping = "Thao tác" màn Master Data.
+const canManage = computed(() => useAuthStore().can('master_data.manage'))
 
 type FilterKey = 'all' | 'unmapped' | 'multi'
 const filter = ref<FilterKey>('all')
@@ -20,8 +25,17 @@ function matCount(s: Sku) {
 function materialNames(s: Sku): string[] {
   return (s.materials ?? []).map((m) => m.material?.name ?? m.material?.code ?? `#${m.material_id}`)
 }
+// Nhãn chip: "Mica trong 3 ly · 66/tấm" khi cả SKU lẫn tấm đã có kích thước.
+function materialChips(s: Sku): { key: string; label: string; quota: number }[] {
+  return (s.materials ?? []).map((m) => {
+    const name = m.material?.name ?? m.material?.code ?? `#${m.material_id}`
+    return { key: name, label: name, quota: productionQuota(s, m.material) }
+  })
+}
 
-const unmapped = computed(() => props.skus.filter((s) => matCount(s) === 0))
+// SKU cha chỉ gom nhóm, NVL nằm ở từng SKU con — không tính là chưa map.
+const parents = computed(() => parentSkuIds(props.skus))
+const unmapped = computed(() => props.skus.filter((s) => matCount(s) === 0 && !parents.value.has(s.id)))
 const multi = computed(() => props.skus.filter((s) => matCount(s) > 1))
 
 const filtered = computed(() => {
@@ -152,11 +166,12 @@ async function save() {
                 <td class="table-td whitespace-normal">
                   <div v-if="matCount(s)" class="flex flex-wrap gap-1">
                     <span
-                      v-for="n in materialNames(s)"
-                      :key="n"
-                      class="inline-flex items-center rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
+                      v-for="c in materialChips(s)"
+                      :key="c.key"
+                      class="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
                     >
-                      {{ n }}
+                      {{ c.label }}
+                      <span v-if="c.quota" class="tabular-nums text-muted-foreground" title="Định mức: sản phẩm / tấm, tính từ kích thước">· {{ c.quota }}/tấm</span>
                     </span>
                     <span v-if="matCount(s) > 1" class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
                       {{ matCount(s) }} NVL
@@ -167,7 +182,7 @@ async function save() {
                   </span>
                 </td>
                 <td class="table-td text-right">
-                  <button class="btn-secondary px-2.5 py-1 text-xs" @click="openEdit(s)">
+                  <button v-if="canManage" class="btn-secondary px-2.5 py-1 text-xs" @click="openEdit(s)">
                     <UiIcon name="link" :size="14" /> {{ matCount(s) ? 'Sửa mapping' : 'Gán NVL' }}
                   </button>
                 </td>

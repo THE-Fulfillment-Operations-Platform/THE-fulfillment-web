@@ -1,5 +1,13 @@
 import { apiGet, apiPost, apiDownload } from '../http'
-import type { MasterImportPreview, MasterImportJob } from '~/types'
+import type { MasterImportPreview, MasterImportJob, ParentSkuImportPreview } from '~/types'
+
+// Một dòng file SKU cha, gửi lại nguyên văn khi áp dụng (server phân tích lại).
+export interface ParentSkuRowInput {
+  sku: string
+  product_name?: string
+  description?: string
+  row_number?: number
+}
 
 export interface LegacyRowInput {
   sku: string
@@ -26,4 +34,16 @@ export const masterDataApi = {
   // split cleanly in Excel on any locale, unlike a comma CSV that came out garbled).
   downloadTemplate: () =>
     apiDownload('/api/master-data/template.xlsx', 'master-data-template.xlsx'),
+
+  // Bước 1 của thiết lập cha → con: import SKU cha. Bước 2 là import SKU ở trên
+  // (cột "SKU cha" phải trỏ tới SKU cha đã có).
+  parentsPreviewFile: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiPost<ParentSkuImportPreview>('/api/master-data/parents/import/preview', fd)
+  },
+  parentsCommit: (rows: ParentSkuRowInput[]) =>
+    apiPost<ParentSkuImportPreview>('/api/master-data/parents/import/commit', { rows }),
+  downloadParentTemplate: () =>
+    apiDownload('/api/master-data/parents/template.xlsx', 'sku-cha-template.xlsx'),
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
 import { reviewApi } from '~/services/api'
 import type { Order } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -10,6 +11,9 @@ import { formatDateTime } from '~/utils/format'
 import { errorMessage } from '~/utils/api-error'
 import { REVIEW_STATUS, REVIEW_STATUS_OPTIONS } from '~/utils/enums'
 import { useRowLink } from '~/composables/useRowLink'
+
+// Duyệt hàng loạt = "Thao tác" màn Chờ duyệt.
+const canManage = computed(() => useAuthStore().can('review.manage'))
 
 // Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
 const { rowLinkAttrs } = useRowLink()
@@ -122,7 +126,7 @@ async function bulkApprove() {
 
     <div class="card overflow-hidden">
       <!-- Bulk action bar (slides in when rows are ticked). -->
-      <UiBulkBar :count="count" noun="đơn" @clear="clear">
+      <UiBulkBar v-if="canManage" :count="count" noun="đơn" @clear="clear">
         <button class="btn-primary" :disabled="submitting" @click="bulkApprove">
           <UiSpinner v-if="submitting" :size="16" />
           <UiIcon v-else name="check" :size="16" />

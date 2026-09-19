@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usersApi, sellersApi, ERR_USER_DELETED_EMAIL } from '~/services/api'
 import type { UserInput } from '~/services/api'
-import type { Role, User, Seller } from '~/types'
+import type { PermissionCatalog, Role, User, Seller } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { ApiError, errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
@@ -13,6 +13,10 @@ import { ROLE_LABEL } from '~/utils/enums'
 // accounts and assign roles. Passwords are write-only — edit leaves it blank to
 // keep the current one.
 const toast = useToastStore()
+const auth = useAuthStore()
+function isSelf(u: User): boolean {
+  return auth.user?.id === u.id
+}
 const pager = reactive({ page: 1, page_size: 20 })
 const { data, meta, loading, error, reload } = useApiResource<User[]>(() =>
   usersApi.list({ page: pager.page, page_size: pager.page_size }),
@@ -46,9 +50,93 @@ const form = reactive<UserInput>({
 
 const isSellerRole = computed(() => form.role === 'SELLER')
 
-const roleOptions = (Object.entries(ROLE_LABEL) as [Role, string][]).map(
-  ([value, label]) => ({ value, label }),
+// Chỉ OWNER tạo/sửa được tài khoản OWNER (backend chặn) — không mời bấm thứ
+// chắc chắn bị từ chối.
+const roleOptions = computed(() =>
+  (Object.entries(ROLE_LABEL) as [Role, string][])
+    .filter(([value]) => value !== 'OWNER' || auth.role === 'OWNER')
+    .map(([value, label]) => ({ value, label })),
 )
+
+// ---- Quyền theo màn -----------------------------------------------------------
+// Vai trò chỉ là bộ tick mặc định: chọn vai trò thì tick sẵn theo vai trò, sau đó
+// tick thêm / bỏ tuỳ ý. Mỗi màn có 2 ô: Xem (thấy màn) và Thao tác (bấm được các
+// nút của màn đó). Tick Thao tác là tự có Xem; bỏ Xem là mất luôn Thao tác.
+// Lưu: ticks trùng đúng mặc định của vai trò thì gửi null — tài khoản tiếp tục
+// "theo vai trò" (đổi mặc định về sau cũng ăn theo); khác đi thì lưu đúng danh sách.
+const catalog = ref<PermissionCatalog | null>(null)
+async function loadCatalog() {
+  try {
+    catalog.value = (await usersApi.permissionCatalog()).data
+    // Form đã mở trước khi danh mục về: tick lại, kẻo lưu một bộ quyền rỗng.
+    if (open.value) initTicks()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  }
+}
+onMounted(loadCatalog)
+
+const ticks = ref<Set<string>>(new Set())
+const hasTickableRole = computed(() => form.role !== 'OWNER' && form.role !== 'SELLER')
+// Người không phải OWNER không tự đổi quyền của chính mình (backend chặn).
+const editingSelfLocked = computed(() => !!editing.value && isSelf(editing.value) && auth.role !== 'OWNER')
+
+function roleDefaults(role: Role): string[] {
+  return catalog.value?.role_defaults[role] ?? []
+}
+function sameAsDefaults(set: Set<string>, role: Role): boolean {
+  const d = roleDefaults(role)
+  return d.length === set.size && d.every((p) => set.has(p))
+}
+const followsRole = computed(() => sameAsDefaults(ticks.value, form.role))
+
+function resetTicksToRole() {
+  ticks.value = new Set(roleDefaults(form.role))
+}
+function initTicks() {
+  const u = editing.value
+  ticks.value = new Set(u ? (u.permissions ?? roleDefaults(u.role)) : roleDefaults(form.role))
+}
+function setTick(feature: string, level: 'view' | 'manage', on: boolean) {
+  const next = new Set(ticks.value)
+  const key = `${feature}.${level}`
+  if (on) {
+    next.add(key)
+    if (level === 'manage' && hasLevel(feature, 'view')) next.add(`${feature}.view`)
+  } else {
+    next.delete(key)
+    if (level === 'view') next.delete(`${feature}.manage`)
+  }
+  ticks.value = next
+}
+function hasLevel(feature: string, level: 'view' | 'manage'): boolean {
+  return !!catalog.value?.features.find((f) => f.key === feature)?.levels.includes(level)
+}
+function tickAll(on: boolean) {
+  const next = new Set<string>()
+  if (on) for (const f of catalog.value?.features ?? []) for (const l of f.levels) next.add(`${f.key}.${l}`)
+  ticks.value = next
+}
+// Người dùng đổi vai trò trong form → tick lại theo vai trò mới (bộ tick cũ là
+// của việc cũ). Gắn vào sự kiện của ô chọn, không watch form.role: mở form sửa
+// cũng gán form.role và không được xoá mất bộ tick tuỳ chỉnh đang có.
+function onRoleChange(role: Role) {
+  ticks.value = new Set(roleDefaults(role))
+}
+
+/** Giá trị gửi lên: null = theo vai trò; undefined = không đụng tới. */
+function permissionsPayload(): string[] | null | undefined {
+  if (!hasTickableRole.value || editingSelfLocked.value || !catalog.value) return undefined
+  return followsRole.value ? null : Array.from(ticks.value).sort()
+}
+
+function permSummary(u: User): string {
+  if (u.role === 'OWNER') return 'Toàn quyền'
+  if (u.role === 'SELLER') return '—'
+  if (u.permissions == null) return 'Theo vai trò'
+  const screens = new Set((u.permissions ?? []).map((p) => p.split('.')[0]))
+  return `Tuỳ chỉnh · ${screens.size} màn`
+}
 
 // Sellers for the "Vai trò = Seller" dropdown. A SELLER user must link to an
 // existing seller entity (its id), so we offer a picker instead of a free-text
@@ -78,6 +166,7 @@ function openCreate() {
   form.role = 'OPS'
   form.seller_id = undefined
   form.is_active = true
+  initTicks()
   open.value = true
 }
 
@@ -89,6 +178,7 @@ function openEdit(u: User) {
   form.role = u.role
   form.seller_id = u.seller_id ?? undefined
   form.is_active = u.is_active
+  initTicks()
   open.value = true
 }
 
@@ -129,6 +219,8 @@ async function submit() {
         is_active: form.is_active,
       }
       if (form.password) payload.password = form.password
+      const perms = permissionsPayload()
+      if (perms !== undefined) payload.permissions = perms
       await usersApi.update(editing.value.id, payload)
       toast.success('Đã cập nhật người dùng')
     } else {
@@ -156,6 +248,7 @@ async function createUser(restoreDeleted: boolean) {
       role: form.role,
       seller_id: isSellerRole.value ? form.seller_id : undefined,
       is_active: form.is_active,
+      permissions: permissionsPayload() ?? null,
       ...(restoreDeleted ? { restore_deleted: true } : {}),
     })
     toast.success(restoreDeleted ? 'Đã khôi phục tài khoản cũ' : 'Đã tạo người dùng')
@@ -198,10 +291,6 @@ async function toggleActive(u: User) {
 // mình, xoá OWNER cuối cùng, và ADMIN xoá OWNER. Nút dưới đây ẩn sẵn trường hợp
 // tự xoá cho đỡ bấm nhầm, phần còn lại để backend quyết.
 const deletingId = ref<number | null>(null)
-const auth = useAuthStore()
-function isSelf(u: User): boolean {
-  return auth.user?.id === u.id
-}
 
 async function removeUser(u: User) {
   if (deletingId.value) return
@@ -265,6 +354,7 @@ const ROLE_BADGE: Record<Role, string> = {
                 <th class="table-th">Họ tên</th>
                 <th class="table-th">Email</th>
                 <th class="table-th">Vai trò</th>
+                <th class="table-th">Quyền</th>
                 <th class="table-th">Seller</th>
                 <th class="table-th">Trạng thái</th>
                 <th class="table-th"></th>
@@ -279,6 +369,9 @@ const ROLE_BADGE: Record<Role, string> = {
                     {{ ROLE_LABEL[u.role] }}
                   </span>
                 </td>
+                <td class="table-td text-xs" :class="u.permissions == null ? 'text-muted-foreground' : 'font-medium text-indigo-600 dark:text-indigo-300'">
+                  {{ permSummary(u) }}
+                </td>
                 <td class="table-td text-xs text-muted-foreground">{{ u.seller_id ? '#' + u.seller_id : '—' }}</td>
                 <td class="table-td">
                   <span
@@ -290,7 +383,7 @@ const ROLE_BADGE: Record<Role, string> = {
                   </span>
                 </td>
                 <td class="table-td">
-                  <div class="flex items-center justify-end gap-2">
+                  <div v-if="u.role !== 'OWNER' || auth.role === 'OWNER'" class="flex items-center justify-end gap-2">
                     <button
                       class="text-xs font-medium hover:underline disabled:opacity-50"
                       :class="u.is_active ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'"
@@ -344,7 +437,7 @@ const ROLE_BADGE: Record<Role, string> = {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label">Vai trò</label>
-            <UiSelect v-model="form.role" :options="roleOptions" aria-label="Vai trò" />
+            <UiSelect v-model="form.role" :options="roleOptions" aria-label="Vai trò" @update:model-value="onRoleChange($event as Role)" />
           </div>
           <div v-if="isSellerRole">
             <label class="label">Seller *</label>
@@ -369,6 +462,78 @@ const ROLE_BADGE: Record<Role, string> = {
           <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
           <span class="text-sm text-foreground">Tài khoản hoạt động</span>
         </label>
+
+        <!-- Quyền theo màn -->
+        <div v-if="form.role === 'OWNER'" class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          Chủ sở hữu luôn có toàn quyền, không cần tick.
+        </div>
+        <div v-else-if="hasTickableRole" class="rounded-lg border border-border">
+          <div class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+            <span class="text-sm font-medium text-foreground">Quyền truy cập</span>
+            <span
+              class="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+              :class="followsRole ? 'bg-muted text-muted-foreground' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'"
+            >
+              {{ followsRole ? `Mặc định của ${ROLE_LABEL[form.role]}` : 'Đã tuỳ chỉnh' }}
+            </span>
+            <div v-if="!editingSelfLocked" class="ml-auto flex items-center gap-2 text-xs">
+              <button class="font-medium text-primary hover:underline" :disabled="followsRole" @click="resetTicksToRole">Về mặc định</button>
+              <button class="font-medium text-primary hover:underline" @click="tickAll(true)">Chọn hết</button>
+              <button class="font-medium text-muted-foreground hover:underline" @click="tickAll(false)">Bỏ hết</button>
+            </div>
+          </div>
+          <p v-if="editingSelfLocked" class="px-3 pt-2 text-xs text-amber-600 dark:text-amber-400">
+            Không tự đổi quyền của chính mình được — nhờ chủ sở hữu sửa giúp.
+          </p>
+          <p v-if="!catalog" class="px-3 py-3 text-xs text-muted-foreground">Đang tải danh sách quyền…</p>
+          <div v-else class="max-h-72 overflow-y-auto">
+            <table class="min-w-full text-sm">
+              <thead class="sticky top-0 bg-card">
+                <tr class="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th class="px-3 py-1.5 font-semibold">Màn hình</th>
+                  <th class="w-14 px-2 py-1.5 text-center font-semibold">Xem</th>
+                  <th class="w-20 px-2 py-1.5 text-center font-semibold">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-for="f in catalog.features" :key="f.key">
+                  <td class="px-3 py-1.5">
+                    <p class="text-foreground">{{ f.label }}</p>
+                    <p v-if="f.manage_hint" class="text-[11px] text-muted-foreground">Thao tác: {{ f.manage_hint }}</p>
+                  </td>
+                  <td class="px-2 py-1.5 text-center">
+                    <input
+                      v-if="f.levels.includes('view')"
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                      :checked="ticks.has(`${f.key}.view`)"
+                      :disabled="editingSelfLocked"
+                      :aria-label="`Xem ${f.label}`"
+                      @change="setTick(f.key, 'view', ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span v-else class="text-muted-foreground">—</span>
+                  </td>
+                  <td class="px-2 py-1.5 text-center">
+                    <input
+                      v-if="f.levels.includes('manage')"
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                      :checked="ticks.has(`${f.key}.manage`)"
+                      :disabled="editingSelfLocked"
+                      :aria-label="`Thao tác ${f.label}`"
+                      @change="setTick(f.key, 'manage', ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span v-else class="text-muted-foreground">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+            Màn Người dùng và Cài đặt đi theo vai trò (Quản trị viên / Chủ sở hữu). Các thao tác xoá hoặc ghi đè
+            (xoá đơn, xoá NVL/SKU, hạ QC…) vẫn cần thêm vai trò Quản trị viên / Chủ sở hữu.
+          </p>
+        </div>
       </div>
       <template #footer>
         <button class="btn-secondary" @click="open = false">Huỷ</button>

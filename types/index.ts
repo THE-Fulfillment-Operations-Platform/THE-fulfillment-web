@@ -141,6 +141,28 @@ export interface User {
   role: Role
   seller_id?: number | null
   is_active: boolean
+  /**
+   * Quyền đã tick riêng cho người này ("<màn>.view" / "<màn>.manage"), hoặc
+   * null = dùng bộ mặc định của vai trò.
+   */
+  permissions?: string[] | null
+  /** Quyền thực tế sau khi tính mặc định vai trò — dùng để ẩn/hiện menu, nút. */
+  effective_permissions?: string[]
+}
+
+// Một màn tick được trong form người dùng (danh mục do backend trả).
+export interface PermissionFeature {
+  key: string
+  label: string
+  /** 'view' | 'manage' — màn chỉ đọc chỉ có 'view'. */
+  levels: ('view' | 'manage')[]
+  /** "Thao tác" ở màn này mở khoá việc gì. */
+  manage_hint?: string
+}
+
+export interface PermissionCatalog {
+  features: PermissionFeature[]
+  role_defaults: Record<Role, string[]>
 }
 
 export interface LoginResponse {
@@ -181,24 +203,21 @@ export interface Material {
   code: string
   name: string
   description?: string
-  // Định mức sản xuất: số sản phẩm tối đa 1 đơn vị NVL (1 tấm/1 lô) làm ra được.
-  // Khi tạo batch mà tổng sản phẩm vượt con số này, hệ thống chẻ batch thành
-  // nhiều batch con (xem Batch.parent_batch_id). null/0/undefined = không giới hạn.
-  products_per_unit?: number | null
+  // Kích thước MỘT tấm NVL (mm). Cùng kích thước SKU tạo ra định mức sản xuất
+  // của từng SKU trên NVL này: ⌊S_tấm / S_sản phẩm⌋ (xem utils/quota.ts).
+  // null = chưa khai → không có định mức, batch NVL này không chẻ.
+  length_mm?: number | null
+  width_mm?: number | null
 }
 
 export interface SkuMaterial {
   material_id: number
   // Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư).
   quantity_per_unit: number
-  // Định mức sản xuất của CẶP (SKU, NVL): một đơn vị NVL (một tấm/một lot) ra
-  // được bao nhiêu sản phẩm của SKU này — khái niệm ngược với
-  // quantity_per_unit. Cùng một tấm mica ra 10 khay nhỏ nhưng chỉ 4 khay to,
-  // nên định mức không thể nằm ở NVL. null/undefined = cặp này không khai
-  // riêng → rơi về Material.products_per_unit. Chỉ OWNER được đặt.
-  // CHIỀU ĐÃ CHỐT (khách xác nhận 2026-09-01): "sản phẩm trên một tấm" — số sản
-  // phẩm LÀM RA từ một đơn vị NVL, KHÔNG phải lượng NVL cần cho một sản phẩm.
-  products_per_unit?: number | null
+  // Định mức sản xuất của cặp (SKU, NVL) KHÔNG còn là dữ liệu nhập — từ
+  // 18/09/2026 nó được TÍNH từ kích thước SKU và kích thước tấm NVL
+  // (productionQuota trong utils/quota.ts). Chiều vẫn như khách chốt 01/09:
+  // "sản phẩm trên một tấm".
   note?: string
   material?: Material
 }
@@ -211,6 +230,14 @@ export interface Sku {
   description?: string
   is_active?: boolean
   is_combo?: boolean
+  // SKU cha của SKU này (vd cha "Hộp nhựa" chứa con "Hộp nhựa bé/lớn/vuông").
+  // Đúng 2 tầng: SKU cha không có cha, SKU đang có con thì không nhận cha.
+  // null = SKU cấp trên cùng (một SKU cha, hoặc SKU lẻ không thuộc nhóm nào).
+  parent_id?: number | null
+  // Kích thước D x R của sản phẩm, đơn vị mm — cùng kích thước tấm NVL tạo ra
+  // định mức. null = chưa khai (phải có cả hai hoặc không có cả hai).
+  length_mm?: number | null
+  width_mm?: number | null
   materials?: SkuMaterial[]
 }
 
@@ -457,7 +484,7 @@ export interface ImportJob {
 
 // ---- Master-data (legacy Excel) import -------------------------------------
 
-export type MasterSkuStatus = 'OK' | 'NEEDS_REVIEW' | 'MISSING_MATERIAL'
+export type MasterSkuStatus = 'OK' | 'MISSING_MATERIAL'
 
 export interface MasterImportMaterialPlan {
   code: string
@@ -475,6 +502,14 @@ export interface MasterImportSkuPlan {
   status: MasterSkuStatus
   row_count: number
   is_combo: boolean // built from ≥2 materials (BOM)
+  parent_code?: string // SKU cha file khai cho SKU này ("" = không khai, giữ cha hiện tại)
+  parent_changed?: boolean // SKU đã có sẵn, đang thuộc SKU cha khác → chuyển sang cha này
+  length_mm?: number | null
+  width_mm?: number | null
+  description?: string
+  // Định mức sẽ có trên từng NVL sau khi áp dụng (tên NVL → sp/tấm), chỉ với
+  // NVL đã khai kích thước tấm.
+  quota_by_material?: Record<string, number>
 }
 
 export interface MasterImportMappingPlan {
@@ -497,15 +532,17 @@ export interface MasterImportSummary {
   new_materials: number
   new_skus: number
   new_mappings: number
-  review_count: number
   missing_count: number
   error_rows: number
+  child_skus?: number // số SKU file xếp vào dưới một SKU cha
+  parent_groups?: number // … thuộc bao nhiêu SKU cha khác nhau
 }
 
 export interface MasterImportApplied {
   materials_created: number
   skus_created: number
   mappings_created: number
+  skus_updated?: number // SKU có sẵn được đổi SKU cha / D x R / mô tả
 }
 
 export interface MasterImportPreview {
@@ -520,7 +557,39 @@ export interface MasterImportPreview {
   applied?: MasterImportApplied
 }
 
-// ---- Material quota import (Loại VL + Định mức) ----------------------------
+// ---- Import SKU cha (bước 1 của thiết lập cha → con) -----------------------
+
+export type ParentSkuImportAction = 'CREATE' | 'UPDATE' | 'NOCHANGE'
+
+export interface ParentSkuImportItem {
+  code: string
+  name: string // mã đúng như gõ trong file
+  product_name: string
+  description: string
+  exists: boolean
+  current_product_name: string
+  current_description: string
+  child_count: number // số SKU con đang có
+  action: ParentSkuImportAction
+  row_numbers: number[]
+}
+
+export interface ParentSkuImportPreview {
+  filename?: string
+  items: ParentSkuImportItem[]
+  errors: MasterImportRowError[]
+  summary: {
+    total_rows: number
+    new: number
+    updates: number
+    unchanged: number
+    error_rows: number
+    duplicate_rows: number
+  }
+  applied?: { created: number; updated: number }
+}
+
+// ---- Material import (Loại VL + Dài + Rộng) --------------------------------
 
 export type MaterialImportAction = 'CREATE' | 'UPDATE' | 'NOCHANGE'
 
@@ -528,17 +597,17 @@ export interface MaterialImportItem {
   name: string
   code: string
   exists: boolean
-  // NVL trong catalog mà dòng này sửa (null = tạo mới). Tên NVL không unique nên
-  // server chốt theo id, không theo tên.
+  // NVL trong catalog mà dòng này sửa (null = tạo mới).
   material_id: number | null
-  current_quota: number | null
-  quota: number | null
+  current_length_mm: number | null
+  current_width_mm: number | null
+  // Kích thước từ file (null = ô trống → giữ nguyên).
+  length_mm: number | null
+  width_mm: number | null
   current_description: string
   description: string
   action: MaterialImportAction
   row_numbers: number[]
-  // Trùng tên với dòng khác trong file nhưng khác định mức/mô tả → là NVL riêng.
-  name_variant: boolean
 }
 
 export interface MaterialImportRowError {
@@ -557,10 +626,8 @@ export interface MaterialImportSummary {
   updates: number
   unchanged: number
   error_rows: number
-  // Số dòng bị gộp vì trùng cả 3 cột (Loại VL + Định mức + Mô tả).
+  // Số dòng lặp lại cùng một NVL với dữ liệu khớp nhau, đã gộp làm một.
   duplicate_rows: number
-  // Số NVL trùng tên nhưng khác định mức/mô tả → giữ riêng, không gộp.
-  name_variants: number
 }
 
 export interface MaterialImportApplied {
@@ -573,6 +640,8 @@ export interface MaterialImportPreview {
   items: MaterialImportItem[]
   errors: MaterialImportRowError[]
   summary: MaterialImportSummary
+  // Nhắc nhở cấp file, không phải lỗi — vd cột "Định mức" của mẫu cũ bị bỏ qua.
+  notices?: string[]
   applied?: MaterialImportApplied
 }
 
@@ -585,7 +654,6 @@ export interface MasterImportJob {
   new_materials?: number
   new_skus?: number
   new_mappings?: number
-  review_count?: number
   missing_count?: number
   error_rows?: number
   materials_created?: number
@@ -616,6 +684,17 @@ export interface BulkDeleteSkip {
 export interface MaterialDeleteResult {
   deleted_ids: number[]
   skipped: BulkDeleteSkip[]
+}
+
+// Kết quả xoá đơn hàng loạt. Đơn đã vào sản xuất bị bỏ qua kèm lý do.
+export interface OrderDeleteSkip {
+  id: number
+  internal_code?: string
+  reason: string
+}
+export interface OrderDeleteResult {
+  deleted_ids: number[]
+  skipped: OrderDeleteSkip[]
 }
 
 // Kết quả xoá ghi chú hàng loạt. Không có ràng buộc "đang được dùng" như NVL/SKU
@@ -691,9 +770,13 @@ export interface Batch {
   close_reason?: string
   // Số phần đã huỷ do QC fail (vẫn thuộc batch này để truy vết).
   scrapped_count?: number
+  // Số tấm NVL batch cần: ⌈Σ SL / định mức⌉ theo kích thước SKU × tấm, server
+  // tính từ các phần còn sống. Batch mẹ = số batch con. null = có phần chưa có
+  // định mức (thiếu kích thước) → không có con số để nói.
+  material_units?: number | null
   // ---- Batch mẹ–con (chẻ theo định mức NVL) ----
-  // Một batch "mẹ" gom nhiều batch "con"; mỗi con chứa tối đa `products_per_unit`
-  // sản phẩm của NVL. Batch phẳng (không chẻ) để trống toàn bộ các trường này.
+  // Một batch "mẹ" gom nhiều batch "con"; mỗi con vừa trong MỘT tấm NVL theo định
+  // mức tính từ kích thước. Batch phẳng (không chẻ) để trống toàn bộ các trường này.
   is_parent?: boolean
   // Set trên batch CON, trỏ về id batch mẹ. null/undefined = batch mẹ hoặc batch phẳng.
   parent_batch_id?: number | null

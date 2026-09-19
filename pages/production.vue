@@ -64,13 +64,13 @@ const columns = computed(() => {
                 <UiStatusBadge kind="priority" :value="b.priority || 'NORMAL'" />
               </div>
               <!-- Vật liệu in đậm, to hơn phần còn lại: nhân viên nhìn thẻ để đi lấy
-                   NVL, nên đây là dòng phải đọc được đầu tiên. Số đơn vị NVL tính
-                   theo định mức — NVL chưa khai định mức thì không hiện. -->
+                   NVL, nên đây là dòng phải đọc được đầu tiên. Số tấm NVL tính từ
+                   kích thước SKU và tấm — thiếu kích thước thì không hiện. -->
               <p class="mt-1.5 text-sm font-semibold text-foreground">{{ batchMaterialLabel(b) || '—' }}</p>
               <div class="mt-0.5 flex flex-wrap items-center justify-between gap-1.5">
                 <p class="text-xs text-muted-foreground">
                   <template v-if="batchMaterialUnits(b) != null">
-                    <span class="font-medium text-foreground">{{ batchMaterialUnits(b) }} đv NVL</span> ·
+                    <span class="font-medium text-foreground">{{ batchMaterialUnits(b) }} tấm NVL</span> ·
                   </template>
                   {{ b.item_count ?? b.items?.length ?? 0 }} items
                 </p>

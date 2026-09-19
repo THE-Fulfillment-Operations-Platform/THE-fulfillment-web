@@ -28,11 +28,9 @@ const toast = useToastStore()
 const auth = useAuthStore()
 const materials = ref<Material[]>([])
 
-// Gom batch + gắn file sản xuất là việc của tổ thiết kế/vận hành — khớp guard
-// BE (roleDesignOps trên /api/batches/auto và /api/batches/links/*).
-const canDesignOps = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? ''),
-)
+// Gom batch + gắn file sản xuất: quyền "Thao tác" của màn Batch — khớp guard BE
+// trên /api/batches/auto và /api/batches/links/*.
+const canDesignOps = computed(() => auth.can('batches.manage'))
 
 const filters = reactive({
   material_id: '',
@@ -128,7 +126,7 @@ function exportBatches() {
     { label: 'Batch', value: 'code' },
     { label: 'Material', value: (b) => batchMaterialLabel(b) },
     { label: 'Số lượng SP', value: (b) => batchProductTotal(b) ?? '' },
-    { label: 'NVL cần (đv)', value: (b) => batchMaterialUnits(b) ?? '' },
+    { label: 'NVL cần (tấm)', value: (b) => batchMaterialUnits(b) ?? '' },
     { label: 'Đã huỷ', value: (b) => b.scrapped_count ?? 0 },
     { label: 'Tạo lúc', value: (b) => (b.created_at ? formatDateTime(b.created_at) : '') },
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
@@ -278,7 +276,7 @@ async function autoCreateBatches() {
                 <th class="table-th">Batch</th>
                 <th class="table-th">Material</th>
                 <th class="table-th" title="Tổng số sản phẩm trong batch (cộng SL từng dòng)">Số lượng SP</th>
-                <th class="table-th" title="Số đơn vị NVL cần theo định mức (sp/đơn vị) của vật liệu">NVL</th>
+                <th class="table-th" title="Số tấm NVL cần, tính từ kích thước SKU và kích thước tấm">NVL</th>
                 <th class="table-th hidden lg:table-cell">SKU / Products</th>
                 <th class="table-th">Status</th>
                 <th class="table-th hidden sm:table-cell">Priority</th>
@@ -338,10 +336,10 @@ async function autoCreateBatches() {
                   <span
                     v-if="batchMaterialUnits(b) != null"
                     :title="b.is_parent
-                      ? 'Batch mẹ — mỗi batch con dùng tối đa một đơn vị NVL'
-                      : `Định mức ${b.material?.products_per_unit} sp/đơn vị`"
-                  >{{ batchMaterialUnits(b) }} đv</span>
-                  <span v-else class="text-muted-foreground" title="NVL chưa khai định mức sp/đơn vị trong Master Data">—</span>
+                      ? 'Batch mẹ — mỗi batch con dùng tối đa một tấm NVL'
+                      : 'Số tấm NVL cần, tính từ kích thước SKU và kích thước tấm'"
+                  >{{ batchMaterialUnits(b) }} tấm</span>
+                  <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Master Data — chưa tính được số tấm">—</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
                 <td class="table-td">

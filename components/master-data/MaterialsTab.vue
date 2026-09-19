@@ -4,12 +4,14 @@ import type { MaterialInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
+import { formatDimMM } from '~/utils/format'
+import { productionQuota } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
 import { useClientPager } from '~/composables/useClientPager'
-import MaterialQuotaImport from './MaterialQuotaImport.vue'
+import MaterialImportDialog from './MaterialImportDialog.vue'
 
 const props = defineProps<{ materials: Material[]; skus?: Sku[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -17,31 +19,45 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 // Cột "Mã SKU": người vận hành nghĩ theo SKU chứ không theo mã material tự sinh
 // (CERAMIC-TRON chỉ là slug của cột Tên đứng ngay cạnh). Đảo mapping SKU→NVL đã
 // tải sẵn cho tab Mapping thành NVL→[SKU] để mỗi dòng NVL trả lời được "NVL này
-// làm cho những SKU nào".
-const skuCodesByMaterial = computed(() => {
-  const map = new Map<number, string[]>()
+// làm cho những SKU nào" — kèm định mức sp/tấm của từng SKU, tính từ kích thước.
+const skusByMaterial = computed(() => {
+  const map = new Map<number, Sku[]>()
   for (const s of props.skus ?? []) {
     for (const sm of s.materials ?? []) {
       const arr = map.get(sm.material_id)
-      if (arr) arr.push(s.code)
-      else map.set(sm.material_id, [s.code])
+      if (arr) arr.push(s)
+      else map.set(sm.material_id, [s])
     }
   }
   return map
 })
+function skusOf(m: Material): Sku[] {
+  return skusByMaterial.value.get(m.id) ?? []
+}
 function skuCodes(m: Material): string[] {
-  return skuCodesByMaterial.value.get(m.id) ?? []
+  return skusOf(m).map((s) => s.code)
+}
+// "AO1-3.5 · 376/tấm" — không có số khi SKU hoặc tấm chưa khai kích thước.
+function skuChip(m: Material, s: Sku): string {
+  const q = productionQuota(s, m)
+  return q ? `${s.code} · ${q}/tấm` : s.code
 }
 // Một NVL có thể map hàng chục SKU — hiện vài mã đầu, phần còn lại gom "+N"
 // (đầy đủ nằm trong tooltip), giữ bảng không bị một ô kéo dãn cả hàng.
 const SKU_CHIP_LIMIT = 3
+function skuTooltip(m: Material): string {
+  return skusOf(m)
+    .map((s) => skuChip(m, s))
+    .join(', ')
+}
 
 const toast = useToastStore()
 const auth = useAuthStore()
-const canDelete = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
-// Chỉ OWNER được set định mức sản xuất của NVL (khớp guard backend). ADMIN/OPS
-// vẫn CRUD material bình thường nhưng ô định mức khoá read-only.
-const canSetCapacity = computed(() => auth.role === 'OWNER')
+// Thêm/sửa/import = "Thao tác" màn Master Data; xoá cần thêm vai trò Admin/Owner.
+// Kích thước tấm là dữ liệu nền, không còn là "cần gạt" riêng của OWNER như định
+// mức nhập tay trước đây.
+const canManage = computed(() => auth.can('master_data.manage'))
+const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
 
 const search = ref('')
 const filtered = computed(() => {
@@ -66,16 +82,18 @@ const importOpen = ref(false)
 const editing = ref<Material | null>(null)
 const saving = ref(false)
 const form = reactive<MaterialInput>({ code: '', name: '', description: '' })
-// Định mức nhập để phân biệt "để trống" (không giới hạn) với số 0.
-// v-model trên <input type="number"> có thể trả về number hoặc chuỗi rỗng khi để trống.
-const capacity = ref<string | number>('')
+// Kích thước giữ dạng chuỗi để phân biệt "để trống" với số 0. v-model trên
+// <input type="number"> có thể trả về number hoặc chuỗi rỗng khi để trống.
+const lengthMM = ref<string | number>('')
+const widthMM = ref<string | number>('')
 
 function openCreate() {
   editing.value = null
   form.code = ''
   form.name = ''
   form.description = ''
-  capacity.value = ''
+  lengthMM.value = ''
+  widthMM.value = ''
   open.value = true
 }
 function openEdit(m: Material) {
@@ -83,30 +101,43 @@ function openEdit(m: Material) {
   form.code = m.code
   form.name = m.name
   form.description = m.description ?? ''
-  capacity.value = m.products_per_unit ? String(m.products_per_unit) : ''
+  lengthMM.value = m.length_mm ?? ''
+  widthMM.value = m.width_mm ?? ''
   open.value = true
 }
 
-// Chuỗi định mức → số dương, hoặc null khi để trống (không giới hạn).
-function parseCapacity(): number | null {
-  const raw = String(capacity.value).trim()
-  const n = Math.floor(Number(raw))
-  return raw !== '' && Number.isFinite(n) && n > 0 ? n : null
+// Ô kích thước → số mm dương, hoặc null khi để trống / không hợp lệ.
+function parseDim(v: string | number): number | null {
+  const raw = String(v).trim().replace(',', '.')
+  const n = Number(raw)
+  return raw !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null
 }
+// D và R phải đi đôi: một ô có số, ô kia trống thì BE từ chối — chặn ngay ở nút.
+const sizeError = computed(() => {
+  const l = parseDim(lengthMM.value)
+  const w = parseDim(widthMM.value)
+  return (l == null) !== (w == null) ? 'Nhập cả Dài lẫn Rộng, hoặc bỏ trống cả hai' : ''
+})
+// Số SKU đang map vào NVL đang sửa mà có kích thước — để nói rõ đổi kích thước
+// tấm là đổi định mức của từng ấy SKU.
+const affectedSkus = computed(() =>
+  editing.value ? skusOf(editing.value).filter((s) => s.length_mm != null && s.width_mm != null).length : 0,
+)
 
-const canSubmit = computed(() => !!form.name.trim() && (!!editing.value || !!form.code.trim()))
+const canSubmit = computed(() => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !sizeError.value)
 
 async function submit() {
   if (!canSubmit.value || saving.value) return
   saving.value = true
   try {
-    // Chỉ gửi products_per_unit khi user là OWNER — tránh ADMIN/OPS vô tình ghi đè
-    // định mức (ô bị khoá nên giá trị nhập không phản ánh ý định của họ).
     if (editing.value) {
+      // Luôn gửi đủ hai cạnh: 0 = bỏ kích thước, vì form đang hiện đúng giá trị
+      // hiện tại nên ô trống nghĩa là người dùng muốn bỏ.
       await materialsApi.update(editing.value.id, {
         name: form.name.trim(),
         description: form.description?.trim(),
-        ...(canSetCapacity.value ? { products_per_unit: parseCapacity() } : {}),
+        length_mm: parseDim(lengthMM.value) ?? 0,
+        width_mm: parseDim(widthMM.value) ?? 0,
       })
       toast.success('Đã cập nhật nguyên vật liệu')
     } else {
@@ -114,7 +145,8 @@ async function submit() {
         code: normalizeCode(form.code),
         name: form.name.trim(),
         description: form.description?.trim(),
-        ...(canSetCapacity.value ? { products_per_unit: parseCapacity() } : {}),
+        length_mm: parseDim(lengthMM.value),
+        width_mm: parseDim(widthMM.value),
       })
       toast.success('Đã tạo nguyên vật liệu')
     }
@@ -203,10 +235,10 @@ async function remove(m: Material) {
         <input v-model="search" class="input pl-9" placeholder="Tìm theo mã / tên / mô tả…" />
       </div>
       <div class="flex shrink-0 gap-2">
-        <button v-if="canSetCapacity" class="btn-secondary" @click="importOpen = true">
+        <button v-if="canManage" class="btn-secondary" title="Import kích thước tấm NVL từ Excel" @click="importOpen = true">
           <UiIcon name="upload" :size="16" /> Import Excel
         </button>
-        <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm material</button>
+        <button v-if="canManage" class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm NVL</button>
       </div>
     </div>
 
@@ -235,9 +267,9 @@ async function remove(m: Material) {
                   @change="toggleAll"
                 />
               </th>
-              <th class="table-th">Mã SKU</th>
               <th class="table-th">Tên</th>
-              <th class="table-th">Định mức</th>
+              <th class="table-th">Kích thước tấm</th>
+              <th class="table-th">SKU · định mức</th>
               <th class="table-th hidden md:table-cell">Mô tả</th>
               <th class="table-th"></th>
             </tr>
@@ -260,34 +292,35 @@ async function remove(m: Material) {
                 />
               </td>
               <td class="table-td">
-                <div
-                  v-if="skuCodes(m).length"
-                  class="flex max-w-xs flex-wrap gap-1"
-                  :title="skuCodes(m).join(', ')"
-                >
+                <span class="font-medium text-foreground">{{ m.name }}</span>
+                <span class="block font-mono text-[11px] text-muted-foreground">{{ m.code }}</span>
+              </td>
+              <td class="table-td whitespace-nowrap tabular-nums">
+                <span v-if="m.length_mm != null && m.width_mm != null" class="text-foreground">
+                  {{ formatDimMM(m.length_mm, m.width_mm) }}
+                </span>
+                <span v-else class="inline-flex items-center gap-1 text-xs text-muted-foreground" title="Chưa khai kích thước tấm → SKU trên NVL này không có định mức, batch không chẻ">
+                  <UiIcon name="alert" :size="12" /> Chưa khai
+                </span>
+              </td>
+              <td class="table-td">
+                <div v-if="skusOf(m).length" class="flex max-w-sm flex-wrap gap-1" :title="skuTooltip(m)">
                   <span
-                    v-for="c in skuCodes(m).slice(0, SKU_CHIP_LIMIT)"
-                    :key="c"
+                    v-for="s in skusOf(m).slice(0, SKU_CHIP_LIMIT)"
+                    :key="s.id"
                     class="inline-flex rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
-                  >{{ c }}</span>
+                  >{{ skuChip(m, s) }}</span>
                   <span
-                    v-if="skuCodes(m).length > SKU_CHIP_LIMIT"
+                    v-if="skusOf(m).length > SKU_CHIP_LIMIT"
                     class="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                  >+{{ skuCodes(m).length - SKU_CHIP_LIMIT }}</span>
+                  >+{{ skusOf(m).length - SKU_CHIP_LIMIT }}</span>
                 </div>
                 <span v-else class="text-xs text-muted-foreground">Chưa map SKU</span>
-              </td>
-              <td class="table-td font-medium text-foreground">{{ m.name }}</td>
-              <td class="table-td">
-                <span v-if="m.products_per_unit" class="inline-flex items-center rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-primary">
-                  {{ m.products_per_unit }} sp/đơn vị
-                </span>
-                <span v-else class="text-xs text-muted-foreground">Không giới hạn</span>
               </td>
               <td class="table-td hidden max-w-md whitespace-normal text-muted-foreground md:table-cell">{{ m.description || '—' }}</td>
               <td class="table-td">
                 <div class="flex items-center justify-end gap-1">
-                  <button class="table-action text-primary" @click="openEdit(m)">Sửa</button>
+                  <button v-if="canManage" class="table-action text-primary" @click="openEdit(m)">Sửa</button>
                   <button
                     v-if="canDelete"
                     class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
@@ -315,7 +348,7 @@ async function remove(m: Material) {
     <UiModal v-model="open" :title="editing ? 'Sửa nguyên vật liệu' : 'Thêm nguyên vật liệu'">
       <div class="space-y-4">
         <div>
-          <label class="label">Mã material *</label>
+          <label class="label">Mã NVL *</label>
           <input
             v-model="form.code"
             class="input font-mono"
@@ -329,27 +362,22 @@ async function remove(m: Material) {
           <label class="label">Tên *</label>
           <input v-model="form.name" class="input" placeholder="VD: Mica trong 3 ly" />
         </div>
-        <div>
-          <label class="label">Định mức sản xuất (sản phẩm / đơn vị NVL)</label>
-          <input
-            v-model="capacity"
-            type="number"
-            min="1"
-            step="1"
-            inputmode="numeric"
-            class="input"
-            :disabled="!canSetCapacity"
-            placeholder="Để trống = không giới hạn"
-          />
-          <p class="mt-1 text-[11px] text-muted-foreground">
-            <template v-if="canSetCapacity">
-              1 đơn vị NVL (1 tấm/1 lô) làm được tối đa bao nhiêu sản phẩm. Khi tạo batch vượt số này, hệ thống tự chẻ thành batch mẹ – nhiều batch con.
-            </template>
-            <template v-else>
-              Chỉ OWNER được chỉnh định mức. {{ editing?.products_per_unit ? `Hiện tại: ${editing.products_per_unit} sp/đơn vị.` : 'Hiện tại: không giới hạn.' }}
-            </template>
-          </p>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="label">Dài của tấm (mm)</label>
+            <input v-model="lengthMM" type="number" min="0" step="0.01" inputmode="decimal" class="input" placeholder="VD: 1220" />
+          </div>
+          <div>
+            <label class="label">Rộng của tấm (mm)</label>
+            <input v-model="widthMM" type="number" min="0" step="0.01" inputmode="decimal" class="input" placeholder="VD: 2440" />
+          </div>
         </div>
+        <p v-if="sizeError" class="-mt-2 text-[11px] text-rose-600 dark:text-rose-400">{{ sizeError }}</p>
+        <p v-else class="-mt-2 text-[11px] text-muted-foreground">
+          Kích thước MỘT tấm. Cùng kích thước từng SKU cho ra định mức ⌊S tấm / S sản phẩm⌋ sản phẩm mỗi tấm —
+          căn cứ chẻ batch. Để trống = không có định mức, batch NVL này không chẻ.
+          <template v-if="affectedSkus"> Đổi số này là đổi định mức của {{ affectedSkus }} SKU đang dùng NVL.</template>
+        </p>
         <div>
           <label class="label">Mô tả</label>
           <textarea v-model="form.description" rows="2" class="input" placeholder="Ghi chú thêm (tuỳ chọn)" />
@@ -363,6 +391,6 @@ async function remove(m: Material) {
       </template>
     </UiModal>
 
-    <MaterialQuotaImport v-model="importOpen" @imported="emit('changed')" />
+    <MaterialImportDialog v-model="importOpen" @imported="emit('changed')" />
   </div>
 </template>

@@ -28,11 +28,9 @@ const items = computed(() =>
 // dưới đánh dấu rõ thay vì để lẫn với hàng đang sản xuất.
 const liveItemCount = computed(() => items.value.filter((i) => !i.scrapped_at).length)
 
-// Roles allowed to advance batch status (production + supervisors). Mirrors the
-// backend PATCH /batches/:id/status guard (Owner/Admin/Ops/Production/Designer).
-const canChangeStatus = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'DESIGNER'].includes(auth.role ?? ''),
-)
+// Chuyển chặng in/cắt là "Thao tác" của Bảng sản xuất — khớp guard BE
+// PATCH /batches/:id/status.
+const canChangeStatus = computed(() => auth.can('production.manage'))
 
 // Batch đã QC (roll-up từ item đã QC ở trạm QC) → khoá board, không cho hạ cấp
 // trạng thái sản xuất. QC_PASSED chỉ do trạm QC đặt, 1 lần cho cả sản phẩm.
@@ -221,10 +219,10 @@ async function downloadBatchDesign() {
 
 // ---- Link sản xuất theo Batch (Print/Cut) ----------------------------------
 // Link dùng chung cho cả batch (nhập 1 lần, mọi design trong batch dùng chung).
-// Chỉ OWNER/ADMIN/OPS/DESIGNER được thêm/sửa — BE guard giống hệt.
+// Cần quyền "Thao tác" màn Batch — BE guard giống hệt.
 const LINK_LABELS: Record<BatchLinkKind, string> = { PRINT: 'Link in', CUT: 'Link cắt' }
 const canEditLinks = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') &&
+  auth.can('batches.manage') &&
   !closed.value &&
   // khớp guard BE — bộ file khoá sau khi bắt đầu sản xuất.
   batch.value?.status === 'PENDING',
@@ -364,10 +362,10 @@ async function savePair() {
 //          để làm lại ở một batch MỚI.
 // Hiện nút khi batch đã vào sản xuất (hoặc còn PENDING nhưng đã có phần bị huỷ
 // ở QC — trường hợp đó xoá cũng từ chối, không có nút này thì batch kẹt).
-// Role khớp guard BE: sản xuất và QC là người đứng cạnh cái tấm đó; DESIGNER thì
-// không — họ gom batch, không ghi bỏ vật liệu đã tiêu.
+// Quyền riêng "Huỷ batch in/cắt hỏng" (mặc định: sản xuất, QC — người đứng cạnh
+// cái tấm đó; DESIGNER thì không — họ gom batch, không ghi bỏ vật liệu đã tiêu).
 const canScrap = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'QC'].includes(auth.role ?? '') &&
+  auth.can('batch_scrap.manage') &&
   !!batch.value &&
   !closed.value &&
   (batch.value.status !== 'PENDING' || (batch.value.scrapped_count ?? 0) > 0),
@@ -422,7 +420,7 @@ async function submitScrap() {
 // (roleDesignOps). BE còn chặn lần cuối trong transaction nên bấm trễ sau khi
 // xưởng đã chuyển trạng thái chỉ nhận 422, không mất dữ liệu.
 const canDelete = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'].includes(auth.role ?? '') &&
+  auth.can('batches.manage') &&
   !!batch.value &&
   batch.value.status === 'PENDING' &&
   !batch.value.parent_batch_id &&

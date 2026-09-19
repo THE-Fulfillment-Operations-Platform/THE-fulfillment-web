@@ -155,7 +155,7 @@ watch(orders, (rows) => {
 
 // ---- Gắn mã vận đơn ---------------------------------------------------------
 const canEditTracking = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING', 'CS'].includes(auth.role ?? ''),
+  auth.can('journeys.manage') || auth.can('cs.manage'),
 )
 // Chỉ mã vận đơn. Tên hãng vận chuyển KHÔNG được nhập, lưu hay hiện ở bất cứ
 // đâu: với seller thì THE chính là đơn vị vận chuyển, để lộ nhà thầu phía sau

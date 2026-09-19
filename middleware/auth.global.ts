@@ -41,9 +41,11 @@ export default defineNuxtRouteMiddleware((to) => {
     return navigateTo('/dashboard')
   }
 
-  // Role-based nav gating (detail pages without a nav root are allowed; the API
-  // still enforces RBAC server-side).
-  if (!canAccessPath(auth.role, to.path)) {
-    return navigateTo(auth.homeRoute)
+  // Permission-based nav gating (detail pages without a nav root are allowed;
+  // the API still enforces access server-side). Guard against bouncing to a
+  // home route that is itself refused.
+  if (!canAccessPath(auth.user, to.path)) {
+    const home = auth.homeRoute
+    return home === to.path ? navigateTo('/no-access') : navigateTo(home)
   }
 })

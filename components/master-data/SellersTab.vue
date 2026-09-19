@@ -15,7 +15,9 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const toast = useToastStore()
 const auth = useAuthStore()
-const canDelete = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
+// Thêm/sửa = "Thao tác" màn Master Data; xoá cần thêm vai trò Admin/Owner.
+const canManage = computed(() => auth.can('master_data.manage'))
+const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Đang hoạt động' },
@@ -141,7 +143,7 @@ async function remove(s: Seller) {
         <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input v-model="search" class="input pl-9" placeholder="Tìm theo mã / tên / liên hệ…" />
       </div>
-      <button class="btn-primary shrink-0" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm seller</button>
+      <button v-if="canManage" class="btn-primary shrink-0" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm seller</button>
     </div>
 
     <UiStateBlock
@@ -182,7 +184,7 @@ async function remove(s: Seller) {
               </td>
               <td class="table-td">
                 <div class="flex items-center justify-end gap-1">
-                  <button class="table-action text-primary" @click="openEdit(s)">Sửa</button>
+                  <button v-if="canManage" class="table-action text-primary" @click="openEdit(s)">Sửa</button>
                   <button
                     v-if="canDelete"
                     class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"

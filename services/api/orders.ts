@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '../http'
-import type { Order, ListParams, TrackingStatus } from '~/types'
+import type { Order, OrderDeleteResult, ListParams, TrackingStatus } from '~/types'
 
 export interface OrderListParams extends ListParams {
   seller_id?: number
@@ -93,6 +93,9 @@ export const ordersApi = {
   cancel: (id: number | string, reason: string) =>
     apiPost<Order>(`/api/orders/${id}/cancel`, { reason }),
   remove: (id: number | string) => apiDelete<{ deleted: boolean; id: number }>(`/api/orders/${id}`),
+  // Xoá nhiều đơn trong MỘT request. Đơn đã vào sản xuất nằm trong `skipped`
+  // kèm lý do, không bị xoá.
+  bulkRemove: (ids: number[]) => apiPost<OrderDeleteResult>('/api/orders/bulk-delete', { ids }),
   updateTracking: (id: number | string, body: UpdateTrackingInput) =>
     apiPatch<Order>(`/api/orders/${id}/tracking`, body),
 }

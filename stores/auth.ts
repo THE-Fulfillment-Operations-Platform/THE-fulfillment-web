@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import type { Role, User } from '~/types'
 import { authApi } from '~/services/api'
 import { TOKEN_KEY, USER_KEY, EXPIRES_KEY } from '~/utils/storage'
+import { firstAccessiblePath, userCan } from '~/utils/navigation'
 
 interface AuthState {
   token: string | null
@@ -24,14 +25,21 @@ export const useAuthStore = defineStore('auth', {
     role: (s): Role | null => s.user?.role ?? null,
     isSeller: (s): boolean => s.user?.role === 'SELLER',
     fullName: (s): string => s.user?.full_name || s.user?.email || '',
-    /** Landing route after login, based on role. */
+    /**
+     * Có quyền `perm` ("orders.manage", "qc.view"…) không. Chỉ để ẩn/hiện giao
+     * diện — backend mới là chốt chặn thật.
+     */
+    can(): (perm: string) => boolean {
+      return (perm: string) => userCan(this.user, perm)
+    },
+    /** Landing route after login: the first screen this account may open. */
     homeRoute(): string {
       if (this.user?.role === 'SELLER') return '/seller'
       // CS lands on their work queue — the orders already sent to THE that still
       // need a tracking number — not on the free-text lookup, which is what they
       // reach for only when a customer calls.
-      if (this.user?.role === 'CS') return '/journeys'
-      return '/dashboard'
+      if (this.user?.role === 'CS' && userCan(this.user, 'journeys.view')) return '/journeys'
+      return firstAccessiblePath(this.user) ?? '/no-access'
     },
   },
 

@@ -5,6 +5,10 @@ import { useApiResource } from '~/composables/useApiResource'
 import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
+import { useAuthStore } from '~/stores/auth'
+
+// Quét gửi cho THE = "Thao tác" màn Chờ gửi hàng; chỉ Xem thì xem danh sách.
+const canShip = computed(() => useAuthStore().can('ship_queue.manage'))
 
 // Chờ gửi hàng — điểm nối giữa hai nửa vòng đời của đơn.
 //
@@ -152,7 +156,7 @@ function submitScan() {
         <button class="btn-secondary" @click="reload">
           <UiIcon name="refresh" :size="16" /> Làm mới
         </button>
-        <button v-if="!scanMode" class="btn-primary" @click="startScan">
+        <button v-if="!scanMode && canShip" class="btn-primary" @click="startScan">
           <UiIcon name="qc" :size="16" /> Quét gửi hàng
         </button>
         <button v-else class="btn-secondary" @click="stopScan">

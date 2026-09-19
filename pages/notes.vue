@@ -191,6 +191,8 @@ const form = reactive<NoteInput>({
 // việc xưởng — BE lọc theo owner_role, nên nếu để CS gán note sang DESIGNER thì
 // note vừa ghi biến mất khỏi màn của chính họ ngay lúc lưu.
 const isCS = computed(() => useAuthStore().role === 'CS')
+// Tạo / sửa / giải quyết / xoá ghi chú = "Thao tác" màn Ghi chú.
+const canManage = computed(() => useAuthStore().can('notes.manage'))
 const ownerRoleOptions = computed(() =>
   isCS.value
     ? [{ value: 'CS', label: ROLE_LABEL.CS }]
@@ -328,7 +330,7 @@ async function remove(n: Note) {
         <button class="btn-secondary" :disabled="!notes.length" title="Xuất các note đang hiển thị ra CSV" @click="exportNotes">
           <UiIcon name="upload" :size="16" /> Xuất CSV
         </button>
-        <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Tạo note</button>
+        <button v-if="canManage" class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Tạo note</button>
       </template>
     </PageHeader>
 
@@ -356,7 +358,7 @@ async function remove(n: Note) {
     </div>
 
     <div class="card overflow-hidden">
-      <UiBulkBar :count="affectedCount" noun="ghi chú" @clear="clearSelection">
+      <UiBulkBar v-if="canManage" :count="affectedCount" noun="ghi chú" @clear="clearSelection">
         <template #note>
           <button
             v-if="canOfferSelectAll"
@@ -438,7 +440,7 @@ async function remove(n: Note) {
                 <td class="table-td"><UiStatusBadge kind="noteStatus" :value="n.status" /></td>
                 <td class="table-td hidden text-xs text-muted-foreground sm:table-cell">{{ formatDateTime(n.created_at) }}</td>
                 <td class="table-td">
-                  <div class="flex items-center justify-end gap-1">
+                  <div v-if="canManage" class="flex items-center justify-end gap-1">
                     <button
                       v-if="n.status !== 'RESOLVED'"
                       class="table-action text-emerald-600 disabled:opacity-50 dark:text-emerald-400"

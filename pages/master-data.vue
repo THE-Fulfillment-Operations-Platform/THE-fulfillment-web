@@ -2,7 +2,9 @@
 import { materialsApi, skusApi, sellersApi } from '~/services/api'
 import type { Material, Sku, Seller } from '~/types'
 import { errorMessage } from '~/utils/api-error'
+import { parentSkuIds } from '~/utils/sku'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
 
 // Master Data / SKU-NVL Setup. Single page with four tabs: Materials, SKUs,
 // SKU → Material mapping and Seller. The catalog is loaded once here and shared
@@ -14,7 +16,7 @@ const router = useRouter()
 
 type TabKey = 'materials' | 'skus' | 'mapping' | 'sellers'
 const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'materials', label: 'Materials', icon: 'box' },
+  { key: 'materials', label: 'Nguyên Vật Liệu (NVL)', icon: 'box' },
   { key: 'skus', label: 'SKUs', icon: 'orders' },
   { key: 'mapping', label: 'SKU → Material', icon: 'link' },
   { key: 'sellers', label: 'Seller', icon: 'users' },
@@ -90,7 +92,11 @@ function reloadImported() {
   loadSkus()
 }
 
-const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s.materials.length)).length)
+// SKU cha không có NVL là đúng thiết kế (NVL nằm ở từng SKU con) — không đếm.
+const unmappedCount = computed(() => {
+  const parents = parentSkuIds(skus.value)
+  return skus.value.filter((s) => !(s.materials && s.materials.length) && !parents.has(s.id)).length
+})
 </script>
 
 <template>
@@ -100,7 +106,7 @@ const unmappedCount = computed(() => skus.value.filter((s) => !(s.materials && s
       subtitle="Khai báo nguyên vật liệu, SKU và mapping SKU → nguyên vật liệu — nền tảng để gom batch và import đơn"
     >
       <template #actions>
-        <NuxtLink to="/import" class="btn-secondary"><UiIcon name="upload" :size="16" /> Import đơn</NuxtLink>
+        <NuxtLink v-if="useAuthStore().can('import.view')" to="/import" class="btn-secondary"><UiIcon name="upload" :size="16" /> Import đơn</NuxtLink>
       </template>
     </PageHeader>
 

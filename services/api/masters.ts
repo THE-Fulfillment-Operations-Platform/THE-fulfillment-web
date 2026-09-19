@@ -15,29 +15,25 @@ export interface MaterialInput {
   code: string
   name: string
   description?: string
-  // Định mức: số sản phẩm tối đa 1 đơn vị NVL làm ra. Chỉ OWNER được set (backend
-  // guard). Bỏ trống/null = không giới hạn → batch không bị chẻ mẹ–con.
-  products_per_unit?: number | null
+  // Kích thước một tấm NVL (mm) — cùng kích thước SKU tạo ra định mức. Phải có
+  // cả hai hoặc bỏ trống cả hai. Khi sửa: bỏ field = giữ, gửi 0 cả hai = bỏ.
+  length_mm?: number | null
+  width_mm?: number | null
 }
 
 export interface SkuMaterialInput {
   material_id: number
   /** Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư). */
   quantity_per_unit?: number
-  /**
-   * Định mức sản xuất của CẶP (SKU, NVL): một đơn vị NVL ra được bao nhiêu sản
-   * phẩm của SKU này — dùng để chia batch. Bỏ field = giữ nguyên định mức đang
-   * lưu; 0/null = xoá (cặp rơi về định mức của NVL). Chỉ OWNER đặt được.
-   */
-  products_per_unit?: number | null
   note?: string
 }
 
-// Một dòng của file import định mức: tên NVL + định mức (null = không giới hạn)
-// + mô tả (tuỳ chọn). row_number giữ lại số dòng trong file để báo lỗi cho đúng.
-export interface MaterialQuotaRowInput {
+// Một dòng của file import NVL: tên + kích thước tấm (mm, null = ô trống) + mô
+// tả (tuỳ chọn). row_number giữ lại số dòng trong file để báo lỗi cho đúng.
+export interface MaterialImportRowInput {
   material: string
-  quota: number | null
+  length_mm: number | null
+  width_mm: number | null
   description?: string
   row_number?: number
 }
@@ -48,6 +44,10 @@ export interface SkuInput {
   product_name?: string
   description?: string
   is_active?: boolean
+  // Khi sửa: bỏ field = giữ nguyên, gửi 0 = xoá (tách khỏi SKU cha / bỏ kích thước).
+  parent_id?: number | null
+  length_mm?: number | null
+  width_mm?: number | null
   // Optional: a SKU may be created unmapped and get its material(s) later.
   materials?: SkuMaterialInput[]
 }
@@ -73,66 +73,6 @@ export const storesApi = {
   remove: (id: number | string) => apiDelete<unknown>(`/api/stores/${id}`),
 }
 
-// ---- Định mức theo cặp SKU–NVL (OWNER) --------------------------------------
-// Định mức "SP/tấm" của từng cặp là căn cứ chia batch; cặp trống rơi về định mức
-// mặc định của NVL, NVL cũng trống thì không giới hạn (cả pool dồn một batch).
-// Luồng: xuất file mọi cặp → điền cột Định mức → import lại.
-export type PairQuotaAction = 'UPDATE' | 'NOCHANGE'
-
-export interface PairQuotaFileRow {
-  row_number?: number
-  sku: string
-  material: string
-  material_code?: string
-  quota: number | null
-}
-
-export interface PairQuotaItem {
-  sku_code: string
-  material_code: string
-  material_name: string
-  mapping_id: number
-  current_quota: number | null // định mức riêng đang có của cặp (null = chưa có)
-  material_quota: number | null // định mức mặc định của NVL — áp dụng khi cặp chưa có
-  quota: number
-  action: PairQuotaAction
-  row_numbers: number[]
-}
-
-export interface PairQuotaRowError {
-  row_number: number
-  sku: string
-  material: string
-  error_code: string
-  message: string
-  row_numbers?: number[]
-}
-
-export interface PairQuotaPreview {
-  filename: string
-  items: PairQuotaItem[]
-  errors: PairQuotaRowError[]
-  summary: {
-    total_rows: number
-    updates: number
-    unchanged: number
-    error_rows: number
-    duplicate_rows: number
-    blank_rows: number
-  }
-  applied?: { updated: number }
-}
-
-export const pairQuotaApi = {
-  exportXlsx: () => apiDownload('/api/materials/pair-quota/export.xlsx', 'dinh-muc-theo-sku.xlsx'),
-  previewFile: (file: File) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    return apiPost<PairQuotaPreview>('/api/materials/pair-quota/import/preview', fd)
-  },
-  commit: (rows: PairQuotaFileRow[]) =>
-    apiPost<PairQuotaPreview>('/api/materials/pair-quota/import/commit', { rows }),
-}
 
 // ---- Materials -------------------------------------------------------------
 export const materialsApi = {
@@ -147,16 +87,16 @@ export const materialsApi = {
   // trong `skipped` kèm lý do, không bị xoá.
   bulkRemove: (ids: number[]) =>
     apiPost<MaterialDeleteResult>('/api/materials/bulk-delete', { ids }),
-  // Import định mức NVL (OWNER-only). File 2 cột: Loại VL + Định mức.
+  // Import kích thước NVL. File: Loại VL + Dài (mm) + Rộng (mm) (+ Mô tả).
   importPreviewFile: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
     return apiPost<MaterialImportPreview>('/api/materials/import/preview', fd)
   },
-  importCommit: (rows: MaterialQuotaRowInput[]) =>
+  importCommit: (rows: MaterialImportRowInput[]) =>
     apiPost<MaterialImportPreview>('/api/materials/import/commit', { rows }),
-  downloadQuotaTemplate: () =>
-    apiDownload('/api/materials/import/template.xlsx', 'material-quota-template.xlsx'),
+  downloadImportTemplate: () =>
+    apiDownload('/api/materials/import/template.xlsx', 'material-import-template.xlsx'),
 }
 
 // ---- SKUs ------------------------------------------------------------------

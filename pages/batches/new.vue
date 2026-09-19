@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { designApi, batchesApi, materialsApi } from '~/services/api'
-import type { MaterialBucket, OrderItem, Priority } from '~/types'
+import type { Material, MaterialBucket, OrderItem, Priority } from '~/types'
+import { formatDimMM } from '~/utils/format'
 import { PRIORITY_OPTIONS, PRIORITY } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { itemStoreOrderId } from '~/utils/item'
 import { planBatchSplitByQuota, productCount } from '~/utils/batch'
+import { productionQuota } from '~/utils/quota'
 import { PAGE_SIZE_ALL } from '~/utils/pagination'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
@@ -32,33 +34,32 @@ const dueDate = ref('')
 const note = ref('')
 const creating = ref(false)
 
-// Định mức NVL (material_id → products_per_unit). Cần cho preview chẻ batch mẹ–con;
-// MaterialBucket không mang định mức nên nạp riêng danh sách material.
-const capByMaterial = ref<Map<number, number | null>>(new Map())
+// Kích thước tấm của từng NVL (material_id → Material). Cần cho preview chẻ
+// batch mẹ–con; MaterialBucket không mang kích thước nên nạp riêng danh sách.
+const materialById = ref<Map<number, Material>>(new Map())
 async function loadMaterialCaps() {
   try {
     const { data } = await materialsApi.list()
-    capByMaterial.value = new Map((data ?? []).map((m) => [m.id, m.products_per_unit ?? null]))
+    materialById.value = new Map((data ?? []).map((m) => [m.id, m]))
   } catch {
-    /* định mức tuỳ chọn — thiếu thì coi như không giới hạn */
+    /* kích thước tuỳ chọn — thiếu thì coi như không có định mức */
   }
 }
 
-// Định mức của NVL đang chọn — chỉ còn là GIÁ TRỊ MẶC ĐỊNH cho những cặp
-// (SKU, NVL) chưa khai riêng (null = không giới hạn).
-const activeCap = computed(() =>
-  activeMaterial.value ? capByMaterial.value.get(activeMaterial.value.material_id) ?? null : null,
+// Tấm NVL đang chọn (kích thước hiện ở khung xem trước).
+const activeSheet = computed(() =>
+  activeMaterial.value ? materialById.value.get(activeMaterial.value.material_id) ?? null : null,
 )
+const activeSheetHasSize = computed(() => activeSheet.value?.length_mm != null && activeSheet.value?.width_mm != null)
 
-// Định mức thật của một item = định mức của cặp (SKU của item, NVL đang chọn),
-// rơi về định mức cấp NVL khi cặp chưa khai. Khớp resolveProductionQuota ở BE.
+// Định mức của một item trên NVL đang chọn = ⌊S_tấm / S_sp⌋ từ kích thước SKU
+// của item và kích thước tấm. Khớp resolveProductionQuota ở BE; 0/null = không
+// có định mức (không chiếm chỗ, không chẻ).
 function quotaForItem(it: OrderItem): number | null {
   const materialId = activeMaterial.value?.material_id
-  if (!materialId) return activeCap.value
-  const pair = (it.sku?.materials ?? []).find((m) => m.material_id === materialId)
-  const pairQuota = pair?.products_per_unit
-  if (pairQuota != null && pairQuota > 0) return pairQuota
-  return activeCap.value
+  if (!materialId) return null
+  const quota = productionQuota(it.sku, materialById.value.get(materialId))
+  return quota > 0 ? quota : null
 }
 
 // Các item đang được chọn (giữ nguyên thứ tự hiển thị để chia nhóm ổn định).
@@ -76,6 +77,10 @@ const mixedQuotas = computed(() => {
   const quotas = new Set(selectedItems.value.map((it) => quotaForItem(it) ?? 0))
   return quotas.size > 1
 })
+// Item đang chọn mà không ra định mức (SKU chưa khai D x R, hoặc tấm chưa khai
+// kích thước): chúng không chiếm chỗ trên tấm nên không được tính vào cách chẻ —
+// phải nói ra, không để người vận hành tưởng một tấm chứa được vô hạn.
+const unsizedCount = computed(() => selectedItems.value.filter((it) => !quotaForItem(it)).length)
 
 async function loadBuckets() {
   bucketsLoading.value = true
@@ -304,8 +309,8 @@ onMounted(() => {
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between"><dt class="text-muted-foreground">Loại VL</dt><dd class="font-medium">{{ activeMaterial.material_name }}</dd></div>
           <div class="flex justify-between">
-            <dt class="text-muted-foreground">Định mức NVL</dt>
-            <dd class="font-medium">{{ activeCap ? `${activeCap} sp/đơn vị` : 'Không giới hạn' }}</dd>
+            <dt class="text-muted-foreground">Kích thước tấm</dt>
+            <dd class="font-medium tabular-nums">{{ activeSheetHasSize ? formatDimMM(activeSheet?.length_mm, activeSheet?.width_mm) : 'Chưa khai' }}</dd>
           </div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Số item đã chọn</dt><dd class="font-medium">{{ selectedCount }}</dd></div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Tổng sản phẩm</dt><dd class="font-medium">{{ selectedProducts }}</dd></div>
@@ -337,8 +342,19 @@ onMounted(() => {
             </li>
           </ul>
         </div>
-        <p v-else-if="activeCap && selectedCount > 0" class="mt-3 text-xs text-muted-foreground">
-          Trong định mức → tạo 1 batch phẳng.
+        <p v-else-if="activeSheetHasSize && selectedCount > 0 && !unsizedCount" class="mt-3 text-xs text-muted-foreground">
+          Vừa một tấm → tạo 1 batch phẳng.
+        </p>
+        <p
+          v-if="selectedCount > 0 && unsizedCount"
+          class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          <template v-if="!activeSheetHasSize">
+            NVL này chưa khai kích thước tấm (Master Data → NVL) nên không có định mức: batch sẽ không chẻ dù bao nhiêu sản phẩm.
+          </template>
+          <template v-else>
+            {{ unsizedCount }}/{{ selectedCount }} item có SKU chưa khai D x R nên không có định mức — chúng không được tính khi chẻ batch.
+          </template>
         </p>
 
         <div class="mt-4 space-y-3">

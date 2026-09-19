@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../http'
-import type { User, Role, AuditLog } from '~/types'
+import type { User, Role, AuditLog, PermissionCatalog } from '~/types'
 
 export interface UserInput {
   email: string
@@ -8,6 +8,8 @@ export interface UserInput {
   role: Role
   seller_id?: number
   is_active?: boolean
+  /** Quyền tick riêng; null = theo mặc định của vai trò. Bỏ trống = không đổi. */
+  permissions?: string[] | null
   /**
    * Xác nhận dùng lại một tài khoản ĐÃ XOÁ đang giữ email này. Thiếu cờ thì
    * backend từ chối với code USER_DELETED_EMAIL kèm tên tài khoản cũ, để người
@@ -25,6 +27,8 @@ export const usersApi = {
   create: (body: UserInput) => apiPost<User>('/api/users', body),
   update: (id: number | string, body: Partial<UserInput>) => apiPut<User>(`/api/users/${id}`, body),
   remove: (id: number | string) => apiDelete<unknown>(`/api/users/${id}`),
+  // Các màn tick được + bộ tick mặc định của từng vai trò, cho form người dùng.
+  permissionCatalog: () => apiGet<PermissionCatalog>('/api/permission-catalog'),
 }
 
 export const auditApi = {

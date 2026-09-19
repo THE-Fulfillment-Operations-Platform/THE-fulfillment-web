@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
-import { navForRole } from '~/utils/navigation'
+import { navForUser } from '~/utils/navigation'
 import { ROLE_LABEL } from '~/utils/enums'
 import { useActionCounts } from '~/composables/useActionCounts'
 
 defineEmits<{ (e: 'navigate'): void; (e: 'close'): void }>()
 
 const auth = useAuthStore()
-const items = computed(() => navForRole(auth.role))
+const items = computed(() => navForUser(auth.user))
 const { countForPath } = useActionCounts()
 </script>
 

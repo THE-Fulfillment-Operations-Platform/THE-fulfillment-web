@@ -8,6 +8,10 @@ import { errorMessage } from '~/utils/api-error'
 import { designDownloadFailure, type DesignDownloadFailure } from '~/utils/design-download-error'
 import { isValidUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
+
+// Sửa design / set ready = "Thao tác" màn Chờ thiết kế; chỉ Xem thì mở file, tải ZIP.
+const canManage = computed(() => useAuthStore().can('design.manage'))
 
 const toast = useToastStore()
 const { confirm, state: confirmState } = useConfirm()
@@ -625,6 +629,7 @@ async function setReady() {
           @retry="reload"
         >
           <UiBulkBar
+            v-if="canManage"
             :count="readyCount"
             :noun="`/ ${bulkReadyableItems.length} đơn set ready được`"
             @clear="clearReadySelection"
@@ -955,7 +960,7 @@ async function setReady() {
             </div>
           </div>
 
-          <div v-if="selected" class="flex shrink-0 gap-2 border-t border-border bg-muted/40 p-3">
+          <div v-if="selected && canManage" class="flex shrink-0 gap-2 border-t border-border bg-muted/40 p-3">
             <button class="btn-secondary flex-1" :disabled="saving || !dirty" @click="save">
               <UiSpinner v-if="saving" :size="16" /> Lưu thay đổi
             </button>

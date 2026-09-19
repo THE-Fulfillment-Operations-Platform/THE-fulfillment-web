@@ -4,63 +4,177 @@ import type { SkuInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
+import { formatDimMM } from '~/utils/format'
+import { productionQuota } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
 import { useClientPager } from '~/composables/useClientPager'
 import SkuImportDialog from './SkuImportDialog.vue'
+import ParentSkuImportDialog from './ParentSkuImportDialog.vue'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void; (e: 'imported'): void }>()
 
-// Import Excel vận hành cũ — trước đây là tab riêng, nay là hộp thoại ngay cạnh
-// nút "Thêm SKU" vì đây chính là đường tạo SKU hàng loạt.
+// Import theo 2 bước: SKU cha trước (ParentSkuImportDialog), SKU con sau
+// (SkuImportDialog — chính là import Excel vận hành cũ, thêm cột SKU cha + D/R).
 const importOpen = ref(false)
+const parentImportOpen = ref(false)
 
 const toast = useToastStore()
 const auth = useAuthStore()
-const canDelete = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
+// Thêm/sửa = "Thao tác" màn Master Data; xoá cần thêm vai trò Admin/Owner.
+const canManage = computed(() => auth.can('master_data.manage'))
+const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
+
+// ---- Cây SKU cha → con --------------------------------------------------------
+// Đúng 2 tầng: SKU cấp trên cùng (cha, hoặc SKU lẻ) và các SKU con của nó. Con
+// trỏ tới một cha không còn trong danh sách thì coi như cấp trên cùng — không để
+// nó biến khỏi bảng.
+const byId = computed(() => new Map(props.skus.map((s) => [s.id, s])))
+const childrenOf = computed(() => {
+  const m = new Map<number, Sku[]>()
+  for (const s of props.skus) {
+    if (s.parent_id == null || !byId.value.has(s.parent_id)) continue
+    const arr = m.get(s.parent_id)
+    if (arr) arr.push(s)
+    else m.set(s.parent_id, [s])
+  }
+  return m
+})
+function kids(s: Sku): Sku[] {
+  return childrenOf.value.get(s.id) ?? []
+}
+function isTopLevel(s: Sku): boolean {
+  return s.parent_id == null || !byId.value.has(s.parent_id)
+}
+const parentCount = computed(() => childrenOf.value.size)
 
 const search = ref('')
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return props.skus
-  return props.skus.filter(
-    (s) =>
-      s.code.toLowerCase().includes(q) ||
-      s.name.toLowerCase().includes(q) ||
-      (s.product_name ?? '').toLowerCase().includes(q) ||
-      (s.materials ?? []).some((m) => (m.material?.name ?? '').toLowerCase().includes(q)),
+// Chỉ hiện các SKU cha — nhìn một lượt xem mỗi cha đang chứa bao nhiêu con.
+const onlyParents = ref(false)
+
+function matches(s: Sku, q: string): boolean {
+  return (
+    s.code.toLowerCase().includes(q) ||
+    s.name.toLowerCase().includes(q) ||
+    (s.product_name ?? '').toLowerCase().includes(q) ||
+    materialChips(s).some((c) => c.label.toLowerCase().includes(q))
   )
-})
-
-// Bảng master data có thể vài trăm dòng — phân trang phía client (dữ liệu đã tải
-// sẵn) kèm ô chọn số dòng, giống các màn phân trang phía server.
-const { paged, meta, pageSize, setPage, setPageSize } = useClientPager(() => filtered.value)
-
-function materialNames(s: Sku): string[] {
-  return (s.materials ?? []).map((m) => m.material?.name ?? m.material?.code ?? `#${m.material_id}`)
 }
 
+// Mỗi nhóm = một SKU cấp trên cùng + các con cần hiện. Tìm trúng cha → hiện đủ
+// con; chỉ trúng con → hiện cha kèm đúng những con trúng, và tự mở nhóm ra.
+interface Group {
+  sku: Sku
+  children: Sku[]
+  matchedByChild: boolean
+}
+const groups = computed<Group[]>(() => {
+  const q = search.value.trim().toLowerCase()
+  const out: Group[] = []
+  for (const s of props.skus) {
+    if (!isTopLevel(s)) continue
+    const all = kids(s)
+    if (onlyParents.value && !all.length) continue
+    if (!q || matches(s, q)) {
+      out.push({ sku: s, children: all, matchedByChild: false })
+      continue
+    }
+    const hit = all.filter((c) => matches(c, q))
+    if (hit.length) out.push({ sku: s, children: hit, matchedByChild: true })
+  }
+  return out
+})
+
+const expanded = ref<Set<number>>(new Set())
+function isOpen(g: Group): boolean {
+  return g.matchedByChild || expanded.value.has(g.sku.id)
+}
+function toggleOpen(id: number) {
+  const next = new Set(expanded.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expanded.value = next
+}
+const allOpen = computed(() => groups.value.every((g) => !g.children.length || isOpen(g)))
+function toggleAllOpen() {
+  expanded.value = allOpen.value ? new Set() : new Set(groups.value.filter((g) => g.children.length).map((g) => g.sku.id))
+}
+
+// Phân trang theo NHÓM, không theo dòng: một cha không bị cắt rời khỏi các con
+// sang trang sau.
+const { paged, meta, pageSize, setPage, setPageSize } = useClientPager(() => groups.value)
+
+interface Row {
+  sku: Sku
+  child: boolean
+  group: Group
+}
+function rowsOf(list: Group[]): Row[] {
+  return list.flatMap((g) => [
+    { sku: g.sku, child: false, group: g },
+    ...(isOpen(g) ? g.children.map((c) => ({ sku: c, child: true, group: g })) : []),
+  ])
+}
+const pagedRows = computed(() => rowsOf(paged.value))
+// "Chọn tất cả" chỉ lấy những dòng đang nhìn thấy: con của nhóm đang đóng không
+// bị chọn ngầm (xoá cha mà con còn lại thì server bỏ qua cha kèm lý do).
+const visibleSkus = computed(() => rowsOf(groups.value).map((r) => r.sku))
+
+// Chip NVL kèm định mức "· 66/tấm" — tính từ kích thước SKU × kích thước tấm,
+// không ai nhập. Không có số = một trong hai bên chưa khai kích thước.
+function materialChips(s: Sku): { key: string; label: string; quota: number }[] {
+  return (s.materials ?? []).map((m) => {
+    const name = m.material?.name ?? m.material?.code ?? `#${m.material_id}`
+    return { key: name, label: name, quota: productionQuota(s, m.material) }
+  })
+}
+
+// ---- Form thêm / sửa ------------------------------------------------------------
 const open = ref(false)
 const editing = ref<Sku | null>(null)
 const saving = ref(false)
-const form = reactive<Required<Omit<SkuInput, 'materials'>>>({
+const form = reactive<Required<Pick<SkuInput, 'code' | 'name' | 'product_name' | 'description' | 'is_active'>>>({
   code: '',
   name: '',
   product_name: '',
   description: '',
   is_active: true,
 })
+// SKU cha nhập theo MÃ (có gợi ý) — danh sách cha có thể vài trăm dòng, gõ mã
+// nhanh hơn cuộn dropdown. Kích thước giữ dạng chuỗi để phân biệt "để trống".
+const parentCode = ref('')
+const lengthMM = ref<string | number>('')
+const widthMM = ref<string | number>('')
 // selected material ids + per-material quantity
 const selectedMats = ref<number[]>([])
 const qtyByMat = reactive<Record<number, number>>({})
-// Định mức sản xuất của CẶP (SKU, NVL): một tấm/lot NVL ra được bao nhiêu sản
-// phẩm của chính SKU này. Khác hẳn "SL/đơn vị" bên cạnh (một sản phẩm ăn bao
-// nhiêu NVL). Chỉ OWNER được đặt — khớp guard BE; role khác gửi lên cũng bị bỏ.
-const quotaByMat = reactive<Record<number, number | null>>({})
-const canSetQuota = computed(() => auth.role === 'OWNER')
+// Định mức của SKU đang nhập trên NVL m, tính sống từ hai ô D/R và kích thước
+// tấm — để người nhập thấy ngay "80 × 60 trên tấm 1220 × 2440 = 620/tấm".
+function liveQuota(m: Material): number {
+  return productionQuota({ length_mm: parseDim(lengthMM.value), width_mm: parseDim(widthMM.value) }, m)
+}
+
+// SKU đang sửa mà có con thì không gán cha được (chỉ 2 tầng).
+const editingKids = computed(() => (editing.value ? kids(editing.value) : []))
+// Gợi ý SKU cha: mọi SKU cấp trên cùng, trừ chính nó.
+const parentOptions = computed(() =>
+  props.skus.filter((s) => s.parent_id == null && s.id !== editing.value?.id),
+)
+const resolvedParent = computed<Sku | null | undefined>(() => {
+  const code = normalizeCode(parentCode.value)
+  if (!code) return null // không có cha
+  return props.skus.find((s) => s.code === code) // undefined = mã không tồn tại
+})
+const parentError = computed(() => {
+  const p = resolvedParent.value
+  if (p === null) return ''
+  if (p === undefined) return 'Không có SKU nào mã này'
+  if (p.id === editing.value?.id) return 'SKU không thể là cha của chính nó'
+  if (p.parent_id != null) return `${p.code} đang là SKU con — chỉ hỗ trợ 2 tầng`
+  return ''
+})
 
 function toggleMat(id: number) {
   const i = selectedMats.value.indexOf(id)
@@ -71,13 +185,16 @@ function toggleMat(id: number) {
   }
 }
 
-function openCreate() {
+function openCreate(parent?: Sku) {
   editing.value = null
   form.code = ''
   form.name = ''
   form.product_name = ''
   form.description = ''
   form.is_active = true
+  parentCode.value = parent?.code ?? ''
+  lengthMM.value = ''
+  widthMM.value = ''
   selectedMats.value = []
   open.value = true
 }
@@ -88,37 +205,53 @@ function openEdit(s: Sku) {
   form.product_name = s.product_name ?? ''
   form.description = s.description ?? ''
   form.is_active = s.is_active ?? true
+  parentCode.value = s.parent_id != null ? (byId.value.get(s.parent_id)?.code ?? '') : ''
+  lengthMM.value = s.length_mm ?? ''
+  widthMM.value = s.width_mm ?? ''
   selectedMats.value = (s.materials ?? []).map((m) => m.material_id)
   for (const m of s.materials ?? []) {
     qtyByMat[m.material_id] = m.quantity_per_unit || 1
-    quotaByMat[m.material_id] = m.products_per_unit ?? null
   }
   open.value = true
 }
 
-const canSubmit = computed(() => !!form.name.trim() && (!!editing.value || !!form.code.trim()))
+// Ô kích thước → số mm dương, hoặc null khi để trống / không hợp lệ.
+function parseDim(v: string | number): number | null {
+  const raw = String(v).trim().replace(',', '.')
+  const n = Number(raw)
+  return raw !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null
+}
+
+// D và R phải đi đôi: một ô có số, ô kia trống thì BE từ chối — chặn ngay ở nút.
+const sizeError = computed(() => {
+  const l = parseDim(lengthMM.value)
+  const w = parseDim(widthMM.value)
+  return (l == null) !== (w == null) ? 'Nhập cả D lẫn R, hoặc bỏ trống cả hai' : ''
+})
+const canSubmit = computed(
+  () => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !parentError.value && !sizeError.value,
+)
 
 function buildMaterials() {
-  return selectedMats.value.map((id) => ({
-    material_id: id,
-    quantity_per_unit: qtyByMat[id] || 1,
-    // Chỉ gửi khi OWNER đang sửa: bỏ field đi thì BE giữ nguyên định mức cũ,
-    // gửi 0 thì BE xoá (cặp rơi về định mức cấp NVL).
-    ...(canSetQuota.value ? { products_per_unit: quotaByMat[id] ?? 0 } : {}),
-  }))
+  return selectedMats.value.map((id) => ({ material_id: id, quantity_per_unit: qtyByMat[id] || 1 }))
 }
 
 async function submit() {
   if (!canSubmit.value || saving.value) return
   saving.value = true
+  const parentId = resolvedParent.value?.id ?? null
   try {
     if (editing.value) {
-      // Always send materials on edit so the mapping reflects the current selection.
+      // Luôn gửi đủ: 0 = xoá (tách khỏi cha / bỏ kích thước), vì form đang hiện
+      // đúng giá trị hiện tại nên ô trống nghĩa là người dùng muốn bỏ.
       await skusApi.update(editing.value.id, {
         name: form.name.trim(),
         product_name: form.product_name.trim(),
         description: form.description.trim(),
         is_active: form.is_active,
+        parent_id: parentId ?? 0,
+        length_mm: parseDim(lengthMM.value) ?? 0,
+        width_mm: parseDim(widthMM.value) ?? 0,
         materials: buildMaterials(),
       })
       toast.success('Đã cập nhật SKU')
@@ -129,6 +262,9 @@ async function submit() {
         product_name: form.product_name.trim(),
         description: form.description.trim(),
         is_active: form.is_active,
+        parent_id: parentId,
+        length_mm: parseDim(lengthMM.value),
+        width_mm: parseDim(widthMM.value),
         materials: buildMaterials(),
       })
       toast.success('Đã tạo SKU')
@@ -144,7 +280,7 @@ async function submit() {
 
 // --- Chọn nhiều dòng để thao tác hàng loạt (ẩn/bật/xoá) ---
 const { isSelected, toggle, rowClick, toggleAll, allSelected, someSelected, count: selectedCount, selectedIds, clear: clearSelection } =
-  useSelection(() => filtered.value)
+  useSelection(() => visibleSkus.value)
 
 const bulkBusy = ref(false)
 async function bulkSetActive(active: boolean) {
@@ -184,7 +320,7 @@ async function bulkRemove() {
     const skipped = data?.skipped ?? []
     if (!skipped.length) toast.success(`Đã xoá ${ok} SKU`)
     else {
-      // Lý do thật từ server (SKU đang có đơn hàng dùng) + vài mã cụ thể.
+      // Lý do thật từ server (SKU đang có đơn hàng dùng / SKU cha còn con) + vài mã.
       const reasons = [...new Set(skipped.map((s) => s.reason))].join(', ')
       const names = skipped.slice(0, 3).map((s) => s.code || s.id).join(', ')
       const more = skipped.length > 3 ? `… +${skipped.length - 3}` : ''
@@ -241,20 +377,42 @@ async function remove(s: Sku) {
 
 <template>
   <div class="card overflow-hidden">
-    <div class="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div class="relative sm:w-80">
-        <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input v-model="search" class="input pl-9" placeholder="Tìm theo SKU / tên / nguyên vật liệu…" />
-      </div>
-      <div class="flex shrink-0 gap-2">
-        <button class="btn-secondary" @click="importOpen = true">
-          <UiIcon name="upload" :size="16" /> Import Excel
+    <div class="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <div class="relative sm:w-80">
+          <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input v-model="search" class="input pl-9" placeholder="Tìm theo SKU / tên / nguyên vật liệu…" />
+        </div>
+        <label class="flex items-center gap-2 text-sm text-muted-foreground">
+          <input v-model="onlyParents" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
+          Chỉ SKU cha <span class="tabular-nums">({{ parentCount }})</span>
+        </label>
+        <button v-if="parentCount" class="text-left text-xs text-primary hover:underline" @click="toggleAllOpen">
+          {{ allOpen ? 'Thu gọn tất cả' : 'Mở tất cả SKU con' }}
         </button>
-        <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm SKU</button>
+      </div>
+      <div class="flex shrink-0 flex-wrap gap-2">
+        <button
+          v-if="canManage"
+          class="btn-secondary"
+          title="Bước 1: tạo các SKU cha (vd Hộp nhựa) trước"
+          @click="parentImportOpen = true"
+        >
+          <UiIcon name="upload" :size="16" /> Import SKU cha
+        </button>
+        <button
+          v-if="canManage"
+          class="btn-secondary"
+          title="Bước 2: import SKU con (cột SKU cha phải trỏ tới SKU cha đã có) — cũng dùng cho file vận hành cũ"
+          @click="importOpen = true"
+        >
+          <UiIcon name="upload" :size="16" /> Import SKU con
+        </button>
+        <button v-if="canManage" class="btn-primary" @click="openCreate()"><UiIcon name="plus" :size="16" /> Thêm SKU</button>
       </div>
     </div>
 
-    <UiBulkBar :count="selectedCount" noun="SKU" @clear="clearSelection">
+    <UiBulkBar v-if="canManage" :count="selectedCount" noun="SKU" @clear="clearSelection">
       <button class="table-action text-amber-600 disabled:opacity-50 dark:text-amber-400" :disabled="bulkBusy" @click="bulkSetActive(false)">
         Ẩn
       </button>
@@ -266,7 +424,7 @@ async function remove(s: Sku) {
       </button>
     </UiBulkBar>
 
-    <UiStateBlock :loading="loading" :empty="!loading && filtered.length === 0" empty-text="Chưa có SKU nào.">
+    <UiStateBlock :loading="loading" :empty="!loading && groups.length === 0" empty-text="Chưa có SKU nào.">
       <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-border">
           <thead class="bg-muted">
@@ -283,6 +441,7 @@ async function remove(s: Sku) {
               </th>
               <th class="table-th">SKU</th>
               <th class="table-th">Tên sản phẩm</th>
+              <th class="table-th">D x R</th>
               <th class="table-th">Nguyên vật liệu</th>
               <th class="table-th">Trạng thái</th>
               <th class="table-th"></th>
@@ -290,34 +449,65 @@ async function remove(s: Sku) {
           </thead>
           <tbody class="divide-y divide-border">
             <tr
-              v-for="s in paged"
-              :key="s.id"
+              v-for="r in pagedRows"
+              :key="r.sku.id"
               class="cursor-pointer transition-colors duration-150 hover:bg-muted"
-              :class="isSelected(s.id) ? 'bg-accent/40' : ''"
-              @click="rowClick(s.id, $event)"
+              :class="isSelected(r.sku.id) ? 'bg-accent/40' : r.child ? 'bg-muted/40' : ''"
+              @click="rowClick(r.sku.id, $event)"
             >
               <td class="table-td">
                 <input
                   type="checkbox"
                   class="h-4 w-4 cursor-pointer rounded border-border text-primary focus:ring-ring"
-                  :checked="isSelected(s.id)"
-                  :aria-label="`Chọn ${s.code}`"
-                  @change="toggle(s.id)"
+                  :checked="isSelected(r.sku.id)"
+                  :aria-label="`Chọn ${r.sku.code}`"
+                  @change="toggle(r.sku.id)"
                 />
               </td>
-              <td class="table-td font-mono text-xs font-medium text-foreground">{{ s.code }}</td>
-              <td class="table-td text-foreground">{{ s.product_name || s.name }}</td>
-              <td class="table-td whitespace-normal">
-                <div v-if="materialNames(s).length" class="flex flex-wrap gap-1">
-                  <span
-                    v-for="n in materialNames(s)"
-                    :key="n"
-                    class="inline-flex items-center rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
+              <td class="table-td font-mono text-xs font-medium text-foreground">
+                <!-- Dòng con thụt vào dưới cha; dòng cha có nút mở/đóng + số con. -->
+                <div class="flex items-center gap-1.5" :class="r.child ? 'pl-7' : ''">
+                  <span v-if="r.child" class="text-muted-foreground">└</span>
+                  <button
+                    v-else-if="kids(r.sku).length"
+                    class="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    :aria-label="isOpen(r.group) ? 'Thu gọn SKU con' : 'Mở SKU con'"
+                    @click="toggleOpen(r.sku.id)"
                   >
-                    {{ n }}
-                  </span>
-                  <span v-if="s.is_combo" class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Combo</span>
+                    <UiIcon :name="isOpen(r.group) ? 'chevron-down' : 'chevron-right'" :size="14" />
+                  </button>
+                  <span v-else class="inline-block w-[18px]" />
+                  <span>{{ r.sku.code }}</span>
+                  <button
+                    v-if="!r.child && kids(r.sku).length"
+                    class="inline-flex items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 font-sans text-[11px] font-medium text-sky-700 hover:bg-sky-100 dark:bg-sky-500/15 dark:text-sky-300"
+                    :title="kids(r.sku).map((c) => c.code).join(', ')"
+                    @click="toggleOpen(r.sku.id)"
+                  >
+                    <UiIcon name="layers" :size="11" />
+                    <template v-if="r.group.matchedByChild">{{ r.group.children.length }}/</template>{{ kids(r.sku).length }} SKU con
+                  </button>
                 </div>
+              </td>
+              <td class="table-td text-foreground">{{ r.sku.product_name || r.sku.name }}</td>
+              <td class="table-td whitespace-nowrap tabular-nums text-muted-foreground">
+                {{ formatDimMM(r.sku.length_mm, r.sku.width_mm) }}
+              </td>
+              <td class="table-td whitespace-normal">
+                <div v-if="materialChips(r.sku).length" class="flex flex-wrap gap-1">
+                  <span
+                    v-for="c in materialChips(r.sku)"
+                    :key="c.key"
+                    class="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
+                  >
+                    {{ c.label }}
+                    <span v-if="c.quota" class="tabular-nums text-muted-foreground" title="Định mức: sản phẩm / tấm, tính từ kích thước SKU và kích thước tấm">· {{ c.quota }}/tấm</span>
+                  </span>
+                  <span v-if="r.sku.is_combo" class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Combo</span>
+                </div>
+                <!-- SKU cha chỉ để gom nhóm, không sản xuất trực tiếp — không có NVL
+                     là bình thường, không báo đỏ. -->
+                <span v-else-if="kids(r.sku).length" class="text-xs text-muted-foreground">SKU cha — NVL theo từng SKU con</span>
                 <span v-else class="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
                   <UiIcon name="alert" :size="12" /> Chưa gán NVL
                 </span>
@@ -325,28 +515,37 @@ async function remove(s: Sku) {
               <td class="table-td">
                 <span
                   class="inline-flex items-center gap-1 text-xs font-medium"
-                  :class="(s.is_active ?? true) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'"
+                  :class="(r.sku.is_active ?? true) ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'"
                 >
-                  <span class="h-1.5 w-1.5 rounded-full" :class="(s.is_active ?? true) ? 'bg-emerald-500' : 'bg-muted-foreground/40'" />
-                  {{ (s.is_active ?? true) ? 'Active' : 'Ẩn' }}
+                  <span class="h-1.5 w-1.5 rounded-full" :class="(r.sku.is_active ?? true) ? 'bg-emerald-500' : 'bg-muted-foreground/40'" />
+                  {{ (r.sku.is_active ?? true) ? 'Active' : 'Ẩn' }}
                 </span>
               </td>
               <td class="table-td">
                 <div class="flex items-center justify-end gap-1">
                   <button
-                    class="table-action disabled:opacity-50"
-                    :class="(s.is_active ?? true) ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'"
-                    :disabled="togglingId === s.id"
-                    @click="toggleActive(s)"
+                    v-if="canManage && !r.child && r.sku.parent_id == null"
+                    class="table-action text-sky-600 dark:text-sky-400"
+                    title="Thêm SKU con vào SKU này"
+                    @click="openCreate(r.sku)"
                   >
-                    {{ (s.is_active ?? true) ? 'Ẩn' : 'Bật' }}
+                    + Con
                   </button>
-                  <button class="table-action text-primary" @click="openEdit(s)">Sửa</button>
+                  <button
+                    v-if="canManage"
+                    class="table-action disabled:opacity-50"
+                    :class="(r.sku.is_active ?? true) ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'"
+                    :disabled="togglingId === r.sku.id"
+                    @click="toggleActive(r.sku)"
+                  >
+                    {{ (r.sku.is_active ?? true) ? 'Ẩn' : 'Bật' }}
+                  </button>
+                  <button v-if="canManage" class="table-action text-primary" @click="openEdit(r.sku)">Sửa</button>
                   <button
                     v-if="canDelete"
                     class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
-                    :disabled="removingId === s.id"
-                    @click="remove(s)"
+                    :disabled="removingId === r.sku.id"
+                    @click="remove(r.sku)"
                   >
                     Xoá
                   </button>
@@ -389,6 +588,48 @@ async function remove(s: Sku) {
           <label class="label">Tên sản phẩm</label>
           <input v-model="form.product_name" class="input" placeholder="Tên hiển thị sản phẩm (tuỳ chọn)" />
         </div>
+
+        <!-- SKU cha + kích thước -->
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label class="label">SKU cha</label>
+            <input
+              v-model="parentCode"
+              class="input font-mono"
+              list="sku-parent-options"
+              :disabled="editingKids.length > 0"
+              placeholder="Để trống = không thuộc cha nào"
+              @blur="parentCode = normalizeCode(parentCode)"
+            />
+            <datalist id="sku-parent-options">
+              <option v-for="p in parentOptions" :key="p.id" :value="p.code">{{ p.product_name || p.name }}</option>
+            </datalist>
+            <p v-if="editingKids.length" class="mt-1 text-[11px] text-muted-foreground">
+              SKU này đang là cha của {{ editingKids.length }} SKU con — không gán cha cho nó được (chỉ 2 tầng).
+            </p>
+            <p v-else-if="parentError" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{{ parentError }}</p>
+            <p v-else-if="resolvedParent" class="mt-1 text-[11px] text-muted-foreground">
+              {{ resolvedParent.product_name || resolvedParent.name }}
+            </p>
+          </div>
+          <div>
+            <label class="label">D — dài (mm)</label>
+            <input v-model="lengthMM" type="number" min="0" step="0.01" class="input" placeholder="VD: 80" />
+          </div>
+          <div>
+            <label class="label">R — rộng (mm)</label>
+            <input v-model="widthMM" type="number" min="0" step="0.01" class="input" placeholder="VD: 60" />
+            <p v-if="sizeError" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{{ sizeError }}</p>
+          </div>
+        </div>
+        <p class="-mt-2 text-[11px] text-muted-foreground">
+          Kích thước sản phẩm cùng kích thước tấm NVL cho ra định mức: ⌊S tấm / S sản phẩm⌋ sản phẩm mỗi tấm — không nhập tay.
+        </p>
+        <div v-if="editingKids.length" class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+          Đang chứa {{ editingKids.length }} SKU con:
+          <span class="font-mono text-foreground">{{ editingKids.map((c) => c.code).join(', ') }}</span>
+        </div>
+
         <div>
           <label class="label">Mô tả</label>
           <textarea v-model="form.description" rows="2" class="input" placeholder="Ghi chú (tuỳ chọn)" />
@@ -414,7 +655,14 @@ async function remove(s: Sku) {
                 :checked="selectedMats.includes(m.id)"
                 @change="toggleMat(m.id)"
               />
-              <span class="flex-1 text-sm text-foreground">{{ m.name }} <span class="text-xs text-muted-foreground">({{ m.code }})</span></span>
+              <span class="flex-1 text-sm text-foreground">
+                {{ m.name }} <span class="text-xs text-muted-foreground">({{ m.code }})</span>
+                <span v-if="selectedMats.includes(m.id)" class="ml-1 text-xs tabular-nums text-muted-foreground">
+                  <template v-if="liveQuota(m)">≈ {{ liveQuota(m) }} sp/tấm</template>
+                  <template v-else-if="m.length_mm == null">— tấm chưa khai kích thước</template>
+                  <template v-else>— nhập D x R để ra định mức</template>
+                </span>
+              </span>
               <input
                 v-if="selectedMats.includes(m.id)"
                 v-model.number="qtyByMat[m.id]"
@@ -423,21 +671,11 @@ async function remove(s: Sku) {
                 class="input w-20 py-1 text-sm"
                 title="SL NVL cho MỘT sản phẩm"
               />
-              <input
-                v-if="selectedMats.includes(m.id) && canSetQuota"
-                v-model.number="quotaByMat[m.id]"
-                type="number"
-                min="0"
-                class="input w-24 py-1 text-sm"
-                placeholder="Định mức"
-                title="Định mức: một đơn vị NVL này ra được bao nhiêu sản phẩm của SKU. Để trống/0 = dùng định mức của NVL."
-              />
             </label>
           </div>
-          <p v-if="canSetQuota && selectedMats.length" class="mt-1 text-[11px] text-muted-foreground">
-            Ô thứ nhất: một sản phẩm ăn bao nhiêu NVL. Ô thứ hai (định mức): một
-            đơn vị NVL ra được bao nhiêu sản phẩm của SKU này — dùng để chia batch.
-            Để trống = dùng định mức chung của NVL.
+          <p v-if="selectedMats.length" class="mt-1 text-[11px] text-muted-foreground">
+            Ô số: một sản phẩm ăn bao nhiêu NVL (định lượng vật tư). Định mức sp/tấm
+            hiện bên cạnh tên NVL, tính từ kích thước — không nhập.
           </p>
           <p v-if="selectedMats.length > 1" class="mt-1 text-[11px] text-violet-600 dark:text-violet-400">
             SKU nhiều nguyên vật liệu sẽ được đánh dấu là Combo.
@@ -454,6 +692,7 @@ async function remove(s: Sku) {
 
     <!-- Import tạo cả NVL lẫn SKU nên báo riêng ('imported'), để trang cha nạp
          lại cả hai danh sách chứ không chỉ SKU. -->
+    <ParentSkuImportDialog v-model="parentImportOpen" @imported="emit('imported')" />
     <SkuImportDialog v-model="importOpen" @imported="emit('imported')" />
   </div>
 </template>

@@ -226,17 +226,23 @@ const SUMMARY_RULES: { re: RegExp; to: (m: RegExpMatchArray) => string }[] = [
   },
   { re: /^Committed import: created (\d+) orders$/, to: (m) => `Nhập file xong: tạo mới ${m[1]} đơn hàng` },
   {
-    re: /^Preview legacy master data: (\d+) rows, (\d+) new materials, (\d+) new SKUs, (\d+) new mappings, (\d+) review, (\d+) missing, (\d+) errors$/,
+    re: /^Preview legacy master data: (\d+) rows, (\d+) new materials, (\d+) new SKUs, (\d+) new mappings, (?:(\d+) review, )?(\d+) missing, (\d+) errors$/,
     to: (m) =>
       `Xem trước dữ liệu gốc: ${m[1]} dòng — thêm mới ${m[2]} vật liệu, ${m[3]} mã sản phẩm, ${m[4]} ghép nối; ${m[5]} cần xem lại, ${m[6]} thiếu dữ liệu, ${m[7]} lỗi`,
   },
   {
-    re: /^Committed legacy master data: created (\d+) materials, (\d+) SKUs, (\d+) mappings$/,
-    to: (m) => `Nhập dữ liệu gốc xong: thêm ${m[1]} vật liệu, ${m[2]} mã sản phẩm, ${m[3]} ghép nối`,
+    re: /^Committed legacy master data: created (\d+) materials, (\d+) SKUs, (\d+) mappings(?:; updated (\d+) SKUs)?$/,
+    to: (m) =>
+      `Nhập SKU từ file xong: thêm ${m[1]} vật liệu, ${m[2]} mã sản phẩm, ${m[3]} ghép nối` +
+      (m[4] ? `, cập nhật ${m[4]} mã sản phẩm` : ''),
   },
   {
-    re: /^Material quota import: (\d+) created, (\d+) updated$/,
-    to: (m) => `Nhập định mức vật liệu: thêm mới ${m[1]}, cập nhật ${m[2]}`,
+    re: /^Parent SKU import: (\d+) created, (\d+) updated$/,
+    to: (m) => `Nhập SKU cha từ file: thêm mới ${m[1]}, cập nhật ${m[2]}`,
+  },
+  {
+    re: /^Material (?:quota|size) import: (\d+) created, (\d+) updated$/,
+    to: (m) => `Nhập vật liệu từ file: thêm mới ${m[1]}, cập nhật ${m[2]}`,
   },
 
   // Dữ liệu nền

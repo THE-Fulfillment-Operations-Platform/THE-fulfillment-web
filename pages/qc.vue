@@ -128,7 +128,7 @@ const pending = ref<string[]>([])
 
 function pass() {
   const item = result.value
-  if (!item || alreadyQC.value || notProducedYet.value) return
+  if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value) return
   clearStation() // nhả trạm trước, quét mã tiếp theo được luôn
 
   pending.value.push(item.item_code)
@@ -168,7 +168,11 @@ const partOptions = computed(() =>
 // lại sai, tấm vật liệu "đã tiêu" thực ra vẫn còn). Hạ QC chỉ mở lại cổng.
 // Chỉ OWNER/ADMIN, khớp guard BE: ranh giới giữa "bấm nhầm" và "hàng hỏng nhưng
 // ngại làm thủ tục huỷ" là thứ phải có người chịu trách nhiệm.
-const canUndoQC = computed(() => ['OWNER', 'ADMIN'].includes(auth.role ?? '') && alreadyQC.value)
+// Pass/Fail là "Thao tác" của màn Quét QC; chỉ có "Xem" thì quét để tra thôi.
+const canJudge = computed(() => auth.can('qc.manage'))
+const canUndoQC = computed(
+  () => ['OWNER', 'ADMIN'].includes(auth.role ?? '') && canJudge.value && alreadyQC.value,
+)
 const undoOpen = ref(false)
 const undoing = ref(false)
 const undoReason = ref('')
@@ -464,7 +468,10 @@ onMounted(focusScan)
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <p v-if="!canJudge" class="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            Tài khoản chỉ có quyền xem ở trạm QC — quét để tra thông tin, không bấm Pass / Fail được.
+          </p>
+          <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
               :disabled="alreadyQC || notProducedYet"

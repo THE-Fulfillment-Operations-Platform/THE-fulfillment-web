@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAuthStore } from '~/stores/auth'
 import { reviewApi, itemsApi } from '~/services/api'
 import type { ReviewOrderDetail, ReviewIssue, OrderItem } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -11,6 +12,8 @@ import { useToastStore } from '~/stores/toast'
 // store/order info and shipping, normalize the production-ready fields, then
 // approve / reject / request correction.
 const route = useRoute()
+// Duyệt / từ chối / chuẩn hoá dữ liệu = "Thao tác" màn Chờ duyệt.
+const canManage = computed(() => useAuthStore().can('review.manage'))
 const router = useRouter()
 const toast = useToastStore()
 const id = route.params.id as string
@@ -237,7 +240,7 @@ const shippingRows = computed<[string, string][]>(() => {
               </ul>
 
               <!-- Production-ready field editor -->
-              <div class="mt-3 border-t border-border pt-3">
+              <div v-if="canManage" class="mt-3 border-t border-border pt-3">
                 <button
                   class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                   @click="editingItem === it.id ? closeEditor() : openEditor(it)"
@@ -302,7 +305,7 @@ const shippingRows = computed<[string, string][]>(() => {
               </dl>
             </div>
 
-            <div class="card p-4">
+            <div v-if="canManage" class="card p-4">
               <h3 class="mb-2 text-sm font-semibold text-foreground">Quyết định review</h3>
               <label class="label">Ghi chú (bắt buộc khi từ chối / yêu cầu sửa)</label>
               <textarea v-model="note" rows="3" class="input" placeholder="Nhập ghi chú cho seller / nội bộ…" />

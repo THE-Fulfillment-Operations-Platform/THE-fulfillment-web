@@ -111,7 +111,7 @@ watch(orders, (rows) => {
 
 // ---- Gắn mã vận đơn ---------------------------------------------------------
 const canEditTracking = computed(() =>
-  ['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING', 'CS'].includes(auth.role ?? ''),
+  auth.can('journeys.manage') || auth.can('cs.manage'),
 )
 const trackingForm = reactive({ tracking_number: '' })
 const saving = ref(false)

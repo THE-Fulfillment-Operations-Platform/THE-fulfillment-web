@@ -6,6 +6,10 @@ import { importErrorVi } from '~/utils/import-errors'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
+
+// Tải đơn lên = "Thao tác" màn Import đơn.
+const canImport = computed(() => useAuthStore().can('import.manage'))
 
 const toast = useToastStore()
 
@@ -346,7 +350,10 @@ function masterDataLink(code?: string) {
           </button>
         </div>
 
-        <button class="btn-primary mt-4 w-full" :disabled="previewing" @click="runPreview">
+        <p v-if="!canImport" class="mt-4 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          Tài khoản chỉ có quyền xem màn Import — không tải đơn lên được.
+        </p>
+        <button v-else class="btn-primary mt-4 w-full" :disabled="previewing" @click="runPreview">
           <UiSpinner v-if="previewing" :size="16" />
           {{ previewing ? 'Đang kiểm tra…' : 'Preview & Validate' }}
         </button>

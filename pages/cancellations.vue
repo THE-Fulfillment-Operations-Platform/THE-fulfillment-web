@@ -7,6 +7,10 @@ import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import { CANCEL_STAGE, cancelStageLabel } from '~/utils/enums'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
+
+// Đồng ý / từ chối huỷ = "Thao tác" màn Yêu cầu huỷ.
+const canManage = computed(() => useAuthStore().can('cancellations.manage'))
 
 // Cancellation requests — seller gửi lên khi đơn ĐÃ vào sản xuất (chưa sản xuất
 // thì họ tự huỷ, không qua đây). Vì thế mỗi dòng ở màn này đều là tiền: duyệt
@@ -233,7 +237,7 @@ async function submit() {
                 <td class="table-td max-w-xs text-sm text-muted-foreground">{{ o.cancellation_reason || '—' }}</td>
                 <td class="table-td text-xs text-muted-foreground">{{ formatDateTime(o.cancellation_requested_at || o.created_at) }}</td>
                 <td class="table-td">
-                  <div class="flex items-center justify-end gap-2">
+                  <div v-if="canManage" class="flex items-center justify-end gap-2">
                     <button class="text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400" @click="openResolve(o, 'approve')">
                       Đồng ý huỷ
                     </button>
@@ -284,7 +288,7 @@ async function submit() {
                   </div>
                 </td>
                 <td class="table-td text-sm text-muted-foreground">{{ it.cancellation_reason || '—' }}</td>
-                <td class="table-td"><div class="flex justify-end gap-2"><button class="text-xs font-medium text-emerald-600 hover:underline" @click="openItemResolve(it, 'approve')">Đồng ý huỷ</button><button class="text-xs font-medium text-rose-500 hover:underline" @click="openItemResolve(it, 'reject')">Từ chối</button></div></td>
+                <td class="table-td"><div v-if="canManage" class="flex justify-end gap-2"><button class="text-xs font-medium text-emerald-600 hover:underline" @click="openItemResolve(it, 'approve')">Đồng ý huỷ</button><button class="text-xs font-medium text-rose-500 hover:underline" @click="openItemResolve(it, 'reject')">Từ chối</button></div></td>
               </tr>
             </tbody>
           </table>

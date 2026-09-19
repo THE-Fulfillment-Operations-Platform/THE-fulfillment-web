@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { itemsApi, sellersApi } from '~/services/api'
+import { itemsApi, ordersApi, sellersApi } from '~/services/api'
 import type { OrderItem, Seller } from '~/types'
 import {
   INTERNAL_STATUS,
@@ -19,7 +19,12 @@ import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
 import { formatDate, formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
 import { useRowLink } from '~/composables/useRowLink'
+import { useSelection } from '~/composables/useSelection'
+import { useConfirm } from '~/composables/useConfirm'
+import { refreshActionCounts } from '~/composables/useActionCounts'
+import { errorMessage } from '~/utils/api-error'
 
 // Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
 const { rowLinkAttrs } = useRowLink()
@@ -112,6 +117,7 @@ function toggleSort(col: 'sku' | 'quantity' | 'created_at') {
     sort.dir = 'asc'
   }
   filters.page = 1
+  clear()
   reload()
 }
 function sortIcon(col: string): string {
@@ -157,6 +163,7 @@ const reviewStatusOptions = [
 
 function applyFilters() {
   filters.page = 1
+  clear()
   reload()
 }
 
@@ -176,16 +183,75 @@ function resetFilters() {
 
 function changePage(p: number) {
   filters.page = p
+  clear()
   reload()
 }
 
 function changePageSize(size: number) {
   filters.page_size = size
   filters.page = 1 // avoid landing past the last page after enlarging rows
+  clear()
   reload()
 }
 
 const items = computed(() => data.value ?? [])
+
+// ---- Chọn nhiều + xoá đơn (Admin/Owner) --------------------------------------
+// Mỗi dòng là một SẢN PHẨM, nhưng xoá là xoá cả ĐƠN (như nút Xoá đơn ở chi tiết
+// đơn): tick một sản phẩm của đơn 3 sản phẩm là xoá cả 3. Vì vậy thanh thao tác
+// đếm cả hai con số. Chỉ chọn trong trang đang xem — đổi trang/bộ lọc/sắp xếp là
+// bỏ chọn, để không bao giờ xoá thứ không nhìn thấy.
+const auth = useAuthStore()
+const canDelete = computed(
+  () => (auth.role === 'OWNER' || auth.role === 'ADMIN') && auth.can('orders.manage'),
+)
+
+const { isSelected, toggle, toggleAll, allSelected, someSelected, clear } = useSelection(() => items.value)
+const selectedItems = computed(() => items.value.filter((it) => isSelected(it.id)))
+const selectedOrderIds = computed(() => {
+  const ids = new Set<number>()
+  for (const it of selectedItems.value) {
+    const id = itemOrderId(it)
+    if (id) ids.add(id)
+  }
+  return Array.from(ids)
+})
+
+const deleting = ref(false)
+async function bulkDeleteOrders() {
+  const ids = selectedOrderIds.value
+  if (!ids.length || deleting.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Xoá đơn đã chọn',
+    message:
+      `Xoá ${ids.length} đơn (mọi sản phẩm trong các đơn này, kể cả dòng không tick)? ` +
+      'Đơn đã vào sản xuất (đã vào batch hoặc đã in/cắt) sẽ được bỏ qua — huỷ đơn, hoặc Owner xoá lẻ trong chi tiết đơn.',
+    tone: 'danger',
+    confirmText: `Xoá ${ids.length} đơn`,
+  })
+  if (!ok) return
+  deleting.value = true
+  try {
+    const { data: res } = await ordersApi.bulkRemove(ids)
+    const deleted = res?.deleted_ids.length ?? 0
+    const skipped = res?.skipped ?? []
+    if (deleted > 0) toast.success(`Đã xoá ${deleted} đơn`)
+    if (skipped.length) {
+      const detail = skipped
+        .slice(0, 3)
+        .map((s) => `${s.internal_code || '#' + s.id}: ${s.reason}`)
+        .join(' · ')
+      toast.error(`${skipped.length} đơn không xoá. ${detail}${skipped.length > 3 ? ' …' : ''}`)
+    }
+    clear()
+    await reload()
+    if (deleted > 0) void refreshActionCounts()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    deleting.value = false
+  }
+}
 
 // Trạng thái hiển thị là chặng NGOÀI CÙNG mà sản phẩm đã tới, theo đúng thứ tự
 // vòng đời của đơn:
@@ -322,6 +388,19 @@ function exportItems() {
     </div>
 
     <div class="card overflow-hidden">
+      <UiBulkBar v-if="canDelete" :count="selectedItems.length" noun="sản phẩm" @clear="clear">
+        <template #note>
+          <span class="text-sm text-muted-foreground">thuộc {{ selectedOrderIds.length }} đơn</span>
+        </template>
+        <button
+          class="table-action text-rose-600 disabled:opacity-50 dark:text-rose-400"
+          :disabled="deleting"
+          @click="bulkDeleteOrders"
+        >
+          <UiSpinner v-if="deleting" :size="14" /> Xoá {{ selectedOrderIds.length }} đơn
+        </button>
+      </UiBulkBar>
+
       <UiStateBlock
         :loading="loading"
         :error="error"
@@ -335,6 +414,17 @@ function exportItems() {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
+                <th v-if="canDelete" class="table-th w-10">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                    :checked="allSelected"
+                    :indeterminate.prop="someSelected"
+                    :disabled="items.length === 0"
+                    aria-label="Chọn tất cả dòng trên trang"
+                    @change="toggleAll"
+                  />
+                </th>
                 <th class="table-th w-12">STT</th>
                 <th class="table-th">Internal Item</th>
                 <th class="table-th hidden md:table-cell">Store Order</th>
@@ -368,8 +458,25 @@ function exportItems() {
                 :key="it.id"
                 v-bind="rowLinkAttrs(itemOrderId(it) ? `/orders/${itemOrderId(it)}` : null)"
                 class="hover:bg-muted"
-                :class="{ 'opacity-55': itemDead(it), 'bg-rose-50/60 dark:bg-rose-500/10': itemStoreOrderDup(it) }"
+                :class="{
+                  'opacity-55': itemDead(it),
+                  'bg-rose-50/60 dark:bg-rose-500/10': itemStoreOrderDup(it) && !isSelected(it.id),
+                  'bg-primary/5': isSelected(it.id),
+                }"
               >
+                <!-- Cả ô là vùng bấm (label): lỡ tay bấm cạnh checkbox không bị
+                     nhảy sang chi tiết đơn. -->
+                <td v-if="canDelete" class="table-td p-0">
+                  <label class="flex h-full cursor-pointer items-center px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+                      :checked="isSelected(it.id)"
+                      :aria-label="`Chọn ${it.internal_code}`"
+                      @change="toggle(it.id)"
+                    />
+                  </label>
+                </td>
                 <td class="table-td font-semibold tabular-nums text-foreground">{{ rowNumber(idx) }}</td>
                 <td class="table-td font-medium text-foreground">
                   {{ it.internal_code }}

@@ -64,12 +64,25 @@ export default defineNuxtPlugin(() => {
   // token 401s inside refreshMe → the api.client interceptor clears + redirects.
   if (auth.isAuthenticated) void auth.refreshMe()
 
+  // Quyền có thể được quản trị đổi giữa ca: quay lại tab thì làm mới /me (tối đa
+  // mỗi phút một lần) để menu và nút khớp quyền mới. API đã áp quyền mới ngay từ
+  // request kế tiếp; đây chỉ là cho giao diện theo kịp.
+  let lastMeRefresh = Date.now()
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible' || !auth.isAuthenticated) return
+    if (Date.now() - lastMeRefresh < CHECK_INTERVAL_MS) return
+    lastMeRefresh = Date.now()
+    void auth.refreshMe()
+  }
+  document.addEventListener('visibilitychange', onVisible)
+
   // Tidy up listeners/timer across HMR reloads in dev.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       clearInterval(timer)
       ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, markActive))
       window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
     })
   }
 })

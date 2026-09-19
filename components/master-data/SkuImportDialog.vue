@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// Import file Excel vận hành cũ (cột SKU + Loại VL + Tên sản phẩm) để tạo
-// Materials, SKUs và mapping. Trước đây là một tab riêng ở màn Master Data; giờ
-// nằm ngay cạnh nút "Thêm SKU" vì nó chính là cách tạo SKU hàng loạt.
+// Bước 2 của thiết lập SKU cha → con: import SKU con (cột SKU cha + SKU + Tên sản
+// phẩm + Loại VL + D/R mm + Mô tả) để tạo Materials, SKUs và mapping, và xếp SKU
+// vào dưới SKU cha đã import ở bước 1. Bỏ trống cột SKU cha thì chạy y như import
+// file vận hành cũ (SKU lẻ) — file cũ không cần sửa gì.
 import { masterDataApi } from '~/services/api'
 import type { MasterImportPreview, MasterSkuStatus } from '~/types'
 import { errorMessage } from '~/utils/api-error'
+import { formatDimMM } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
+import { useSpreadsheetFile } from '~/composables/useSpreadsheetFile'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'imported'): void }>()
@@ -17,16 +20,18 @@ const open = computed({
 })
 
 const mode = ref<'file' | 'paste'>('file')
-const file = ref<File | null>(null)
-const fileName = ref('')
 const csvText = ref('')
-const dragging = ref(false)
 
 const previewing = ref(false)
 const committing = ref(false)
 const previewError = ref<string | null>(null)
 const preview = ref<MasterImportPreview | null>(null)
 const committed = ref(false)
+// Chọn file mới thì bản xem trước cũ không còn đúng.
+const { file, fileName, dragging, onFile, onDrop, reset: resetFile } = useSpreadsheetFile(() => {
+  preview.value = null
+  committed.value = false
+})
 
 // Mở lại lần sau phải sạch, không dính preview của file trước.
 watch(open, (v) => {
@@ -34,34 +39,11 @@ watch(open, (v) => {
 })
 function reset() {
   mode.value = 'file'
-  file.value = null
-  fileName.value = ''
+  resetFile()
   csvText.value = ''
   preview.value = null
   previewError.value = null
   committed.value = false
-}
-
-// Dùng chung cho ô chọn file và vùng kéo thả.
-function setFile(f: File | null | undefined) {
-  if (!f) return
-  if (!/\.(csv|xlsx|xlsm)$/i.test(f.name)) {
-    toast.error('Chỉ nhận file .csv, .xlsx hoặc .xlsm')
-    return
-  }
-  file.value = f
-  fileName.value = f.name
-  preview.value = null
-  committed.value = false
-}
-
-function onFile(e: Event) {
-  setFile((e.target as HTMLInputElement).files?.[0])
-}
-
-function onDrop(e: DragEvent) {
-  dragging.value = false
-  setFile(e.dataTransfer?.files?.[0])
 }
 
 async function runPreview() {
@@ -101,7 +83,8 @@ async function commit() {
     const a = data.applied
     toast.success(
       a
-        ? `Đã tạo ${a.materials_created} material, ${a.skus_created} SKU, ${a.mappings_created} mapping`
+        ? `Đã tạo ${a.materials_created} material, ${a.skus_created} SKU, ${a.mappings_created} mapping` +
+            (a.skus_updated ? `, cập nhật ${a.skus_updated} SKU` : '')
         : 'Đã commit',
     )
     emit('imported')
@@ -117,26 +100,23 @@ const canCommit = computed(
 )
 const s = computed(() => preview.value?.summary)
 const newMaterials = computed(() => preview.value?.materials.filter((m) => !m.exists) ?? [])
-const needsReview = computed(() => preview.value?.skus.filter((k) => k.status === 'NEEDS_REVIEW') ?? [])
 const missingMaterial = computed(() => preview.value?.skus.filter((k) => k.status === 'MISSING_MATERIAL') ?? [])
 
 const STATUS_BADGE: Record<MasterSkuStatus, string> = {
   OK: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  NEEDS_REVIEW: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
   MISSING_MATERIAL: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
 }
 const STATUS_LABEL: Record<MasterSkuStatus, string> = {
   OK: 'Sẽ map',
-  NEEDS_REVIEW: 'Cần review',
   MISSING_MATERIAL: 'Thiếu NVL',
 }
 
 const SAMPLE_CSV = [
-  'Tên sản phẩm,SKU,Loại VL,Mã ảnh,Số lượng',
-  'Kệ gỗ treo tường,BR A 1.6 kep,Mica trong 3 ly,IMG1,1',
-  'Thớt gỗ khắc tên,3LWD 12in,Gỗ 5 ly 3 layer,IMG2,1',
-  'Bảng tên để bàn,NEW SKU X,MDF 3ly 80x120,IMG3,1',
-  'Đèn gỗ combo,BR A 2 Gai,Mica trong 3 ly + Mica Hologram,IMG4,1',
+  'SKU cha,SKU,Tên sản phẩm,Loại VL,D (mm),R (mm),Mô tả',
+  'HOP-NHUA,HOP-NHUA-BE,Hộp nhựa bé,Mica trong 3 ly,80,60,Hộp nắp trượt',
+  'HOP-NHUA,HOP-NHUA-LON,Hộp nhựa lớn,Mica trong 3 ly,160,120,',
+  ',3LWD 12in,Thớt gỗ khắc tên,Gỗ 5 ly 3 layer,"304,8","203,2",',
+  ',BR A 2 Gai,Đèn gỗ combo,Mica trong 3 ly + Mica Hologram,,,',
 ].join('\n')
 
 function loadSample() {
@@ -160,13 +140,20 @@ async function downloadTemplate() {
 </script>
 
 <template>
-  <UiModal v-model="open" title="Import SKU từ file Excel vận hành" wide>
+  <UiModal v-model="open" title="Bước 2 · Import SKU con" wide>
     <div class="space-y-4">
       <p class="text-xs text-muted-foreground">
-        Hệ thống đọc cột <span class="font-medium text-foreground">SKU</span>,
-        <span class="font-medium text-foreground">Loại VL</span> và
-        <span class="font-medium text-foreground">Tên sản phẩm</span> (tuỳ chọn) để tạo Materials,
-        SKUs và mapping. Các cột khác được bỏ qua. Không tự đoán nguyên vật liệu. SKU làm từ
+        Hệ thống đọc cột <span class="font-medium text-foreground">SKU</span> (bắt buộc),
+        <span class="font-medium text-foreground">SKU cha</span>,
+        <span class="font-medium text-foreground">Tên sản phẩm</span>,
+        <span class="font-medium text-foreground">Loại VL</span>,
+        <span class="font-medium text-foreground">D (mm)</span>,
+        <span class="font-medium text-foreground">R (mm)</span> và
+        <span class="font-medium text-foreground">Mô tả</span>. Các cột khác được bỏ qua.
+        <span class="font-medium text-foreground">SKU cha</span> phải có sẵn trong hệ thống (import ở bước 1)
+        — chưa có thì dòng đó báo lỗi, không tự tạo. Để trống SKU cha = SKU lẻ. Kích thước ghi số
+        mm (vd <span class="font-mono">80</span> hoặc <span class="font-mono">80,5</span>), không nhận inch/cm.
+        Ô để trống không ghi đè giá trị đang có. SKU làm từ
         <span class="font-medium text-foreground">nhiều NVL</span> (combo) thì ghi các NVL trong cùng
         ô, ngăn cách bằng dấu <span class="font-medium text-foreground">+</span> (vd:
         <span class="font-mono">Mica trong 3 ly + Mica Hologram</span>).
@@ -215,7 +202,7 @@ async function downloadTemplate() {
             v-model="csvText"
             rows="6"
             class="input font-mono text-xs"
-            placeholder="Dán nội dung CSV (gồm header có cột SKU và Loại VL)…"
+            placeholder="Dán nội dung CSV (gồm header có cột SKU, SKU cha, Loại VL…)…"
           />
           <button class="mt-2 text-xs text-primary hover:underline" @click="loadSample">
             Chèn dữ liệu mẫu
@@ -256,7 +243,7 @@ async function downloadTemplate() {
           </span>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <div class="rounded-md bg-muted p-2">
             <p class="text-lg font-semibold text-foreground">{{ s?.total_rows }}</p>
             <p class="text-[11px] text-muted-foreground">Tổng dòng</p>
@@ -273,10 +260,6 @@ async function downloadTemplate() {
             <p class="text-lg font-semibold text-emerald-700 dark:text-emerald-300">{{ s?.new_mappings }}</p>
             <p class="text-[11px] text-muted-foreground">Mapping mới</p>
           </div>
-          <div class="rounded-md bg-amber-50 p-2 dark:bg-amber-500/10">
-            <p class="text-lg font-semibold text-amber-700 dark:text-amber-300">{{ s?.review_count }}</p>
-            <p class="text-[11px] text-muted-foreground">Cần review</p>
-          </div>
           <div class="rounded-md bg-rose-50 p-2 dark:bg-rose-500/10">
             <p class="text-lg font-semibold text-rose-600 dark:text-rose-300">
               {{ (s?.missing_count ?? 0) + (s?.error_rows ?? 0) }}
@@ -285,36 +268,13 @@ async function downloadTemplate() {
           </div>
         </div>
 
-        <!-- Cần review -->
-        <div v-if="needsReview.length" class="rounded-md border border-amber-200/60 dark:border-amber-500/25">
-          <div class="border-b border-border bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
-            <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">
-              Cần kiểm tra — 1 SKU khai NVL không đồng nhất giữa các dòng ({{ needsReview.length }})
-            </p>
-            <p class="text-[11px] text-amber-700/80 dark:text-amber-300/80">
-              Hệ vẫn gộp (union) tất cả NVL và gán cho SKU, nhưng nên rà lại file cho đồng nhất.
-            </p>
-          </div>
-          <div class="max-h-40 overflow-auto">
-            <table class="min-w-full divide-y divide-border text-sm">
-              <thead class="sticky top-0 bg-card">
-                <tr><th class="table-th">SKU</th><th class="table-th">Các Loại VL xuất hiện</th></tr>
-              </thead>
-              <tbody class="divide-y divide-border">
-                <tr v-for="k in needsReview" :key="k.code">
-                  <td class="table-td font-mono text-xs">{{ k.code }}</td>
-                  <td class="table-td whitespace-normal">
-                    <span
-                      v-for="n in k.material_names"
-                      :key="n"
-                      class="mr-1 inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                    >{{ n }}</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <p
+          v-if="s?.child_skus"
+          class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span class="font-medium text-foreground">{{ s.child_skus }}</span> SKU con sẽ được xếp vào
+          <span class="font-medium text-foreground">{{ s.parent_groups }}</span> SKU cha.
+        </p>
 
         <!-- Thiếu NVL -->
         <div v-if="missingMaterial.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
@@ -343,13 +303,14 @@ async function downloadTemplate() {
           <div class="max-h-40 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
               <thead class="sticky top-0 bg-card">
-                <tr><th class="table-th">Dòng</th><th class="table-th">Loại VL</th><th class="table-th">Lỗi</th></tr>
+                <tr><th class="table-th">Dòng</th><th class="table-th">SKU</th><th class="table-th">Loại VL</th><th class="table-th">Lỗi</th></tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-for="(e, i) in preview.errors" :key="i" class="bg-rose-50/70 dark:bg-rose-500/10">
                   <td class="table-td font-medium text-rose-700 dark:text-rose-300">{{ e.row_number }}</td>
+                  <td class="table-td font-mono text-xs text-rose-700 dark:text-rose-300">{{ e.sku || '—' }}</td>
                   <td class="table-td text-rose-700 dark:text-rose-300">{{ e.material || '—' }}</td>
-                  <td class="table-td text-rose-600 dark:text-rose-400">
+                  <td class="table-td whitespace-normal text-rose-600 dark:text-rose-400">
                     <span class="font-medium">{{ e.error_code }}</span> — {{ e.message }}
                   </td>
                 </tr>
@@ -368,7 +329,10 @@ async function downloadTemplate() {
               <thead class="sticky top-0 z-10 bg-muted">
                 <tr>
                   <th class="table-th">SKU</th>
+                  <th class="table-th">SKU cha</th>
                   <th class="table-th">Tên sản phẩm</th>
+                  <th class="table-th">D x R</th>
+                  <th class="table-th">SP/tấm</th>
                   <th class="table-th">Trạng thái</th>
                   <th class="table-th">Loại VL (từ file)</th>
                   <th class="table-th">Dòng</th>
@@ -388,6 +352,17 @@ async function downloadTemplate() {
                       :title="`Combo ${k.material_names.length} NVL`"
                     >combo</span>
                   </td>
+                  <td class="table-td font-mono text-xs">
+                    <template v-if="k.parent_code">
+                      {{ k.parent_code }}
+                      <span
+                        v-if="k.parent_changed"
+                        class="ml-1 rounded bg-amber-50 px-1 text-[10px] text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                        title="SKU này đang thuộc SKU cha khác — áp dụng sẽ chuyển sang cha này"
+                      >chuyển cha</span>
+                    </template>
+                    <span v-else class="text-muted-foreground">—</span>
+                  </td>
                   <td class="table-td whitespace-normal text-foreground">
                     <template v-if="k.product_name">
                       {{ k.product_name }}
@@ -398,6 +373,13 @@ async function downloadTemplate() {
                       >+{{ (k.product_names?.length ?? 1) - 1 }} tên khác</span>
                     </template>
                     <span v-else class="text-muted-foreground">—</span>
+                  </td>
+                  <td class="table-td tabular-nums text-muted-foreground">{{ formatDimMM(k.length_mm, k.width_mm) }}</td>
+                  <td class="table-td whitespace-normal text-xs tabular-nums text-muted-foreground">
+                    <template v-if="k.quota_by_material && Object.keys(k.quota_by_material).length">
+                      <span v-for="(q, name) in k.quota_by_material" :key="name" class="mr-1 inline-block" :title="`${name}: ${q} sản phẩm / tấm`">{{ q }} <span class="opacity-70">({{ name }})</span></span>
+                    </template>
+                    <span v-else>—</span>
                   </td>
                   <td class="table-td">
                     <span class="inline-flex rounded-md px-2 py-0.5 text-xs font-medium" :class="STATUS_BADGE[k.status]">
@@ -432,8 +414,9 @@ async function downloadTemplate() {
 
         <p v-if="committed && preview.applied" class="text-sm text-emerald-600 dark:text-emerald-400">
           ✓ Đã tạo {{ preview.applied.materials_created }} material,
-          {{ preview.applied.skus_created }} SKU, {{ preview.applied.mappings_created }} mapping. Có
-          thể đóng cửa sổ.
+          {{ preview.applied.skus_created }} SKU, {{ preview.applied.mappings_created }} mapping<template
+            v-if="preview.applied.skus_updated"
+          >, cập nhật {{ preview.applied.skus_updated }} SKU</template>. Có thể đóng cửa sổ.
         </p>
       </div>
 

@@ -75,3 +75,13 @@ export function toDisplayImageUrl(value?: string | null): string {
 export function pluralVi(count: number, noun: string): string {
   return `${count} ${noun}`
 }
+
+/**
+ * Kích thước D x R của SKU (mm) → "80 × 60,5 mm". Thiếu một cạnh thì cạnh đó
+ * hiện "?", thiếu cả hai → '—'.
+ */
+export function formatDimMM(length?: number | null, width?: number | null): string {
+  if (length == null && width == null) return '—'
+  const n = (v?: number | null) => (v == null ? '?' : v.toLocaleString('vi-VN', { maximumFractionDigits: 2 }))
+  return `${n(length)} × ${n(width)} mm`
+}
