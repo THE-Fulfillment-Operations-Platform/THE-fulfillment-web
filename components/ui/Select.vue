@@ -4,7 +4,7 @@
 // is teleported to <body> with fixed positioning so it is never clipped by a
 // modal, a table's overflow-x-auto, or a card — and it flips upward when there
 // is more room above. Drop-in for `<select v-model class="input">`.
-import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, watch } from 'vue'
 
 type SelectValue = string | number
 
@@ -15,6 +15,8 @@ interface SelectOption {
   // Secondary text pinned to the right of the row (counts, units…). Kept out of
   // `label` so it lines up in a column instead of trailing labels of every width.
   hint?: string
+  // Second line under the label (a product name under its code). Searched too.
+  sublabel?: string
 }
 
 const props = withDefaults(
@@ -25,8 +27,12 @@ const props = withDefaults(
     disabled?: boolean
     id?: string
     ariaLabel?: string
+    // Long lists (hundreds of SKUs): a search box at the top of the panel filters
+    // by label, sublabel and hint as you type.
+    searchable?: boolean
+    searchPlaceholder?: string
   }>(),
-  { placeholder: 'Chọn…', disabled: false },
+  { placeholder: 'Chọn…', disabled: false, searchable: false, searchPlaceholder: 'Gõ để lọc…' },
 )
 
 const emit = defineEmits<{
@@ -37,10 +43,26 @@ const emit = defineEmits<{
 const open = ref(false)
 const triggerRef = ref<HTMLButtonElement | null>(null)
 const panelRef = ref<HTMLElement | null>(null)
+const searchRef = ref<HTMLInputElement | null>(null)
 const activeIndex = ref(-1)
+const query = ref('')
 
 const selected = computed(() => props.options.find((o) => o.value === props.modelValue) ?? null)
 const displayLabel = computed(() => selected.value?.label ?? '')
+
+// The rows on screen: everything, or what matches the search box.
+const visible = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!props.searchable || !q) return props.options
+  return props.options.filter((o) =>
+    [o.label, o.sublabel, o.hint].some((t) => t?.toLowerCase().includes(q)),
+  )
+})
+// Typing narrows the list: the highlight restarts at the first match so Enter
+// picks what the eye is on, not a row that scrolled away.
+watch(query, () => {
+  activeIndex.value = visible.value.findIndex((o) => !o.disabled)
+})
 
 // ---- Positioning (fixed, so it escapes overflow/modal clipping) ------------
 const panelStyle = ref<Record<string, string>>({})
@@ -54,10 +76,15 @@ function reposition() {
   const budget = 288
   const up = spaceBelow < Math.min(budget, 220) && spaceAbove > spaceBelow
   const maxH = Math.max(120, Math.min(budget, (up ? spaceAbove : spaceBelow) - 12))
+  // A searchable list carries two-line rows (code + name), so it gets room to
+  // breathe: at least 320px, never past the right edge of the viewport.
+  const width = props.searchable
+    ? Math.min(Math.max(r.width, 320), window.innerWidth - r.left - 16)
+    : r.width
   panelStyle.value = {
     position: 'fixed',
     left: `${Math.round(r.left)}px`,
-    width: `${Math.round(r.width)}px`,
+    width: `${Math.round(width)}px`,
     maxHeight: `${Math.round(maxH)}px`,
     ...(up
       ? { bottom: `${Math.round(window.innerHeight - r.top + 4)}px` }
@@ -69,11 +96,13 @@ function reposition() {
 function openMenu() {
   if (props.disabled || open.value) return
   open.value = true
+  query.value = ''
   const cur = props.options.findIndex((o) => o.value === props.modelValue)
   activeIndex.value = cur >= 0 ? cur : 0
   nextTick(() => {
     reposition()
     scrollActiveIntoView()
+    searchRef.value?.focus()
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
     document.addEventListener('mousedown', onDocMouseDown, true)
@@ -120,12 +149,13 @@ function scrollActiveIntoView() {
 }
 
 function move(delta: number) {
-  const n = props.options.length
+  const rows = visible.value
+  const n = rows.length
   if (!n) return
   let i = activeIndex.value
   for (let step = 0; step < n; step++) {
     i = (i + delta + n) % n
-    if (!props.options[i]?.disabled) break
+    if (!rows[i]?.disabled) break
   }
   activeIndex.value = i
   scrollActiveIntoView()
@@ -156,13 +186,18 @@ function onKeydown(e: KeyboardEvent) {
       break
     case 'End':
       e.preventDefault()
-      activeIndex.value = props.options.length - 1
+      activeIndex.value = visible.value.length - 1
       scrollActiveIntoView()
       break
-    case 'Enter':
     case ' ':
+      // In the search box a space is a character, not "pick this row".
+      if (props.searchable && e.target === searchRef.value) return
       e.preventDefault()
-      if (props.options[activeIndex.value]) selectOption(props.options[activeIndex.value])
+      if (visible.value[activeIndex.value]) selectOption(visible.value[activeIndex.value])
+      break
+    case 'Enter':
+      e.preventDefault()
+      if (visible.value[activeIndex.value]) selectOption(visible.value[activeIndex.value])
       break
     case 'Escape':
       e.preventDefault()
@@ -217,8 +252,23 @@ onBeforeUnmount(detach)
           class="z-[60] overflow-auto rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-soft"
           :style="panelStyle"
         >
+          <!-- Search box stays pinned while the rows scroll under it. -->
+          <li v-if="searchable" class="sticky -top-1 z-10 -mx-1 -mt-1 border-b border-border bg-popover px-1 pb-1 pt-1">
+            <div class="relative">
+              <UiIcon name="search" :size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                ref="searchRef"
+                v-model="query"
+                type="text"
+                class="input h-8 py-1 pl-8 text-sm"
+                :placeholder="searchPlaceholder"
+                autocomplete="off"
+                @keydown="onKeydown"
+              />
+            </div>
+          </li>
           <li
-            v-for="(o, i) in options"
+            v-for="(o, i) in visible"
             :key="String(o.value)"
             :data-idx="i"
             role="option"
@@ -232,7 +282,14 @@ onBeforeUnmount(detach)
             @click="selectOption(o)"
             @mousemove="activeIndex = i"
           >
-            <span class="truncate">{{ o.label }}</span>
+            <span class="min-w-0">
+              <span class="block truncate">{{ o.label }}</span>
+              <span
+                v-if="o.sublabel"
+                class="block truncate text-xs"
+                :class="o.value === modelValue ? 'text-primary/70' : 'text-muted-foreground'"
+              >{{ o.sublabel }}</span>
+            </span>
             <span class="ml-auto flex shrink-0 items-center gap-1.5">
               <span
                 v-if="o.hint"
@@ -247,7 +304,9 @@ onBeforeUnmount(detach)
               <span v-else class="block w-[15px]" aria-hidden="true" />
             </span>
           </li>
-          <li v-if="!options.length" class="px-2.5 py-2 text-xs text-muted-foreground">Không có lựa chọn</li>
+          <li v-if="!visible.length" class="px-2.5 py-2 text-xs text-muted-foreground">
+            {{ query ? 'Không có mục nào khớp' : 'Không có lựa chọn' }}
+          </li>
         </ul>
       </Transition>
     </Teleport>

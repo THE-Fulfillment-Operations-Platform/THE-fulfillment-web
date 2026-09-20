@@ -142,9 +142,9 @@ const form = reactive<Required<Pick<SkuInput, 'code' | 'name' | 'product_name' |
   description: '',
   is_active: true,
 })
-// SKU cha nhập theo MÃ (có gợi ý) — danh sách cha có thể vài trăm dòng, gõ mã
-// nhanh hơn cuộn dropdown. Kích thước giữ dạng chuỗi để phân biệt "để trống".
-const parentCode = ref('')
+// SKU cha chọn từ dropdown có ô lọc (mã + tên) — danh sách cha có thể vài trăm
+// dòng. 0 = không thuộc cha nào. Kích thước giữ dạng chuỗi để phân biệt "để trống".
+const parentId = ref(0)
 const lengthMM = ref<string | number>('')
 const widthMM = ref<string | number>('')
 // selected material ids + per-material quantity
@@ -158,23 +158,15 @@ function liveQuota(m: Material): number {
 
 // SKU đang sửa mà có con thì không gán cha được (chỉ 2 tầng).
 const editingKids = computed(() => (editing.value ? kids(editing.value) : []))
-// Gợi ý SKU cha: mọi SKU cấp trên cùng, trừ chính nó.
-const parentOptions = computed(() =>
-  props.skus.filter((s) => s.parent_id == null && s.id !== editing.value?.id),
-)
-const resolvedParent = computed<Sku | null | undefined>(() => {
-  const code = normalizeCode(parentCode.value)
-  if (!code) return null // không có cha
-  return props.skus.find((s) => s.code === code) // undefined = mã không tồn tại
-})
-const parentError = computed(() => {
-  const p = resolvedParent.value
-  if (p === null) return ''
-  if (p === undefined) return 'Không có SKU nào mã này'
-  if (p.id === editing.value?.id) return 'SKU không thể là cha của chính nó'
-  if (p.parent_id != null) return `${p.code} đang là SKU con — chỉ hỗ trợ 2 tầng`
-  return ''
-})
+// Ứng viên SKU cha: mọi SKU cấp trên cùng, trừ chính nó (2 tầng: SKU con không
+// làm cha được, nên không cần liệt kê).
+const parentOptions = computed(() => [
+  { value: 0, label: 'Không thuộc SKU cha nào' },
+  ...props.skus
+    .filter((s) => s.parent_id == null && s.id !== editing.value?.id)
+    .map((s) => ({ value: s.id, label: s.code, sublabel: s.product_name || s.name })),
+])
+const resolvedParent = computed(() => (parentId.value ? byId.value.get(parentId.value) ?? null : null))
 
 function toggleMat(id: number) {
   const i = selectedMats.value.indexOf(id)
@@ -192,7 +184,7 @@ function openCreate(parent?: Sku) {
   form.product_name = ''
   form.description = ''
   form.is_active = true
-  parentCode.value = parent?.code ?? ''
+  parentId.value = parent?.id ?? 0
   lengthMM.value = ''
   widthMM.value = ''
   selectedMats.value = []
@@ -205,7 +197,7 @@ function openEdit(s: Sku) {
   form.product_name = s.product_name ?? ''
   form.description = s.description ?? ''
   form.is_active = s.is_active ?? true
-  parentCode.value = s.parent_id != null ? (byId.value.get(s.parent_id)?.code ?? '') : ''
+  parentId.value = s.parent_id ?? 0
   lengthMM.value = s.length_mm ?? ''
   widthMM.value = s.width_mm ?? ''
   selectedMats.value = (s.materials ?? []).map((m) => m.material_id)
@@ -229,7 +221,7 @@ const sizeError = computed(() => {
   return (l == null) !== (w == null) ? 'Nhập cả D lẫn R, hoặc bỏ trống cả hai' : ''
 })
 const canSubmit = computed(
-  () => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !parentError.value && !sizeError.value,
+  () => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !sizeError.value,
 )
 
 function buildMaterials() {
@@ -239,7 +231,7 @@ function buildMaterials() {
 async function submit() {
   if (!canSubmit.value || saving.value) return
   saving.value = true
-  const parentId = resolvedParent.value?.id ?? null
+  const parent = parentId.value || null
   try {
     if (editing.value) {
       // Luôn gửi đủ: 0 = xoá (tách khỏi cha / bỏ kích thước), vì form đang hiện
@@ -249,7 +241,7 @@ async function submit() {
         product_name: form.product_name.trim(),
         description: form.description.trim(),
         is_active: form.is_active,
-        parent_id: parentId ?? 0,
+        parent_id: parent ?? 0,
         length_mm: parseDim(lengthMM.value) ?? 0,
         width_mm: parseDim(widthMM.value) ?? 0,
         materials: buildMaterials(),
@@ -262,7 +254,7 @@ async function submit() {
         product_name: form.product_name.trim(),
         description: form.description.trim(),
         is_active: form.is_active,
-        parent_id: parentId,
+        parent_id: parent,
         length_mm: parseDim(lengthMM.value),
         width_mm: parseDim(widthMM.value),
         materials: buildMaterials(),
@@ -593,21 +585,18 @@ async function remove(s: Sku) {
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label class="label">SKU cha</label>
-            <input
-              v-model="parentCode"
-              class="input font-mono"
-              list="sku-parent-options"
+            <UiSelect
+              v-model="parentId"
+              :options="parentOptions"
+              searchable
+              search-placeholder="Gõ mã hoặc tên SKU cha…"
+              placeholder="Không thuộc SKU cha nào"
               :disabled="editingKids.length > 0"
-              placeholder="Để trống = không thuộc cha nào"
-              @blur="parentCode = normalizeCode(parentCode)"
+              aria-label="SKU cha"
             />
-            <datalist id="sku-parent-options">
-              <option v-for="p in parentOptions" :key="p.id" :value="p.code">{{ p.product_name || p.name }}</option>
-            </datalist>
             <p v-if="editingKids.length" class="mt-1 text-[11px] text-muted-foreground">
               SKU này đang là cha của {{ editingKids.length }} SKU con — không gán cha cho nó được (chỉ 2 tầng).
             </p>
-            <p v-else-if="parentError" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400">{{ parentError }}</p>
             <p v-else-if="resolvedParent" class="mt-1 text-[11px] text-muted-foreground">
               {{ resolvedParent.product_name || resolvedParent.name }}
             </p>
