@@ -1,25 +1,34 @@
 <script setup lang="ts">
-import type { DiecutSettings } from '~/utils/diecut/pipeline'
+import type { DiecutGeometry, DiecutSettings } from '~/utils/diecut/pipeline'
 
 // Bảng thông số. Xếp theo đúng thứ tự người ta nghĩ khi làm file:
 //   tách hình → đặt kích thước thật → vẽ đường cắt → khoan lỗ treo → chất lượng in.
 const props = defineProps<{
   modelValue: DiecutSettings
-  artworkHeightMm: number
+  /** Tỷ lệ cao/ngang của ảnh gốc — dùng khi khoá tỷ lệ. */
+  naturalRatio: number
+  /** Lệch bao nhiêu % so với tỷ lệ gốc (dương = kéo cao). */
+  stretchPct: number
   hasAlpha: boolean
   knownSizeMm: number | null
   multi: boolean
+  /** Lỗ đã quy ra mm, kèm khoảng hở đo được — để liệt kê và tô cảnh báo. */
+  holes: DiecutGeometry['holes']
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', v: DiecutSettings): void
   (e: 'apply-all'): void
+  (e: 'add-top-hole'): void
+  (e: 'spread-holes', count: number): void
 }>()
+
+const spreadCount = ref(3)
 
 function patch(part: Partial<DiecutSettings>) {
   emit('update:modelValue', { ...props.modelValue, ...part })
 }
-function patchHole(part: Partial<DiecutSettings['hole']>) {
-  emit('update:modelValue', { ...props.modelValue, hole: { ...props.modelValue.hole, ...part } })
+function removeHole(index: number) {
+  patch({ holes: props.modelValue.holes.filter((_, i) => i !== index) })
 }
 
 const DPI_OPTIONS = [
@@ -31,8 +40,49 @@ const DPI_OPTIONS = [
 // Khổ thành phẩm = phần hình + viền hai bên. Đây là con số khách hỏi ("ornament
 // 8 inch"), nên phải hiện to chứ không bắt người dùng tự cộng.
 const finishedW = computed(() => props.modelValue.artworkWidthMm + props.modelValue.offsetMm * 2)
-const finishedH = computed(() => props.artworkHeightMm + props.modelValue.offsetMm * 2)
+const finishedH = computed(() => props.modelValue.artworkHeightMm + props.modelValue.offsetMm * 2)
 const inches = computed(() => Math.max(finishedW.value, finishedH.value) / 25.4)
+
+const round1 = (v: number) => Math.round(v * 10) / 10
+
+// Khoá tỷ lệ: sửa một cạnh thì cạnh kia chạy theo, hình giữ nguyên dáng. Bỏ khoá
+// thì gõ tự do — hình bị kéo méo, và chỗ này nói thẳng méo bao nhiêu.
+function setWidth(v: number) {
+  const next: Partial<DiecutSettings> = { artworkWidthMm: v }
+  if (props.modelValue.lockAspect && props.naturalRatio > 0) {
+    next.artworkHeightMm = round1(v * props.naturalRatio)
+  }
+  patch(next)
+}
+function setHeight(v: number) {
+  const next: Partial<DiecutSettings> = { artworkHeightMm: v }
+  if (props.modelValue.lockAspect && props.naturalRatio > 0) {
+    next.artworkWidthMm = round1(v / props.naturalRatio)
+  }
+  patch(next)
+}
+function toggleLock() {
+  const lock = !props.modelValue.lockAspect
+  // Khoá lại thì kéo chiều cao về đúng tỷ lệ gốc luôn, không để hình méo âm thầm.
+  patch(
+    lock && props.naturalRatio > 0
+      ? { lockAspect: true, artworkHeightMm: round1(props.modelValue.artworkWidthMm * props.naturalRatio) }
+      : { lockAspect: lock },
+  )
+}
+// Thanh phóng to: nhân đều CẢ HAI chiều, kể cả khi đang bỏ khoá tỷ lệ — "phóng
+// to cả hình" mà chỉ kéo bề ngang thì hình méo thêm mỗi lần kéo.
+function scaleBoth(newW: number) {
+  const k = newW / Math.max(0.001, props.modelValue.artworkWidthMm)
+  patch({
+    artworkWidthMm: newW,
+    artworkHeightMm: round1(props.modelValue.artworkHeightMm * k),
+  })
+}
+function applyKnownSize() {
+  if (!props.knownSizeMm) return
+  setWidth(round1(props.knownSizeMm))
+}
 </script>
 
 <template>
@@ -89,15 +139,58 @@ const inches = computed(() => Math.max(finishedW.value, finishedH.value) / 25.4)
 
     <!-- 2. Kích thước thật -->
     <section class="border-t border-border pt-4">
-      <h3 class="mb-2 text-sm font-semibold text-foreground">2 · Kích thước thật</h3>
-      <DiecutField
-        :model-value="props.modelValue.artworkWidthMm"
-        label="Bề ngang phần hình"
-        :min="5"
-        :max="1200"
-        :step="1"
-        @update:model-value="patch({ artworkWidthMm: $event })"
-      />
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <h3 class="text-sm font-semibold text-foreground">2 · Kích thước thật</h3>
+        <button
+          class="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors"
+          :class="
+            props.modelValue.lockAspect
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border text-muted-foreground hover:text-foreground'
+          "
+          :title="props.modelValue.lockAspect ? 'Đang giữ đúng tỷ lệ gốc — bấm để nhập tự do' : 'Đang cho kéo méo — bấm để khoá tỷ lệ'"
+          @click="toggleLock"
+        >
+          <UiIcon :name="props.modelValue.lockAspect ? 'link' : 'close'" :size="12" />
+          {{ props.modelValue.lockAspect ? 'Khoá tỷ lệ' : 'Tự do' }}
+        </button>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="label">Ngang (mm)</label>
+          <input
+            type="number"
+            class="input tabular-nums"
+            :value="props.modelValue.artworkWidthMm"
+            min="5"
+            max="2000"
+            step="1"
+            @change="setWidth(Number(($event.target as HTMLInputElement).value))"
+          />
+        </div>
+        <div>
+          <label class="label">Cao (mm)</label>
+          <input
+            type="number"
+            class="input tabular-nums"
+            :value="props.modelValue.artworkHeightMm"
+            min="5"
+            max="2000"
+            step="1"
+            @change="setHeight(Number(($event.target as HTMLInputElement).value))"
+          />
+        </div>
+      </div>
+      <div class="mt-2">
+        <DiecutField
+          :model-value="props.modelValue.artworkWidthMm"
+          label="Phóng to / thu nhỏ cả hình"
+          :min="5"
+          :max="600"
+          :step="1"
+          @update:model-value="scaleBoth($event)"
+        />
+      </div>
       <div class="mt-3 rounded-lg bg-muted px-3 py-2">
         <p class="text-[11px] uppercase tracking-wide text-muted-foreground">Thành phẩm sau cắt</p>
         <p class="text-base font-bold tabular-nums text-foreground">
@@ -105,13 +198,17 @@ const inches = computed(() => Math.max(finishedW.value, finishedH.value) / 25.4)
         </p>
         <p class="text-[11px] text-muted-foreground">
           cạnh dài ≈ {{ inches.toFixed(2) }} inch · phần hình {{ props.modelValue.artworkWidthMm.toFixed(1) }} ×
-          {{ props.artworkHeightMm.toFixed(1) }} mm
+          {{ props.modelValue.artworkHeightMm.toFixed(1) }} mm
+        </p>
+        <p v-if="Math.abs(props.stretchPct) >= 1" class="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+          Hình đang bị kéo {{ props.stretchPct > 0 ? 'cao' : 'bẹt' }} {{ Math.abs(props.stretchPct).toFixed(1) }}% so với
+          tỷ lệ gốc.
         </p>
       </div>
       <button
         v-if="props.knownSizeMm"
         class="mt-2 text-xs font-medium text-primary hover:underline"
-        @click="patch({ artworkWidthMm: Math.round(props.knownSizeMm * 10) / 10 })"
+        @click="applyKnownSize"
       >
         Lấy đúng khổ trong file gốc ({{ props.knownSizeMm.toFixed(1) }} mm)
       </button>
@@ -161,55 +258,84 @@ const inches = computed(() => Math.max(finishedW.value, finishedH.value) / 25.4)
       </div>
     </section>
 
-    <!-- 4. Lỗ treo -->
+    <!-- 4. Lỗ khoan -->
     <section class="border-t border-border pt-4">
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-foreground">4 · Lỗ treo</h3>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <h3 class="text-sm font-semibold text-foreground">4 · Lỗ khoan</h3>
+        <span class="text-[11px] text-muted-foreground">{{ props.modelValue.holes.length }} lỗ</span>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-secondary px-2 py-1 text-xs" @click="emit('add-top-hole')">
+          <UiIcon name="plus" :size="13" /> Lỗ treo trên đỉnh
+        </button>
         <button
-          class="relative h-5 w-9 rounded-full transition-colors"
-          :class="props.modelValue.hole.enabled ? 'bg-primary' : 'bg-muted-foreground/30'"
-          role="switch"
-          :aria-checked="props.modelValue.hole.enabled"
-          @click="patchHole({ enabled: !props.modelValue.hole.enabled })"
+          v-if="props.modelValue.holes.length"
+          class="btn-secondary px-2 py-1 text-xs"
+          @click="patch({ holes: [] })"
         >
-          <span
-            class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all"
-            :class="props.modelValue.hole.enabled ? 'left-[1.125rem]' : 'left-0.5'"
-          />
+          <UiIcon name="trash" :size="13" /> Xoá hết
         </button>
       </div>
-      <div class="space-y-3">
+
+      <div class="mt-2 flex items-end gap-2">
+        <div class="w-20">
+          <label class="label">Rải đều</label>
+          <input v-model.number="spreadCount" type="number" min="1" max="60" step="1" class="input tabular-nums" />
+        </div>
+        <button class="btn-secondary mb-0.5 px-2 py-1 text-xs" @click="emit('spread-holes', spreadCount)">
+          lỗ bám mép trên
+        </button>
+      </div>
+      <p class="mt-1 text-[11px] leading-snug text-muted-foreground">
+        Rải đều theo bề ngang hình, bám mép trên nên đỉnh cong thì hàng lỗ uốn theo dáng sản phẩm.
+        Cần đặt tay thì bấm thẳng vào ảnh xem trước, mỗi lần bấm là thêm một lỗ.
+      </p>
+
+      <div class="mt-3 space-y-3">
         <DiecutField
-          :model-value="props.modelValue.hole.diameterMm"
-          label="Đường kính"
+          :model-value="props.modelValue.holeDiameterMm"
+          label="Đường kính (dùng chung mọi lỗ)"
           :min="1"
-          :max="20"
+          :max="30"
           :step="0.5"
-          :disabled="!props.modelValue.hole.enabled"
-          @update:model-value="patchHole({ diameterMm: $event })"
+          @update:model-value="patch({ holeDiameterMm: $event })"
         />
         <DiecutField
-          :model-value="props.modelValue.hole.marginMm"
-          label="Vật liệu còn lại phía trên"
+          :model-value="props.modelValue.holeMarginMm"
+          label="Vật liệu chừa phía trên lỗ treo"
           :min="0.5"
           :max="30"
           :step="0.5"
-          :disabled="!props.modelValue.hole.enabled"
-          hint="Tính từ mép cắt tới mép lỗ. Dưới 2 mm là dễ bục khi treo."
-          @update:model-value="patchHole({ marginMm: $event })"
-        />
-        <DiecutField
-          :model-value="Math.round(props.modelValue.hole.xRatio * 100)"
-          label="Vị trí ngang"
-          :min="0"
-          :max="100"
-          :step="1"
-          unit="%"
-          :disabled="!props.modelValue.hole.enabled"
-          hint="Hoặc bấm thẳng vào ảnh xem trước để đặt lỗ."
-          @update:model-value="patchHole({ xRatio: $event / 100 })"
+          hint="Áp dụng khi bấm nút lỗ treo trên đỉnh. Dưới 2 mm là dễ bục khi treo."
+          @update:model-value="patch({ holeMarginMm: $event })"
         />
       </div>
+
+      <!-- Danh sách lỗ: toạ độ thật và khoảng hở đo được, không phải số đã gõ -->
+      <ul v-if="props.holes.length" class="mt-3 max-h-44 space-y-1 overflow-y-auto">
+        <li
+          v-for="(h, i) in props.holes"
+          :key="i"
+          class="flex items-center justify-between gap-2 rounded-md bg-muted px-2 py-1 text-[11px]"
+        >
+          <span class="tabular-nums text-foreground">
+            Lỗ {{ i + 1 }} · {{ h.cxMm.toFixed(1) }} × {{ h.cyMm.toFixed(1) }} mm
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span
+              class="tabular-nums"
+              :class="h.clearanceMm < 1.5 ? 'font-semibold text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+              :title="`Vật liệu còn lại từ mép lỗ tới mép cắt: ${h.clearanceMm.toFixed(1)} mm`"
+            >
+              hở {{ h.clearanceMm.toFixed(1) }}
+            </span>
+            <button class="rounded p-0.5 text-muted-foreground hover:text-destructive" @click="removeHole(i)">
+              <UiIcon name="close" :size="12" />
+            </button>
+          </span>
+        </li>
+      </ul>
     </section>
 
     <!-- 5. File in -->

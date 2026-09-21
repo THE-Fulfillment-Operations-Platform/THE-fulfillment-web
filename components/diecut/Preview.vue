@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Analysis, DiecutGeometry, DiecutSettings } from '~/utils/diecut/pipeline'
-import { drawPreview, renderPrintCanvas } from '~/utils/diecut/render'
+import { drawPreview, previewMarginMm, renderPrintCanvas } from '~/utils/diecut/render'
 
 // Khung xem trước: file in và đường cắt chồng đúng vị trí thật. Vẽ bằng chính
 // hàm dựng ảnh xem trước của gói file, nên cái nhìn trên màn hình đúng bằng cái
@@ -19,6 +19,7 @@ const emit = defineEmits<{ (e: 'place-hole', payload: { xMm: number; yMm: number
 const box = ref<HTMLDivElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 const pxPerMm = ref(1)
+const margin = ref(0)
 
 function render() {
   const g = props.geometry
@@ -33,15 +34,20 @@ function render() {
     return
   }
 
-  // Vừa khung, chừa lề cho nhãn kích thước.
+  // Vừa khung, chừa lề cho nhãn kích thước. Lề quanh khổ cắt tính luôn vào đây,
+  // nếu không thì đường cắt nằm đúng trên mép canvas và bị viền khung che nửa nét.
+  const marginMm = previewMarginMm(g)
+  const boxW = g.widthMm + marginMm * 2
+  const boxH = g.heightMm + marginMm * 2
   const availW = Math.max(120, host.clientWidth - 24)
   const availH = Math.max(120, host.clientHeight - 24)
-  const fit = Math.min(availW / g.widthMm, availH / g.heightMm)
+  const fit = Math.min(availW / boxW, availH / boxH)
   pxPerMm.value = Math.max(0.2, fit)
+  margin.value = marginMm
 
   const dpr = Math.min(2, window.devicePixelRatio || 1)
-  const cssW = g.widthMm * pxPerMm.value
-  const cssH = g.heightMm * pxPerMm.value
+  const cssW = boxW * pxPerMm.value
+  const cssH = boxH * pxPerMm.value
   cv.style.width = `${cssW}px`
   cv.style.height = `${cssH}px`
   cv.width = Math.max(1, Math.round(cssW * dpr))
@@ -59,6 +65,7 @@ function render() {
     checkerboard: true,
     showCut: props.showCut,
     showPrint: props.showPrint,
+    marginMm,
   })
 }
 
@@ -71,11 +78,14 @@ function scheduleRender() {
 function onClick(e: MouseEvent) {
   const g = props.geometry
   const cv = canvas.value
-  if (!g || !cv || !props.settings.hole.enabled) return
+  if (!g || !cv) return
+  // Trừ lề để bấm vào đâu là lỗ nằm đúng đó, không lệch đi một lề.
   const rect = cv.getBoundingClientRect()
+  const boxW = g.widthMm + margin.value * 2
+  const boxH = g.heightMm + margin.value * 2
   emit('place-hole', {
-    xMm: ((e.clientX - rect.left) / rect.width) * g.widthMm,
-    yMm: ((e.clientY - rect.top) / rect.height) * g.heightMm,
+    xMm: ((e.clientX - rect.left) / rect.width) * boxW - margin.value,
+    yMm: ((e.clientY - rect.top) / rect.height) * boxH - margin.value,
   })
 }
 
@@ -116,8 +126,8 @@ watch(
       <div ref="box" class="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 p-3">
         <canvas
           ref="canvas"
-          class="max-h-full max-w-full rounded shadow-sm"
-          :class="props.settings.hole.enabled ? 'cursor-crosshair' : ''"
+          class="max-h-full max-w-full cursor-crosshair rounded shadow-sm"
+          title="Bấm để thêm một lỗ khoan tại đây"
           @click="onClick"
         />
       </div>

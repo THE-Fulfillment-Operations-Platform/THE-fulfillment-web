@@ -11,12 +11,25 @@ import { signedDistanceField } from './edt'
 import { isoContours, signedArea, perimeter, ringBounds, type Ring } from './contour'
 import { chaikin, simplifyRing, dedupe } from './simplify'
 
+export interface HoleSpec {
+  /** 0 = mép trái khung cắt, 1 = mép phải. */
+  xRatio: number
+  /** 0 = mép trên khung cắt, 1 = mép dưới. */
+  yRatio: number
+}
+
 export interface DiecutSettings {
   mode: MaskMode
   alphaThreshold: number
   floodTolerance: number
   /** Bề ngang phần HÌNH (chưa tính viền cắt), mm. */
   artworkWidthMm: number
+  /**
+   * Chiều cao phần HÌNH, mm. Khoá tỷ lệ thì số này đi theo bề ngang; bỏ khoá thì
+   * gõ tự do và hình bị kéo giãn — công cụ sẽ nói rõ kéo bao nhiêu phần trăm.
+   */
+  artworkHeightMm: number
+  lockAspect: boolean
   /** Viền cắt cộng ra ngoài hình, mm. 0 = cắt sát mép hình. */
   offsetMm: number
   /** Sai số cho phép khi làm gọn đường cắt, mm. */
@@ -27,14 +40,16 @@ export interface DiecutSettings {
   fillHolesMm2: number
   /** Cảnh báo khi có chỗ mảnh hơn, mm. */
   thinWarnMm: number
-  hole: {
-    enabled: boolean
-    diameterMm: number
-    /** Vật liệu còn lại từ mép cắt tới mép lỗ, mm. */
-    marginMm: number
-    /** Vị trí ngang trong khung cắt, 0 = trái, 1 = phải. */
-    xRatio: number
-  }
+  /**
+   * Các lỗ khoan. Toạ độ ghi theo TỶ LỆ khung cắt (0–1) chứ không theo mm: đổi
+   * kích thước sản phẩm hay đổi viền cắt thì lỗ vẫn nằm đúng chỗ tương đối,
+   * không văng ra ngoài.
+   */
+  holes: HoleSpec[]
+  /** Đường kính dùng chung cho mọi lỗ, mm. */
+  holeDiameterMm: number
+  /** Vật liệu chừa lại từ mép cắt tới mép lỗ khi đặt lỗ treo trên đỉnh, mm. */
+  holeMarginMm: number
   bleedMm: number
   printDpi: number
 }
@@ -44,12 +59,16 @@ export const DEFAULT_SETTINGS: DiecutSettings = {
   alphaThreshold: 16,
   floodTolerance: 28,
   artworkWidthMm: 100,
+  artworkHeightMm: 100,
+  lockAspect: true,
   offsetMm: 5,
   simplifyMm: 0.08,
   despeckleMm2: 1,
   fillHolesMm2: 3,
   thinWarnMm: 2,
-  hole: { enabled: false, diameterMm: 3, marginMm: 3, xRatio: 0.5 },
+  holes: [],
+  holeDiameterMm: 3,
+  holeMarginMm: 3,
   bleedMm: 0,
   printDpi: 300,
 }
@@ -65,8 +84,13 @@ export interface Analysis {
   bbox: { x0: number; y0: number; x1: number; y1: number }
   removedSpecks: number
   filledHoles: number
-  /** Tỷ lệ ảnh làm việc so với ảnh gốc (≤ 1). */
-  workScale: number
+  /**
+   * Tỷ lệ ảnh làm việc so với ảnh gốc, tách riêng hai trục: khi người dùng bỏ
+   * khoá tỷ lệ, ảnh làm việc được kéo trước cho vuông milimét, nhờ vậy mọi phép
+   * đo phía sau vẫn đẳng hướng — viền 5 mm là 5 mm ở cả bốn phía.
+   */
+  scaleX: number
+  scaleY: number
 }
 
 export interface DiecutGeometry {
@@ -76,7 +100,7 @@ export interface DiecutGeometry {
   heightMm: number
   /** Vị trí phần hình trong khung cắt, mm. */
   artwork: { xMm: number; yMm: number; widthMm: number; heightMm: number }
-  hole: { cxMm: number; cyMm: number; rMm: number; clearanceMm: number } | null
+  holes: { cxMm: number; cyMm: number; rMm: number; clearanceMm: number }[]
   stats: {
     dpi: number
     perimeterMm: number
@@ -85,6 +109,8 @@ export interface DiecutGeometry {
     removedSpecks: number
     filledHoles: number
     pointCount: number
+    /** Lệch bao nhiêu phần trăm so với tỷ lệ gốc của ảnh (dương = kéo cao). */
+    stretchPct: number
   }
   warnings: string[]
   notes: string[]
@@ -105,7 +131,12 @@ export function requiredPadPx(s: DiecutSettings, imgWidth: number): number {
   return Math.min(pad, Math.round(imgWidth))
 }
 
-export function analyze(img: ImageData, settings: DiecutSettings, workScale: number): Analysis | null {
+export function analyze(
+  img: ImageData,
+  settings: DiecutSettings,
+  scaleX: number,
+  scaleY: number,
+): Analysis | null {
   // Ngưỡng vụn/lỗ tính theo ảnh GỐC (chưa chèn lề), nếu không thì thêm lề là
   // đổi luôn ý nghĩa của mấy con số mm² người dùng đặt.
   const mmPerPxGuess = settings.artworkWidthMm / Math.max(1, img.width)
@@ -133,7 +164,8 @@ export function analyze(img: ImageData, settings: DiecutSettings, workScale: num
     bbox: res.bbox,
     removedSpecks: res.removedSpecks,
     filledHoles: res.filledHoles,
-    workScale,
+    scaleX,
+    scaleY,
   }
 }
 
@@ -191,34 +223,46 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
   const warnings: string[] = []
   const notes: string[] = []
 
-  // Lỗ treo: đặt theo tỷ lệ ngang, cách mép trên của đường cắt một khoảng vật liệu.
-  let hole: DiecutGeometry['hole'] = null
-  if (s.hole.enabled) {
-    const r = s.hole.diameterMm / 2
-    const cx = Math.min(Math.max(s.hole.xRatio, 0), 1) * widthMm
-    // Mép trên của đường cắt tại đúng cột x đó, không phải mép trên cả khung —
-    // hình vai xuôi thì lỗ vẫn nằm trong vật liệu.
-    const topAt = topEdgeAt(shifted, cx)
-    const cy = (topAt ?? 0) + s.hole.marginMm + r
-
-    // Khoảng hở THẬT từ mép lỗ tới mép cắt, đo bằng trường khoảng cách chứ không
-    // lấy theo con số người dùng gõ: ở chỗ hình vát nhọn, "cách mép trên 3 mm"
-    // vẫn có thể chỉ còn 1 mm vật liệu ở hai bên.
+  // Lỗ khoan: toạ độ tỷ lệ → mm, rồi ĐO khoảng hở thật tới mép cắt bằng trường
+  // khoảng cách. Không tin con số người dùng gõ: chỗ hình vát nhọn, lỗ "cách mép
+  // trên 3 mm" vẫn có thể chỉ còn 1 mm vật liệu ở hai bên.
+  const r = s.holeDiameterMm / 2
+  const holes = s.holes.map((h) => {
+    const cx = Math.min(Math.max(h.xRatio, 0), 1) * widthMm
+    const cy = Math.min(Math.max(h.yRatio, 0), 1) * heightMm
     const px = (cx + b.x0) / mmPerPx + a.bbox.x0 - 0.5
     const py = (cy + b.y0) / mmPerPx + a.bbox.y0 - 0.5
     const sdfAt = sampleField(a.sdf, a.width, a.height, px, py)
-    const clearanceMm = (level - sdfAt) * mmPerPx - r
-    hole = { cxMm: cx, cyMm: cy, rMm: r, clearanceMm }
-    if (clearanceMm < 1.5) {
-      warnings.push(
-        `Lỗ treo chỉ còn ${clearanceMm.toFixed(1)} mm vật liệu tới mép cắt — treo lên dễ bục. Hạ lỗ xuống, thu nhỏ đường kính hoặc tăng viền cắt.`,
-      )
-    }
+    return { cxMm: cx, cyMm: cy, rMm: r, clearanceMm: (level - sdfAt) * mmPerPx - r }
+  })
+  const tight = holes
+    .map((h, i) => ({ i, c: h.clearanceMm }))
+    .filter((h) => h.c < 1.5)
+    .sort((x, y) => x.c - y.c)
+  if (tight.length) {
+    const worst = tight[0]
+    warnings.push(
+      tight.length === 1
+        ? `Lỗ ${worst.i + 1} chỉ còn ${worst.c.toFixed(1)} mm vật liệu tới mép cắt — dễ bục. Dời lỗ vào trong, thu nhỏ đường kính hoặc tăng viền cắt.`
+        : `${tight.length} lỗ nằm quá sát mép cắt (ít nhất là lỗ ${worst.i + 1}, còn ${worst.c.toFixed(1)} mm) — dễ bục khi treo hoặc bắt vít.`,
+    )
   }
 
-  // Độ nét: DPI thật của ảnh gốc ở khổ đang đặt.
-  const srcArtworkPx = bboxW / (a.workScale || 1)
-  const dpi = (srcArtworkPx / s.artworkWidthMm) * 25.4
+  // Độ nét: DPI thật của ảnh gốc ở khổ đang đặt, lấy trục xấu hơn.
+  const srcPxX = bboxW / (a.scaleX || 1)
+  const srcPxY = bboxH / (a.scaleY || 1)
+  const dpi = Math.min(srcPxX / s.artworkWidthMm, srcPxY / Math.max(0.001, artwork.heightMm)) * 25.4
+
+  // Kéo giãn: tỷ lệ gốc suy ngược từ số điểm ảnh của ảnh GỐC (điểm ảnh gốc luôn
+  // vuông), so với tỷ lệ khổ đang đặt.
+  const naturalRatio = srcPxY / Math.max(0.001, srcPxX)
+  const targetRatio = artwork.heightMm / Math.max(0.001, artwork.widthMm)
+  const stretchPct = (targetRatio / Math.max(0.001, naturalRatio) - 1) * 100
+  if (Math.abs(stretchPct) >= 1) {
+    warnings.push(
+      `Hình bị kéo ${stretchPct > 0 ? 'cao' : 'bẹt'} ${Math.abs(stretchPct).toFixed(1)}% so với tỷ lệ gốc — chữ và hoạ tiết tròn sẽ méo. Bật khoá tỷ lệ nếu không cố ý.`,
+    )
+  }
   if (dpi < 150) {
     warnings.push(
       `Ảnh chỉ đạt ${Math.round(dpi)} DPI ở khổ ${s.artworkWidthMm} mm — in ra sẽ vỡ nét. Cần ảnh lớn hơn hoặc giảm kích thước.`,
@@ -248,7 +292,7 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
     widthMm,
     heightMm,
     artwork,
-    hole,
+    holes,
     stats: {
       dpi,
       perimeterMm: shifted.reduce((sum, r) => sum + perimeter(r), 0),
@@ -257,6 +301,7 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
       removedSpecks: a.removedSpecks,
       filledHoles: a.filledHoles,
       pointCount: shifted.reduce((sum, r) => sum + r.length, 0),
+      stretchPct,
     },
     warnings,
     notes,

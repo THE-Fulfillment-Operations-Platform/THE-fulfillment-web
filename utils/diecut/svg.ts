@@ -15,17 +15,19 @@ function ringToPath(ring: Ring): string {
 
 export interface SvgInput {
   rings: Ring[]
-  hole?: { cxMm: number; cyMm: number; rMm: number }
+  holes: { cxMm: number; cyMm: number; rMm: number }[]
   widthMm: number
   heightMm: number
   title: string
 }
 
 export function buildCutSvg(input: SvgInput): string {
-  const { rings, hole, widthMm, heightMm, title } = input
+  const { rings, holes, widthMm, heightMm, title } = input
   const paths = rings.map((r) => `    <path d="${ringToPath(r)}" />`).join('\n')
-  const holeEl = hole
-    ? `\n  <g id="LO-TREO" fill="none" stroke="#0000FF" stroke-width="0.1">\n    <circle cx="${n(hole.cxMm)}" cy="${n(hole.cyMm)}" r="${n(hole.rMm)}" />\n  </g>`
+  const holeEl = holes.length
+    ? `\n  <g id="LO-KHOAN" fill="none" stroke="#0000FF" stroke-width="0.1">\n${holes
+        .map((h) => `    <circle cx="${n(h.cxMm)}" cy="${n(h.cyMm)}" r="${n(h.rMm)}" />`)
+        .join('\n')}\n  </g>`
     : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" version="1.1"

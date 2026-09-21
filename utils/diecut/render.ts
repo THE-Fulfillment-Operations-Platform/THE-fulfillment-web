@@ -42,13 +42,14 @@ export function renderPrintCanvas(
   const ctx = out.getContext('2d')!
   ctx.imageSmoothingQuality = 'high'
 
-  // Vùng phần hình trên ảnh GỐC: mặt nạ tính ở ảnh thu nhỏ nên phải quy đổi lại.
-  const k = a.workScale || 1
-  // Trừ lề trống đã chèn lúc phân tích để quay về toạ độ ảnh gốc.
-  const sx = (a.bbox.x0 - a.pad - 0.5) / k
-  const sy = (a.bbox.y0 - a.pad - 0.5) / k
-  const sw = (a.bbox.x1 - a.bbox.x0 + 1) / k
-  const sh = (a.bbox.y1 - a.bbox.y0 + 1) / k
+  // Vùng phần hình trên ảnh GỐC: mặt nạ tính ở ảnh thu nhỏ (và có thể đã kéo một
+  // trục) nên quy đổi riêng từng trục, sau khi trừ lề trống chèn lúc phân tích.
+  const kx = a.scaleX || 1
+  const ky = a.scaleY || 1
+  const sx = (a.bbox.x0 - a.pad - 0.5) / kx
+  const sy = (a.bbox.y0 - a.pad - 0.5) / ky
+  const sw = (a.bbox.x1 - a.bbox.x0 + 1) / kx
+  const sh = (a.bbox.y1 - a.bbox.y0 + 1) / ky
 
   const dx = g.artwork.xMm * pxPerMm
   const dy = g.artwork.yMm * pxPerMm
@@ -94,6 +95,14 @@ export interface PreviewOptions {
   showCut: boolean
   showPrint: boolean
   caption?: string
+  /** Lề trống quanh khổ cắt, mm. Không có lề thì đường cắt nằm đúng trên mép
+   *  khung và bị viền khung che mất một nửa nét. */
+  marginMm?: number
+}
+
+/** Lề xem trước mặc định: đủ để nhìn rõ đường cắt ở mọi khổ. */
+export function previewMarginMm(g: DiecutGeometry): number {
+  return Math.max(2, Math.min(12, Math.max(g.widthMm, g.heightMm) * 0.04))
 }
 
 /**
@@ -110,19 +119,25 @@ export function drawPreview(
 ): void {
   const w = g.widthMm * pxPerMm
   const h = g.heightMm * pxPerMm
+  const margin = (opts.marginMm ?? 0) * pxPerMm
+  const totalW = w + margin * 2
+  const totalH = h + margin * 2
 
   if (opts.checkerboard) {
     const cell = 8
-    for (let y = 0; y < h; y += cell) {
-      for (let x = 0; x < w; x += cell) {
+    for (let y = 0; y < totalH; y += cell) {
+      for (let x = 0; x < totalW; x += cell) {
         ctx.fillStyle = ((x / cell + y / cell) | 0) % 2 ? '#e9eaee' : '#fafbfc'
         ctx.fillRect(x, y, cell, cell)
       }
     }
   } else {
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, w, h)
+    ctx.fillRect(0, 0, totalW, totalH)
   }
+
+  ctx.save()
+  ctx.translate(margin, margin)
 
   if (opts.showPrint && print) ctx.drawImage(print, 0, 0, w, h)
 
@@ -140,13 +155,17 @@ export function drawPreview(
       ctx.closePath()
       ctx.stroke()
     }
-    if (g.hole) {
-      ctx.strokeStyle = '#2563eb'
+    // Lỗ khoan: đỏ cảnh báo khi còn quá ít vật liệu tới mép cắt, xanh khi ổn —
+    // nhìn phát biết lỗ nào phải dời, không phải đọc chữ.
+    for (const h of g.holes) {
+      ctx.strokeStyle = h.clearanceMm < 1.5 ? '#f59e0b' : '#2563eb'
       ctx.beginPath()
-      ctx.arc(g.hole.cxMm * pxPerMm, g.hole.cyMm * pxPerMm, g.hole.rMm * pxPerMm, 0, Math.PI * 2)
+      ctx.arc(h.cxMm * pxPerMm, h.cyMm * pxPerMm, h.rMm * pxPerMm, 0, Math.PI * 2)
       ctx.stroke()
     }
   }
+
+  ctx.restore()
 
   if (opts.caption) {
     const pad = Math.max(6, pxPerMm * 2)
@@ -154,10 +173,10 @@ export function drawPreview(
     const metrics = ctx.measureText(opts.caption)
     const boxH = Math.max(16, pxPerMm * 5)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.78)'
-    ctx.fillRect(pad / 2, h - boxH - pad / 2, metrics.width + pad, boxH)
+    ctx.fillRect(pad / 2, totalH - boxH - pad / 2, metrics.width + pad, boxH)
     ctx.fillStyle = '#ffffff'
     ctx.textBaseline = 'middle'
-    ctx.fillText(opts.caption, pad, h - boxH / 2 - pad / 2)
+    ctx.fillText(opts.caption, pad, totalH - boxH / 2 - pad / 2)
   }
 }
 
@@ -168,16 +187,18 @@ export function renderPreviewCanvas(
   caption: string,
   maxEdge = 1600,
 ): HTMLCanvasElement {
-  const pxPerMm = Math.min(8, maxEdge / Math.max(g.widthMm, g.heightMm))
+  const marginMm = previewMarginMm(g)
+  const pxPerMm = Math.min(8, maxEdge / (Math.max(g.widthMm, g.heightMm) + marginMm * 2))
   const c = document.createElement('canvas')
-  c.width = Math.max(1, Math.round(g.widthMm * pxPerMm))
-  c.height = Math.max(1, Math.round(g.heightMm * pxPerMm))
+  c.width = Math.max(1, Math.round((g.widthMm + marginMm * 2) * pxPerMm))
+  c.height = Math.max(1, Math.round((g.heightMm + marginMm * 2) * pxPerMm))
   const ctx = c.getContext('2d')!
   drawPreview(ctx, print, g, pxPerMm, {
     checkerboard: false,
     showCut: true,
     showPrint: true,
     caption,
+    marginMm,
   })
   return c
 }

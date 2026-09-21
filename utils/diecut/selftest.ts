@@ -42,9 +42,9 @@ for (const size of [200, 800]) {
     ...DEFAULT_SETTINGS,
     artworkWidthMm: 100,
     offsetMm: 3,
-    hole: { ...DEFAULT_SETTINGS.hole, enabled: true },
+    holes: [{ xRatio: 0.5, yRatio: 0.05 }],
   }
-  const a = analyze(circleImage(size, true), s, 1)!
+  const a = analyze(circleImage(size, true), s, 1, 1)!
   const g = buildGeometry(a, s)!
   const mmPerPx = 100 / (a.bbox.x1 - a.bbox.x0 + 1)
   const expectedW = 100 + 2 * s.offsetMm
@@ -60,7 +60,7 @@ for (const size of [200, 800]) {
   check(`[${size}px] chu vi`, Math.abs(perimeter(g.rings[0]) - expectedPerim) < expectedPerim * 0.02, `${perimeter(g.rings[0]).toFixed(1)} mm, chờ ${expectedPerim.toFixed(1)}`)
   check(`[${size}px] diện tích`, Math.abs(area - expectedArea) < tolArea, `${area.toFixed(0)} mm², chờ ${expectedArea.toFixed(0)} ±${tolArea.toFixed(0)}`)
   check(`[${size}px] vị trí hình trong khung`, Math.abs(g.artwork.xMm - s.offsetMm) < tolW, `x=${g.artwork.xMm.toFixed(2)} mm, chờ ${s.offsetMm}`)
-  check(`[${size}px] lỗ treo cách mép đúng`, !!g.hole && Math.abs(g.hole.cyMm - (s.hole.marginMm + s.hole.diameterMm / 2)) < tolW, `cy=${g.hole?.cyMm.toFixed(2)}, chờ ${s.hole.marginMm + s.hole.diameterMm / 2}`)
+  check(`[${size}px] lỗ đặt đúng chỗ`, g.holes.length === 1 && Math.abs(g.holes[0].cyMm - g.heightMm * 0.05) < 0.2 && Math.abs(g.holes[0].cxMm - g.widthMm / 2) < 0.2, `(${g.holes[0]?.cxMm.toFixed(1)}, ${g.holes[0]?.cyMm.toFixed(1)}) mm`)
   check(`[${size}px] không báo nhầm chỗ mảnh`, !g.warnings.some((w) => w.includes('mảnh')), g.warnings.join(' | ') || 'không cảnh báo')
   check(`[${size}px] file cắt gọn`, g.stats.pointCount < 600, `${g.stats.pointCount} điểm`)
 }
@@ -68,19 +68,19 @@ for (const size of [200, 800]) {
 // --- Viền 0 và viền âm -----------------------------------------------------
 {
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 0 }
-  const g = buildGeometry(analyze(circleImage(800, true), s, 1)!, s)!
+  const g = buildGeometry(analyze(circleImage(800, true), s, 1, 1)!, s)!
   check('viền 0 → khổ bằng hình', Math.abs(g.widthMm - 100) < 0.5, `${g.widthMm.toFixed(2)} mm`)
 }
 {
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: -4 }
-  const g = buildGeometry(analyze(circleImage(800, true), s, 1)!, s)!
+  const g = buildGeometry(analyze(circleImage(800, true), s, 1, 1)!, s)!
   check('viền âm → cắt lẹm vào', Math.abs(g.widthMm - 92) < 0.5, `${g.widthMm.toFixed(2)} mm, chờ 92`)
 }
 
 // --- Ảnh nền trắng ---------------------------------------------------------
 {
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 3, mode: 'flood' as const }
-  const g = buildGeometry(analyze(circleImage(800, false), s, 1)!, s)!
+  const g = buildGeometry(analyze(circleImage(800, false), s, 1, 1)!, s)!
   check('tách nền trắng ra đúng khổ', Math.abs(g.widthMm - 106) < 0.5, `${g.widthMm.toFixed(2)} mm, chờ 106`)
 }
 
@@ -93,7 +93,7 @@ for (const size of [200, 800]) {
     if (Math.hypot(x - 200, y - 200) <= 120 || Math.hypot(x - 600, y - 200) <= 120) data[i + 3] = 255
   }
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 200, offsetMm: 2 }
-  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1)!, s)!
+  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1, 1)!, s)!
   check('hai hình rời → hai đường cắt', g.rings.length === 2, `${g.rings.length} đường`)
 }
 
@@ -107,7 +107,7 @@ for (const size of [200, 800]) {
     if (d <= 300 && d >= 120) data[i + 3] = 255
   }
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 0 }
-  const g = buildGeometry(analyze({ width: size, height: size, data } as unknown as ImageData, s, 1)!, s)!
+  const g = buildGeometry(analyze({ width: size, height: size, data } as unknown as ImageData, s, 1, 1)!, s)!
   check('vành khuyên → 2 đường (ngoài + lỗ)', g.rings.length === 2, `${g.rings.length} đường`)
 }
 
@@ -124,7 +124,7 @@ for (const size of [200, 800]) {
     if (inside) data[i + 3] = 255
   }
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 0, thinWarnMm: 2 }
-  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1)!, s)!
+  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1, 1)!, s)!
   check('bắt được cổ thắt mảnh', g.warnings.some((x) => x.includes('mảnh')), g.warnings.join(' | ') || 'KHÔNG cảnh báo')
 }
 
@@ -134,24 +134,25 @@ for (const size of [200, 800]) {
     ...DEFAULT_SETTINGS,
     artworkWidthMm: 100,
     offsetMm: 1,
-    hole: { enabled: true, diameterMm: 6, marginMm: 0.2, xRatio: 0.5 },
+    holes: [{ xRatio: 0.5, yRatio: 0.03 }],
+    holeDiameterMm: 6,
   }
-  const g = buildGeometry(analyze(circleImage(800, true), s, 1)!, s)!
-  check('bắt được lỗ treo sát mép', g.warnings.some((x) => x.includes('Lỗ treo')), g.warnings.join(' | ') || 'KHÔNG cảnh báo')
+  const g = buildGeometry(analyze(circleImage(800, true), s, 1, 1)!, s)!
+  check('bắt được lỗ sát mép', g.warnings.some((x) => x.includes('Lỗ 1')), g.warnings.join(' | ') || 'KHÔNG cảnh báo')
 }
 {
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 300 }
-  const g = buildGeometry(analyze(circleImage(200, true), s, 1)!, s)!
+  const g = buildGeometry(analyze(circleImage(200, true), s, 1, 1)!, s)!
   check('bắt được ảnh thiếu nét', g.warnings.some((x) => x.includes('DPI')), g.warnings.join(' | ') || 'KHÔNG cảnh báo')
 }
 
 // --- DXF + SVG -------------------------------------------------------------
 {
-  const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 3, hole: { ...DEFAULT_SETTINGS.hole, enabled: true } }
-  const g = buildGeometry(analyze(circleImage(800, true), s, 1)!, s)!
+  const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 3, holes: [{ xRatio: 0.5, yRatio: 0.05 }] }
+  const g = buildGeometry(analyze(circleImage(800, true), s, 1, 1)!, s)!
   const dxf = buildDxf({
     rings: g.rings,
-    circles: g.hole ? [{ cx: g.hole.cxMm, cy: g.hole.cyMm, r: g.hole.rMm, layer: 'LO_TREO' }] : [],
+    circles: g.holes.map((h) => ({ cx: h.cxMm, cy: h.cyMm, r: h.rMm, layer: 'LO_KHOAN' })),
     widthMm: g.widthMm,
     heightMm: g.heightMm,
     layer: 'CUT',
@@ -165,7 +166,7 @@ for (const size of [200, 800]) {
   const holeY = Number(dxf.split('CIRCLE')[1].split('\r\n20\r\n')[1].split('\r\n')[0])
   check('DXF: lỗ treo ở nửa trên', holeY > g.heightMm / 2, `y=${holeY.toFixed(2)} / khổ ${g.heightMm.toFixed(2)}`)
 
-  const svg = buildCutSvg({ rings: g.rings, hole: g.hole ?? undefined, widthMm: g.widthMm, heightMm: g.heightMm, title: 'thử' })
+  const svg = buildCutSvg({ rings: g.rings, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'thử' })
   check('SVG ghi kích thước bằng mm', /width="[\d.]+mm" height="[\d.]+mm"/.test(svg), svg.match(/width="[^"]+" height="[^"]+"/)?.[0] ?? '')
   check('SVG viewBox 1:1', svg.includes(`viewBox="0 0 ${(Math.round(g.widthMm * 1000) / 1000).toString()}`), 'ok')
   check('SVG đủ đường cắt', (svg.match(/<path/g) || []).length === g.rings.length, 'ok')
@@ -184,10 +185,56 @@ for (const size of [200, 800]) {
     if (inside) data[(y * w + x) * 4 + 3] = 255
   }
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 83, offsetMm: 5 }
-  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1)!, s)!
+  const g = buildGeometry(analyze({ width: w, height: h, data } as unknown as ImageData, s, 1, 1)!, s)!
   check('hình chạm mép → một đường cắt kín', g.rings.length === 1, `${g.rings.length} đường, ${g.stats.pointCount} điểm`)
   check('hình chạm mép → đúng khổ', Math.abs(g.widthMm - 93) < 0.5 && Math.abs(g.heightMm - (83 * h / w + 10)) < 0.5, `${g.widthMm.toFixed(1)} × ${g.heightMm.toFixed(1)} mm, chờ 93.0 × ${(83 * h / w + 10).toFixed(1)}`)
   check('hình chạm mép → viền đều 5 mm', Math.abs(g.artwork.xMm - 5) < 0.5 && Math.abs(g.artwork.yMm - 5) < 0.5, `lề trái ${g.artwork.xMm.toFixed(2)} mm, lề trên ${g.artwork.yMm.toFixed(2)} mm`)
+}
+
+// --- Đặt khổ lệch tỷ lệ gốc: ảnh làm việc phải được kéo trước ---------------
+// Hình vuông 100 mm, người dùng đặt 100 × 150 mm (kéo cao 50%). Ảnh làm việc
+// kéo theo trục dọc nên viền cắt vẫn phải đều 5 mm ở cả bốn phía.
+{
+  const size = 800
+  const data = new Uint8ClampedArray(size * size * 4)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    if (x >= 100 && x < 700 && y >= 100 && y < 700) data[(y * size + x) * 4 + 3] = 255
+  }
+  const img = { width: size, height: size, data } as unknown as ImageData
+  const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, artworkHeightMm: 150, lockAspect: false, offsetMm: 5 }
+  // Mô phỏng đúng việc trang làm: kéo trục dọc 1,5 lần rồi mới phân tích.
+  const stretched = { width: size, height: size * 3 / 2, data: new Uint8ClampedArray(size * (size * 3 / 2) * 4) } as unknown as ImageData
+  for (let y = 0; y < size * 3 / 2; y++) {
+    const sy = Math.min(size - 1, Math.floor(y * 2 / 3))
+    for (let x = 0; x < size; x++) {
+      stretched.data[(y * size + x) * 4 + 3] = data[(sy * size + x) * 4 + 3]
+    }
+  }
+  const g = buildGeometry(analyze(stretched, s, 1, 1.5)!, s)!
+  check('khổ lệch tỷ lệ → đúng số đo đặt', Math.abs(g.widthMm - 110) < 0.6 && Math.abs(g.heightMm - 160) < 0.6, `${g.widthMm.toFixed(1)} × ${g.heightMm.toFixed(1)} mm, chờ 110.0 × 160.0`)
+  check('khổ lệch tỷ lệ → viền vẫn đều 5 mm', Math.abs(g.artwork.xMm - 5) < 0.4 && Math.abs(g.artwork.yMm - 5) < 0.4, `lề trái ${g.artwork.xMm.toFixed(2)} mm, lề trên ${g.artwork.yMm.toFixed(2)} mm`)
+  check('khổ lệch tỷ lệ → có cảnh báo kéo méo', g.warnings.some((w) => w.includes('kéo')), g.warnings.join(' | ') || 'KHÔNG cảnh báo')
+  check('kéo méo đo đúng 50%', Math.abs(g.stats.stretchPct - 50) < 2, `${g.stats.stretchPct.toFixed(1)}%`)
+}
+
+// --- Nhiều lỗ: rải 4 lỗ thành hàng ngang -----------------------------------
+{
+  const size = 800
+  const data = new Uint8ClampedArray(size * size * 4)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    if (x >= 80 && x < 720 && y >= 80 && y < 720) data[(y * size + x) * 4 + 3] = 255
+  }
+  const img = { width: size, height: size, data } as unknown as ImageData
+  const holes = [0.2, 0.4, 0.6, 0.8].map((x) => ({ xRatio: x, yRatio: 0.1 }))
+  const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 5, holes, holeDiameterMm: 4 }
+  const g = buildGeometry(analyze(img, s, 1, 1)!, s)!
+  check('4 lỗ ra đủ 4', g.holes.length === 4, `${g.holes.length} lỗ`)
+  check('4 lỗ cách đều nhau', Math.abs((g.holes[1].cxMm - g.holes[0].cxMm) - (g.holes[3].cxMm - g.holes[2].cxMm)) < 0.2, g.holes.map((h) => h.cxMm.toFixed(1)).join(' · '))
+  check('4 lỗ đều đủ vật liệu', g.holes.every((h) => h.clearanceMm > 2), g.holes.map((h) => h.clearanceMm.toFixed(1)).join(' · '))
+  const dxf = buildDxf({ rings: g.rings, circles: g.holes.map((h) => ({ cx: h.cxMm, cy: h.cyMm, r: h.rMm, layer: 'LO_KHOAN' })), widthMm: g.widthMm, heightMm: g.heightMm, layer: 'CAT' })
+  check('DXF ghi đủ 4 lỗ', verifyDxf(dxf, { rings: g.rings.length, circles: 4, widthMm: g.widthMm, heightMm: g.heightMm }).length === 0, 'ok')
+  const svg = buildCutSvg({ rings: g.rings, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'n lỗ' })
+  check('SVG ghi đủ 4 lỗ', (svg.match(/<circle/g) || []).length === 4, 'ok')
 }
 
 console.log(failures ? `\n${failures} phép thử HỎNG` : '\nTất cả phép thử đạt')

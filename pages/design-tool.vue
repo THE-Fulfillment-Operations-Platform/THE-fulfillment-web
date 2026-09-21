@@ -35,6 +35,10 @@ interface Item {
   settings: DiecutSettings
   hasAlpha: boolean
   thumb: string
+  /** Tỷ lệ cao/ngang của ảnh gốc. */
+  naturalRatio: number
+  /** Hệ số kéo trục dọc đang dùng cho bản phân tích hiện tại. */
+  stretch: number
 }
 
 const items = ref<Item[]>([])
@@ -87,9 +91,11 @@ async function addFiles(files: File[]) {
       source: null,
       analysis: null,
       geometry: null,
-      settings: { ...DEFAULT_SETTINGS, hole: { ...DEFAULT_SETTINGS.hole } },
+      settings: { ...DEFAULT_SETTINGS, holes: [] },
       hasAlpha: false,
       thumb: '',
+      naturalRatio: 1,
+      stretch: 1,
     })
     // Phải lấy lại phần tử VỪA đẩy vào mảng, không dùng object gốc: ref() bọc
     // mảng thành proxy, sửa trên object gốc thì dữ liệu có đổi nhưng giao diện
@@ -126,33 +132,58 @@ async function recompute(item: Item, opts: { full?: boolean; autoSize?: boolean 
   // Nhả một nhịp cho trình duyệt vẽ trạng thái "đang tính" trước khi chiếm CPU.
   await new Promise((r) => setTimeout(r, 0))
   try {
-    const runAnalysis = () => {
-      const { image, scale } = workingImage(item.source!.canvas, WORK_MAX_EDGE)
-      item.analysis = analyze(image, item.settings, scale)
+    const runAnalysis = (stretchY: number) => {
+      const { image, scaleX, scaleY } = workingImage(item.source!.canvas, WORK_MAX_EDGE, stretchY)
+      item.analysis = analyze(image, item.settings, scaleX, scaleY)
+      item.stretch = stretchY
+      if (item.analysis) {
+        // Tỷ lệ gốc suy từ số điểm ảnh của ảnh GỐC (chia lại cho hệ số kéo), nên
+        // nó không đổi dù đang xem ở khổ méo nào.
+        const a = item.analysis
+        const w = (a.bbox.x1 - a.bbox.x0 + 1) / a.scaleX
+        const h = (a.bbox.y1 - a.bbox.y0 + 1) / a.scaleY
+        item.naturalRatio = w > 0 ? h / w : 1
+      }
     }
-    if (opts.full || !item.analysis) runAnalysis()
+    // Khổ đang đặt lệch tỷ lệ gốc bao nhiêu → kéo ảnh làm việc đúng bấy nhiêu.
+    const wantStretch = () => {
+      const target = item.settings.artworkHeightMm / Math.max(0.001, item.settings.artworkWidthMm)
+      return item.naturalRatio > 0 ? target / item.naturalRatio : 1
+    }
+
+    if (opts.autoSize) runAnalysis(1)
+    else if (opts.full || !item.analysis) runAnalysis(wantStretch())
     if (!item.analysis) {
       item.geometry = null
       return
     }
+
     if (opts.autoSize) {
       const bboxW = item.analysis.bbox.x1 - item.analysis.bbox.x0 + 1
       const bboxH = item.analysis.bbox.y1 - item.analysis.bbox.y0 + 1
       if (item.source.mmPerPx) {
         // PDF/AI biết khổ thật của trang → lấy luôn, khỏi bắt người dùng gõ lại.
         item.settings.artworkWidthMm =
-          Math.round(bboxW * (item.source.mmPerPx / (item.analysis.workScale || 1)) * 10) / 10
+          Math.round(bboxW * (item.source.mmPerPx / (item.analysis.scaleX || 1)) * 10) / 10
       } else {
         // Ảnh bitmap không mang kích thước thật: mặc định cạnh dài 100 mm, một
         // con số tròn để người dùng sửa, chứ không phải đoán bừa rồi im lặng.
         const long = Math.max(bboxW, bboxH)
         item.settings.artworkWidthMm = Math.round((100 * bboxW) / long)
       }
+      item.settings.artworkHeightMm =
+        Math.round(item.settings.artworkWidthMm * item.naturalRatio * 10) / 10
     }
-    // Lề trống quanh ảnh phải đủ rộng cho viền cắt đang đặt; kéo viền vượt phần
-    // dự phòng thì phải phân tích lại, không thì đường cắt cụt ở mép ảnh.
+
+    // Phân tích lại khi khổ đổi tỷ lệ, hoặc khi lề trống không còn đủ rộng cho
+    // viền cắt đang đặt (kéo viền vượt phần dự phòng).
     const workWidth = item.analysis.width - 2 * item.analysis.pad
-    if (requiredPadPx(item.settings, workWidth) > item.analysis.pad) runAnalysis()
+    if (
+      Math.abs(wantStretch() - item.stretch) > 0.002 ||
+      requiredPadPx(item.settings, workWidth) > item.analysis.pad
+    ) {
+      runAnalysis(wantStretch())
+    }
     if (!item.analysis) {
       item.geometry = null
       return
@@ -183,21 +214,77 @@ function applyToAll() {
   if (!item) return
   for (const other of items.value) {
     if (other.id === item.id || other.status === 'error') continue
-    other.settings = { ...item.settings, hole: { ...item.settings.hole } }
+    // Khổ là của riêng từng sản phẩm; áp chung chỉ áp cách làm, không áp kích thước.
+    // Khổ và vị trí lỗ là của riêng từng sản phẩm; áp chung chỉ áp cách làm.
+    other.settings = {
+      ...item.settings,
+      holes: other.settings.holes,
+      artworkWidthMm: other.settings.artworkWidthMm,
+      artworkHeightMm: other.settings.artworkHeightMm,
+    }
     recompute(other, { full: true })
   }
   toast.success(`Đã áp thông số cho ${items.value.length - 1} file còn lại.`)
 }
 
+// Bấm vào ảnh xem trước là THÊM một lỗ ở đúng chỗ đó.
 function placeHole({ xMm, yMm }: { xMm: number; yMm: number }) {
   const item = active.value
   if (!item?.geometry) return
   const g = item.geometry
-  const r = item.settings.hole.diameterMm / 2
   const xRatio = Math.min(1, Math.max(0, xMm / g.widthMm))
-  const top = topEdgeAt(g.rings, xRatio * g.widthMm) ?? 0
-  const margin = Math.max(0.5, Math.round((yMm - top - r) * 10) / 10)
-  onSettings({ ...item.settings, hole: { ...item.settings.hole, xRatio, marginMm: margin } })
+  const yRatio = Math.min(1, Math.max(0, yMm / g.heightMm))
+  onSettings({ ...item.settings, holes: [...item.settings.holes, { xRatio, yRatio }] })
+}
+
+// Lỗ treo trên đỉnh: bám mép trên THẬT của đường cắt tại cột giữa, nên hình vai
+// xuôi hay đỉnh nhọn thì lỗ vẫn nằm trong vật liệu.
+function addTopHole() {
+  const item = active.value
+  if (!item?.geometry) return
+  const g = item.geometry
+  const r = item.settings.holeDiameterMm / 2
+  const cx = g.widthMm / 2
+  const top = topEdgeAt(g.rings, cx) ?? 0
+  const cy = top + item.settings.holeMarginMm + r
+  onSettings({
+    ...item.settings,
+    holes: [...item.settings.holes, { xRatio: 0.5, yRatio: Math.min(1, cy / g.heightMm) }],
+  })
+}
+
+/**
+ * Rải N lỗ dọc theo MÉP TRÊN của đường cắt, giữ nguyên độ sâu của lỗ đầu tiên.
+ *
+ * Không rải trên một đường ngang thẳng: đỉnh hình cong (vòm, mái nhà, vai xuôi)
+ * thì hai lỗ ngoài cùng rơi hẳn ra ngoài vật liệu. Bám mép trên thì hàng lỗ tự
+ * uốn theo dáng sản phẩm; hình đỉnh phẳng vẫn ra một hàng thẳng như thường.
+ */
+function spreadHoles(count: number) {
+  const item = active.value
+  if (!item?.geometry || count < 1) return
+  const g = item.geometry
+  const r = item.settings.holeDiameterMm / 2
+
+  // Độ sâu từ mép cắt xuống tâm lỗ: giữ theo lỗ đầu tiên nếu đã có.
+  let drop = item.settings.holeMarginMm + r
+  const first = item.settings.holes[0]
+  if (first) {
+    const fx = first.xRatio * g.widthMm
+    const ftop = topEdgeAt(g.rings, fx)
+    if (ftop != null) drop = Math.max(0.5, first.yRatio * g.heightMm - ftop)
+  }
+
+  const step = g.artwork.widthMm / count
+  const holes = Array.from({ length: count }, (_, i) => {
+    const x = g.artwork.xMm + step * (i + 0.5)
+    const top = topEdgeAt(g.rings, x) ?? 0
+    return {
+      xRatio: Math.min(1, Math.max(0, x / g.widthMm)),
+      yRatio: Math.min(1, Math.max(0, (top + drop) / g.heightMm)),
+    }
+  })
+  onSettings({ ...item.settings, holes })
 }
 
 function removeItem(id: string) {
@@ -248,7 +335,7 @@ async function exportOne(kind: 'print' | 'dxf' | 'svg') {
     } else if (kind === 'svg') {
       const svg = buildCutSvg({
         rings: item.geometry.rings,
-        hole: item.geometry.hole ?? undefined,
+        holes: item.geometry.holes,
         widthMm: item.geometry.widthMm,
         heightMm: item.geometry.heightMm,
         title: base,
@@ -264,12 +351,11 @@ async function exportOne(kind: 'print' | 'dxf' | 'svg') {
   }
 }
 
-const artworkHeightMm = computed(() => active.value?.geometry?.artwork.heightMm ?? 0)
 const knownSizeMm = computed(() => {
   const item = active.value
   if (!item?.source?.mmPerPx || !item.analysis) return null
   const bboxW = item.analysis.bbox.x1 - item.analysis.bbox.x0 + 1
-  return bboxW * (item.source.mmPerPx / (item.analysis.workScale || 1))
+  return bboxW * (item.source.mmPerPx / (item.analysis.scaleX || 1))
 })
 </script>
 
@@ -405,12 +491,16 @@ const knownSizeMm = computed(() => {
           <DiecutSettings
             v-if="active && active.status !== 'error'"
             :model-value="active.settings"
-            :artwork-height-mm="artworkHeightMm"
+            :natural-ratio="active.naturalRatio"
+            :stretch-pct="active.geometry?.stats.stretchPct ?? 0"
             :has-alpha="active.hasAlpha"
             :known-size-mm="knownSizeMm"
             :multi="items.length > 1"
+            :holes="active.geometry?.holes ?? []"
             @update:model-value="onSettings"
             @apply-all="applyToAll"
+            @add-top-hole="addTopHole"
+            @spread-holes="spreadHoles"
           />
           <div class="mt-5 space-y-2 border-t border-border pt-4">
             <button class="btn-primary w-full" :disabled="!ready.length || exporting" @click="exportAll">

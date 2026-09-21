@@ -101,18 +101,28 @@ async function loadPdf(file: File, targetDpi: number): Promise<LoadedSource> {
   }
 }
 
-/** Ảnh làm việc (đã thu nhỏ) để dò biên — kèm tỷ lệ so với ảnh gốc. */
+/**
+ * Ảnh làm việc (đã thu nhỏ) để dò biên — kèm tỷ lệ so với ảnh gốc theo từng trục.
+ *
+ * `stretchY` kéo trục dọc khi người dùng đặt khổ khác tỷ lệ gốc. Kéo NGAY Ở ĐÂY
+ * chứ không kéo lúc xuất file: làm vậy thì trong toàn bộ phần tính toán phía sau,
+ * một điểm ảnh vẫn là một ô vuông theo milimét — viền 5 mm mới đều bốn phía.
+ */
 export function workingImage(
   canvas: HTMLCanvasElement,
   maxEdge: number,
-): { image: ImageData; scale: number } {
-  const scale = Math.min(1, maxEdge / Math.max(canvas.width, canvas.height))
-  if (scale >= 1) {
+  stretchY = 1,
+): { image: ImageData; scaleX: number; scaleY: number } {
+  const srcW = canvas.width
+  const srcH = canvas.height
+  const targetH = srcH * stretchY
+  const base = Math.min(1, maxEdge / Math.max(srcW, targetH))
+  const w = Math.max(1, Math.round(srcW * base))
+  const h = Math.max(1, Math.round(targetH * base))
+  if (w === srcW && h === srcH) {
     const ctx = canvas.getContext('2d')!
-    return { image: ctx.getImageData(0, 0, canvas.width, canvas.height), scale: 1 }
+    return { image: ctx.getImageData(0, 0, srcW, srcH), scaleX: 1, scaleY: 1 }
   }
-  const w = Math.max(1, Math.round(canvas.width * scale))
-  const h = Math.max(1, Math.round(canvas.height * scale))
   const small = document.createElement('canvas')
   small.width = w
   small.height = h
@@ -120,5 +130,5 @@ export function workingImage(
   sctx.imageSmoothingEnabled = true
   sctx.imageSmoothingQuality = 'high'
   sctx.drawImage(canvas, 0, 0, w, h)
-  return { image: sctx.getImageData(0, 0, w, h), scale }
+  return { image: sctx.getImageData(0, 0, w, h), scaleX: w / srcW, scaleY: h / srcH }
 }

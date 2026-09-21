@@ -12,7 +12,7 @@ import { canvasToBytes, renderPreviewCanvas, renderPrintCanvas } from './render'
 import type { Analysis, DiecutGeometry, DiecutSettings } from './pipeline'
 
 export const CUT_LAYER = 'CAT'
-export const HOLE_LAYER = 'LO_TREO'
+export const HOLE_LAYER = 'LO_KHOAN'
 
 export interface DiecutJob {
   name: string
@@ -59,14 +59,21 @@ function specText(job: DiecutJob, dxfProblems: string[]): string {
     `  Thành phẩm sau cắt : ${g.widthMm.toFixed(1)} × ${g.heightMm.toFixed(1)} mm`,
     `  Phần hình in       : ${g.artwork.widthMm.toFixed(1)} × ${g.artwork.heightMm.toFixed(1)} mm`,
     `  Viền cắt quanh hình: ${s.offsetMm} mm`,
+    Math.abs(g.stats.stretchPct) >= 1
+      ? `  Tỷ lệ so với ảnh gốc: ĐÃ KÉO ${g.stats.stretchPct > 0 ? 'cao' : 'bẹt'} ${Math.abs(g.stats.stretchPct).toFixed(1)}%`
+      : '  Tỷ lệ so với ảnh gốc: giữ nguyên',
     `  Tràn lề in (bleed) : ${s.bleedMm} mm`,
-    g.hole
-      ? `  Lỗ treo            : Ø${(g.hole.rMm * 2).toFixed(1)} mm, tâm cách mép trên ${g.hole.cyMm.toFixed(1)} mm, cách mép trái ${g.hole.cxMm.toFixed(1)} mm, hở tới mép cắt ${g.hole.clearanceMm.toFixed(1)} mm`
-      : '  Lỗ treo            : không có',
+    g.holes.length
+      ? `  Lỗ khoan           : ${g.holes.length} lỗ Ø${(g.holes[0].rMm * 2).toFixed(1)} mm, hở tới mép cắt ít nhất ${Math.min(...g.holes.map((h) => h.clearanceMm)).toFixed(1)} mm`
+      : '  Lỗ khoan           : không có',
+    ...g.holes.map(
+      (h, i) =>
+        `      lỗ ${i + 1}: cách mép trái ${h.cxMm.toFixed(1)} mm, cách mép trên ${h.cyMm.toFixed(1)} mm`,
+    ),
     '',
     'FILE TRONG GÓI',
     `  *_IN.png         — file in, ${s.printDpi} DPI, nền trong suốt`,
-    `  *_CAT.dxf        — file cắt, DXF R12, lớp ${CUT_LAYER}${g.hole ? ` và ${HOLE_LAYER}` : ''}`,
+    `  *_CAT.dxf        — file cắt, DXF R12, lớp ${CUT_LAYER}${g.holes.length ? ` và ${HOLE_LAYER}` : ''}`,
     '  *_CAT.svg        — file cắt bản SVG, mở bằng Corel/Illustrator',
     '  *_XEM-TRUOC.png  — ảnh chồng đường cắt lên hình in để soi bằng mắt',
     '',
@@ -101,9 +108,7 @@ export async function buildFiles(job: DiecutJob): Promise<PackagedFile[]> {
   const { geometry: g, settings: s } = job
   const base = safeName(job.name)
 
-  const circles = g.hole
-    ? [{ cx: g.hole.cxMm, cy: g.hole.cyMm, r: g.hole.rMm, layer: HOLE_LAYER }]
-    : []
+  const circles = g.holes.map((h) => ({ cx: h.cxMm, cy: h.cyMm, r: h.rMm, layer: HOLE_LAYER }))
   const dxf = buildDxf({
     rings: g.rings,
     circles,
@@ -122,7 +127,7 @@ export async function buildFiles(job: DiecutJob): Promise<PackagedFile[]> {
 
   const svg = buildCutSvg({
     rings: g.rings,
-    hole: g.hole ?? undefined,
+    holes: g.holes,
     widthMm: g.widthMm,
     heightMm: g.heightMm,
     title: `${base} — đường cắt`,
