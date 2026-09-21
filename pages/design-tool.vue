@@ -3,6 +3,7 @@ import {
   analyze,
   buildGeometry,
   topEdgeAt,
+  requiredPadPx,
   DEFAULT_SETTINGS,
   WORK_MAX_EDGE,
   type Analysis,
@@ -125,10 +126,11 @@ async function recompute(item: Item, opts: { full?: boolean; autoSize?: boolean 
   // Nhả một nhịp cho trình duyệt vẽ trạng thái "đang tính" trước khi chiếm CPU.
   await new Promise((r) => setTimeout(r, 0))
   try {
-    if (opts.full || !item.analysis) {
-      const { image, scale } = workingImage(item.source.canvas, WORK_MAX_EDGE)
+    const runAnalysis = () => {
+      const { image, scale } = workingImage(item.source!.canvas, WORK_MAX_EDGE)
       item.analysis = analyze(image, item.settings, scale)
     }
+    if (opts.full || !item.analysis) runAnalysis()
     if (!item.analysis) {
       item.geometry = null
       return
@@ -146,6 +148,14 @@ async function recompute(item: Item, opts: { full?: boolean; autoSize?: boolean 
         const long = Math.max(bboxW, bboxH)
         item.settings.artworkWidthMm = Math.round((100 * bboxW) / long)
       }
+    }
+    // Lề trống quanh ảnh phải đủ rộng cho viền cắt đang đặt; kéo viền vượt phần
+    // dự phòng thì phải phân tích lại, không thì đường cắt cụt ở mép ảnh.
+    const workWidth = item.analysis.width - 2 * item.analysis.pad
+    if (requiredPadPx(item.settings, workWidth) > item.analysis.pad) runAnalysis()
+    if (!item.analysis) {
+      item.geometry = null
+      return
     }
     item.geometry = buildGeometry(item.analysis, item.settings)
   } finally {

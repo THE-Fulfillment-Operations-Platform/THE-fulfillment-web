@@ -15,7 +15,8 @@
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",
     "postinstall": "nuxt prepare",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck",
+    "test:diecut": "node scripts/test-diecut.mjs"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",

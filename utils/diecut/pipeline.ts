@@ -6,7 +6,7 @@
 //   geometry() — dò đường ở mức viền. Nhẹ, chạy lại mỗi lần kéo thanh "viền cắt"
 //                nên kéo tới đâu thấy tới đó.
 
-import { buildMask, thinPartCheck, type MaskMode } from './mask'
+import { buildMask, padImage, thinPartCheck, type MaskMode } from './mask'
 import { signedDistanceField } from './edt'
 import { isoContours, signedArea, perimeter, ringBounds, type Ring } from './contour'
 import { chaikin, simplifyRing, dedupe } from './simplify'
@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS: DiecutSettings = {
   alphaThreshold: 16,
   floodTolerance: 28,
   artworkWidthMm: 100,
-  offsetMm: 3,
+  offsetMm: 5,
   simplifyMm: 0.08,
   despeckleMm2: 1,
   fillHolesMm2: 3,
@@ -57,8 +57,11 @@ export const DEFAULT_SETTINGS: DiecutSettings = {
 export interface Analysis {
   mask: Uint8Array
   sdf: Float32Array
+  /** Khổ ảnh ĐÃ chèn lề. */
   width: number
   height: number
+  /** Lề trống đã chèn mỗi bên, tính bằng điểm ảnh của ảnh làm việc. */
+  pad: number
   bbox: { x0: number; y0: number; x1: number; y1: number }
   removedSpecks: number
   filledHoles: number
@@ -90,12 +93,28 @@ export interface DiecutGeometry {
 /** Cạnh dài tối đa của ảnh làm việc. Đủ mịn cho đường cắt, đủ nhẹ để kéo mượt. */
 export const WORK_MAX_EDGE = 1600
 
+/**
+ * Lề trống cần chèn quanh ảnh để đường cắt có chỗ vòng ra ngoài. Cộng dư 10 mm
+ * so với viền đang đặt: kéo thanh viền trong khoảng đó thì không phải tách nền
+ * lại, mà vẫn đủ chỗ cho đường cắt.
+ */
+export function requiredPadPx(s: DiecutSettings, imgWidth: number): number {
+  const pxPerMm = Math.max(1, imgWidth) / Math.max(1, s.artworkWidthMm)
+  const pad = Math.ceil((Math.abs(s.offsetMm) + 10) * pxPerMm) + 8
+  // Chặn trên: ảnh lề quá dày chỉ tốn bộ nhớ chứ không thêm gì.
+  return Math.min(pad, Math.round(imgWidth))
+}
+
 export function analyze(img: ImageData, settings: DiecutSettings, workScale: number): Analysis | null {
+  // Ngưỡng vụn/lỗ tính theo ảnh GỐC (chưa chèn lề), nếu không thì thêm lề là
+  // đổi luôn ý nghĩa của mấy con số mm² người dùng đặt.
   const mmPerPxGuess = settings.artworkWidthMm / Math.max(1, img.width)
   const minSpeckPx = Math.round(settings.despeckleMm2 / (mmPerPxGuess * mmPerPxGuess))
   const minHolePx = Math.round(settings.fillHolesMm2 / (mmPerPxGuess * mmPerPxGuess))
+  const pad = requiredPadPx(settings, img.width)
+  const padded = padImage(img, pad)
   const res = buildMask(
-    img,
+    padded,
     {
       mode: settings.mode,
       alphaThreshold: settings.alphaThreshold,
@@ -107,9 +126,10 @@ export function analyze(img: ImageData, settings: DiecutSettings, workScale: num
   if (!res.bbox) return null
   return {
     mask: res.mask,
-    sdf: signedDistanceField(res.mask, img.width, img.height),
-    width: img.width,
-    height: img.height,
+    sdf: signedDistanceField(res.mask, padded.width, padded.height),
+    width: padded.width,
+    height: padded.height,
+    pad,
     bbox: res.bbox,
     removedSpecks: res.removedSpecks,
     filledHoles: res.filledHoles,

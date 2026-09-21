@@ -26,6 +26,27 @@ export interface MaskResult {
   bbox: { x0: number; y0: number; x1: number; y1: number } | null
 }
 
+/**
+ * Chèn lề TRỐNG quanh ảnh.
+ *
+ * Bắt buộc, không phải cho đẹp: file design thường cắt khít lấy hình, nên hình
+ * chạm thẳng mép trái/phải/đáy. Không có lề thì bên ngoài hình không còn chỗ để
+ * đường cắt viền vòng ra — đường đồng mức không khép được và file cắt ra thành
+ * mấy đoạn zigzag vô nghĩa.
+ */
+export function padImage(img: ImageData, pad: number): ImageData {
+  if (pad <= 0) return img
+  const w = img.width + pad * 2
+  const h = img.height + pad * 2
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < img.height; y++) {
+    const src = y * img.width * 4
+    const dst = ((y + pad) * w + pad) * 4
+    data.set(img.data.subarray(src, src + img.width * 4), dst)
+  }
+  return { width: w, height: h, data } as ImageData
+}
+
 /** Mặt nạ thô từ kênh alpha. */
 function maskFromAlpha(data: Uint8ClampedArray, n: number, threshold: number): Uint8Array {
   const mask = new Uint8Array(n)

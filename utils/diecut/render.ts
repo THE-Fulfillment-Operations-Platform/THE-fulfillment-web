@@ -44,8 +44,9 @@ export function renderPrintCanvas(
 
   // Vùng phần hình trên ảnh GỐC: mặt nạ tính ở ảnh thu nhỏ nên phải quy đổi lại.
   const k = a.workScale || 1
-  const sx = (a.bbox.x0 - 0.5) / k
-  const sy = (a.bbox.y0 - 0.5) / k
+  // Trừ lề trống đã chèn lúc phân tích để quay về toạ độ ảnh gốc.
+  const sx = (a.bbox.x0 - a.pad - 0.5) / k
+  const sy = (a.bbox.y0 - a.pad - 0.5) / k
   const sw = (a.bbox.x1 - a.bbox.x0 + 1) / k
   const sh = (a.bbox.y1 - a.bbox.y0 + 1) / k
 
