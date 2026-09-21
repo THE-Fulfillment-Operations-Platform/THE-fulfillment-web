@@ -27,6 +27,8 @@
     "vue-tsc": "^2.1.6"
   },
   "dependencies": {
+    "fflate": "^0.8.3",
+    "pdfjs-dist": "^6.3.289",
     "pinia": "^2.2.6",
     "qrcode": "^1.5.4"
   },

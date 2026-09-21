@@ -39,6 +39,10 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Đơn hàng / Sản phẩm', to: '/orders', feature: 'orders', icon: 'orders', roles: ALL_INTERNAL },
   { label: 'Yêu cầu huỷ', to: '/cancellations', feature: 'cancellations', icon: 'alert', roles: ['OWNER', 'ADMIN', 'OPS'] },
   { label: 'Chờ thiết kế', to: '/design', feature: 'design', icon: 'design', roles: ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'] },
+  // Công cụ tạo file in + file cắt từ ảnh sản phẩm. Chạy hẳn trong trình duyệt,
+  // không đụng dữ liệu đơn, nên đi chung quyền với màn Chờ thiết kế — ai làm
+  // design thì dùng được, không phải khai thêm quyền mới.
+  { label: 'Thiết kế', to: '/design-tool', feature: 'design', icon: 'scissors', roles: ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'] },
   { label: 'Batch sản xuất', to: '/batches', feature: 'batches', icon: 'batches', roles: ALL_INTERNAL },
   { label: 'Bảng sản xuất', to: '/production', feature: 'production', icon: 'board', roles: ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'DESIGNER'] },
   { label: 'Quét QC', to: '/qc', feature: 'qc', icon: 'qc', roles: ['OWNER', 'ADMIN', 'OPS', 'QC'] },
