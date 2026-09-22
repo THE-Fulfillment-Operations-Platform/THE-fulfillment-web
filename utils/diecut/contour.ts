@@ -143,6 +143,42 @@ export function perimeter(ring: Ring): number {
   return p
 }
 
+/** Điểm trên đường (bất kỳ đâu trên các đoạn thẳng) gần `pt` nhất, và khoảng cách tới đó. */
+export function closestPointOnRing(ring: Ring, pt: Point): { point: Point; dist: number } {
+  let best: Point = ring[0]
+  let bestD = Infinity
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j]
+    const [bx, by] = ring[i]
+    const dx = bx - ax
+    const dy = by - ay
+    const len2 = dx * dx + dy * dy
+    const t = len2 ? Math.min(1, Math.max(0, ((pt[0] - ax) * dx + (pt[1] - ay) * dy) / len2)) : 0
+    const px = ax + dx * t
+    const py = ay + dy * t
+    const d = Math.hypot(pt[0] - px, pt[1] - py)
+    if (d < bestD) {
+      bestD = d
+      best = [px, py]
+    }
+  }
+  return { point: best, dist: bestD }
+}
+
+/** Đường gần `pt` nhất trong bán kính `tol`, hoặc -1. */
+export function nearestRingIndex(rings: Ring[], pt: Point, tol: number): number {
+  let idx = -1
+  let bestD = tol
+  rings.forEach((r, i) => {
+    const { dist } = closestPointOnRing(r, pt)
+    if (dist <= bestD) {
+      bestD = dist
+      idx = i
+    }
+  })
+  return idx
+}
+
 export function ringBounds(rings: Ring[]): { x0: number; y0: number; x1: number; y1: number } {
   let x0 = Infinity
   let y0 = Infinity

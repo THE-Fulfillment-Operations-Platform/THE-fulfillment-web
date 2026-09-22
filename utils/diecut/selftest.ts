@@ -107,8 +107,21 @@ for (const size of [200, 800]) {
     if (d <= 300 && d >= 120) data[i + 3] = 255
   }
   const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 100, offsetMm: 0 }
-  const g = buildGeometry(analyze({ width: size, height: size, data } as unknown as ImageData, s, 1, 1)!, s)!
+  const a = analyze({ width: size, height: size, data } as unknown as ImageData, s, 1, 1)!
+  const g = buildGeometry(a, s)!
   check('vành khuyên → 2 đường (ngoài + lỗ)', g.rings.length === 2, `${g.rings.length} đường`)
+
+  // Bỏ bằng tay: neo đặt ngay trên đường lỗ → còn 1 đường và đường lỗ nằm ở
+  // danh sách đã bỏ; neo trên đường bao → bị từ chối, vẫn đủ 2.
+  const byArea = [...g.rings].sort((x, y) => Math.abs(signedArea(x)) - Math.abs(signedArea(y)))
+  const anchorOf = (r: (typeof g.rings)[number]) => ({ xRatio: r[0][0] / g.widthMm, yRatio: r[0][1] / g.heightMm })
+  const g2 = buildGeometry(a, { ...s, skippedRings: [anchorOf(byArea[0])] })!
+  check('bỏ đường lỗ bằng tay → còn 1 đường', g2.rings.length === 1 && g2.skippedRings.length === 1, `${g2.rings.length} đường, ${g2.skippedRings.length} đã bỏ`)
+  check('khổ cắt không đổi khi bỏ đường', Math.abs(g2.widthMm - g.widthMm) < 0.01, `${g2.widthMm.toFixed(2)} vs ${g.widthMm.toFixed(2)} mm`)
+  const g3 = buildGeometry(a, { ...s, skippedRings: [anchorOf(byArea[1])] })!
+  check('không bỏ được đường bao ngoài', g3.rings.length === 2 && g3.skippedRings.length === 0, `${g3.rings.length} đường`)
+  const g4 = buildGeometry(a, { ...s, skippedRings: [{ xRatio: 0.5, yRatio: 0.5 }] })!
+  check('neo không sát đường nào → không bỏ gì', g4.rings.length === 2, `${g4.rings.length} đường`)
 }
 
 // --- Cổng cảnh báo chỗ mảnh ------------------------------------------------

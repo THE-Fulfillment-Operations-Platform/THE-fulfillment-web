@@ -8,13 +8,23 @@
 
 import { buildMask, padImage, thinPartCheck, type MaskMode } from './mask'
 import { signedDistanceField } from './edt'
-import { isoContours, signedArea, perimeter, ringBounds, type Ring } from './contour'
+import { isoContours, signedArea, perimeter, ringBounds, nearestRingIndex, type Point, type Ring } from './contour'
 import { chaikin, simplifyRing, dedupe } from './simplify'
 
 export interface HoleSpec {
   /** 0 = mép trái khung cắt, 1 = mép phải. */
   xRatio: number
   /** 0 = mép trên khung cắt, 1 = mép dưới. */
+  yRatio: number
+}
+
+/**
+ * Neo của một đường cắt người dùng đã BỎ bằng tay: một điểm nằm ngay trên
+ * đường đó, ghi theo tỷ lệ khung cắt (0–1) như lỗ khoan — đổi khổ hay đổi viền,
+ * đường vẫn được nhận ra. Đường gần neo nhất bị loại khỏi file cắt.
+ */
+export interface RingAnchor {
+  xRatio: number
   yRatio: number
 }
 
@@ -50,6 +60,12 @@ export interface DiecutSettings {
   holeDiameterMm: number
   /** Vật liệu chừa lại từ mép cắt tới mép lỗ khi đặt lỗ treo trên đỉnh, mm. */
   holeMarginMm: number
+  /**
+   * Đường cắt bỏ bằng tay (Alt + bấm vào đường trong ảnh xem trước). Dành cho
+   * khe hở, lỗ lớn hơn ngưỡng lấp mà thực tế không muốn cắt — không cần chỉnh
+   * ngưỡng chung rồi lấp nhầm chỗ khác.
+   */
+  skippedRings: RingAnchor[]
   bleedMm: number
   printDpi: number
 }
@@ -69,6 +85,7 @@ export const DEFAULT_SETTINGS: DiecutSettings = {
   holes: [],
   holeDiameterMm: 3,
   holeMarginMm: 3,
+  skippedRings: [],
   bleedMm: 0,
   printDpi: 300,
 }
@@ -96,6 +113,12 @@ export interface Analysis {
 export interface DiecutGeometry {
   /** Đường cắt, mm, gốc (0,0) ở góc trên-trái khung cắt, Y hướng xuống. */
   rings: Ring[]
+  /**
+   * Đường người dùng đã bỏ bằng tay — KHÔNG có trong file cắt, chỉ để ảnh xem
+   * trước vẽ nét đứt cho bấm lại mà khôi phục. anchorIndex trỏ về
+   * settings.skippedRings.
+   */
+  skippedRings: { ring: Ring; anchorIndex: number }[]
   widthMm: number
   heightMm: number
   /** Vị trí phần hình trong khung cắt, mm. */
@@ -106,6 +129,8 @@ export interface DiecutGeometry {
     perimeterMm: number
     ringCount: number
     droppedRings: number
+    /** Đường bỏ bằng tay. */
+    skippedByUser: number
     removedSpecks: number
     filledHoles: number
     pointCount: number
@@ -213,6 +238,28 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
   const shifted = rings.map((r) => r.map(([x, y]) => [x - b.x0, y - b.y0] as [number, number]))
   const widthMm = b.x1 - b.x0
   const heightMm = b.y1 - b.y0
+
+  // Đường bỏ bằng tay: mỗi neo bắt đúng một đường — đường gần nó nhất, trong
+  // một bán kính nhỏ theo khổ. Đường bao ngoài (diện tích lớn nhất) không bao
+  // giờ bị bỏ: bỏ nó là không còn mép sản phẩm. Khung cắt vẫn tính trên MỌI
+  // đường kể cả đường đã bỏ, nên toạ độ file in / file cắt không xê dịch.
+  const skippedRings: DiecutGeometry['skippedRings'] = []
+  const skipIdx = new Set<number>()
+  if (s.skippedRings.length) {
+    let outer = 0
+    shifted.forEach((r, i) => {
+      if (Math.abs(signedArea(r)) > Math.abs(signedArea(shifted[outer]))) outer = i
+    })
+    const tol = skipToleranceMm(widthMm, heightMm)
+    s.skippedRings.forEach((a, anchorIndex) => {
+      const pt: Point = [a.xRatio * widthMm, a.yRatio * heightMm]
+      const i = nearestRingIndex(shifted, pt, tol)
+      if (i < 0 || i === outer || skipIdx.has(i)) return
+      skipIdx.add(i)
+      skippedRings.push({ ring: shifted[i], anchorIndex })
+    })
+  }
+  const kept = skipIdx.size ? shifted.filter((_, i) => !skipIdx.has(i)) : shifted
   const artwork = {
     xMm: -b.x0,
     yMm: -b.y0,
@@ -286,9 +333,11 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
   if (a.removedSpecks) notes.push(`Đã bỏ ${a.removedSpecks} mảnh vụn nhỏ hơn ${s.despeckleMm2} mm².`)
   if (a.filledHoles) notes.push(`Đã lấp ${a.filledHoles} lỗ kín nhỏ hơn ${s.fillHolesMm2} mm².`)
   if (dropped) notes.push(`Đã bỏ ${dropped} đường cắt vụn.`)
+  if (skippedRings.length) notes.push(`Đã bỏ ${skippedRings.length} đường cắt bằng tay (nét đứt trong ảnh xem trước).`)
 
   return {
-    rings: shifted,
+    rings: kept,
+    skippedRings,
     widthMm,
     heightMm,
     artwork,
@@ -296,16 +345,25 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
     stats: {
       dpi,
       perimeterMm: shifted.reduce((sum, r) => sum + perimeter(r), 0),
-      ringCount: shifted.length,
+      ringCount: kept.length,
       droppedRings: dropped,
+      skippedByUser: skippedRings.length,
       removedSpecks: a.removedSpecks,
       filledHoles: a.filledHoles,
-      pointCount: shifted.reduce((sum, r) => sum + r.length, 0),
+      pointCount: kept.reduce((sum, r) => sum + r.length, 0),
       stretchPct,
     },
     warnings,
     notes,
   }
+}
+
+/**
+ * Bán kính nhận neo của đường bỏ bằng tay: đủ rộng để một cú bấm bằng chuột
+ * trúng, và để đường xê dịch chút ít khi đổi viền vẫn được nhận ra.
+ */
+export function skipToleranceMm(widthMm: number, heightMm: number): number {
+  return Math.max(2, 0.02 * Math.max(widthMm, heightMm))
 }
 
 /** Y nhỏ nhất của đường cắt tại cột x (mm) — mép trên thật, theo dáng hình. */

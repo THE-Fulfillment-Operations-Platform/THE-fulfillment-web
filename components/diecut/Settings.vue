@@ -255,6 +255,24 @@ function applyKnownSize() {
           hint="Lỗ li ti laser cắt ra chỉ thành vết cháy nên lấp luôn."
           @update:model-value="patch({ fillHolesMm2: $event })"
         />
+        <!-- Bỏ từng đường: cho khe hở / lỗ to hơn ngưỡng lấp mà thực tế không cắt,
+             khỏi phải kéo ngưỡng chung rồi lấp nhầm chỗ khác. -->
+        <div class="rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+          <div class="flex items-center justify-between gap-2">
+            <span>Đường cắt bỏ bằng tay: <b class="tabular-nums text-foreground">{{ props.modelValue.skippedRings.length }}</b></span>
+            <button
+              v-if="props.modelValue.skippedRings.length"
+              class="text-primary hover:underline"
+              @click="patch({ skippedRings: [] })"
+            >
+              Khôi phục hết
+            </button>
+          </div>
+          <p class="mt-1 leading-snug">
+            Giữ <b class="text-foreground">Alt</b> (Option) rồi bấm vào một đường đỏ trong ảnh xem trước để bỏ đường đó
+            khỏi file cắt; bấm lại đường nét đứt để khôi phục. Không bỏ được đường bao ngoài.
+          </p>
+        </div>
       </div>
     </section>
 

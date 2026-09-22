@@ -11,6 +11,7 @@ import {
   type DiecutSettings,
 } from '~/utils/diecut/pipeline'
 import { loadSource, workingImage, type LoadedSource } from '~/utils/diecut/source'
+import { closestPointOnRing, nearestRingIndex, signedArea } from '~/utils/diecut/contour'
 import { buildZip, downloadBlob, buildFiles, bytesToBlob, safeName } from '~/utils/diecut/package'
 import { canvasToBytes, renderPrintCanvas } from '~/utils/diecut/render'
 import { buildCutSvg } from '~/utils/diecut/svg'
@@ -46,6 +47,8 @@ const activeId = ref('')
 const busy = ref(false)
 const showPrint = ref(true)
 const showCut = ref(true)
+// Bấm vào ảnh xem trước làm gì. Mặc định thêm lỗ; Alt + bấm luôn là bỏ đường.
+const pick = ref<'hole' | 'ring'>('hole')
 const exporting = ref(false)
 
 const active = computed(() => items.value.find((i) => i.id === activeId.value) ?? null)
@@ -91,7 +94,7 @@ async function addFiles(files: File[]) {
       source: null,
       analysis: null,
       geometry: null,
-      settings: { ...DEFAULT_SETTINGS, holes: [] },
+      settings: { ...DEFAULT_SETTINGS, holes: [], skippedRings: [] },
       hasAlpha: false,
       thumb: '',
       naturalRatio: 1,
@@ -219,6 +222,7 @@ function applyToAll() {
     other.settings = {
       ...item.settings,
       holes: other.settings.holes,
+      skippedRings: other.settings.skippedRings,
       artworkWidthMm: other.settings.artworkWidthMm,
       artworkHeightMm: other.settings.artworkHeightMm,
     }
@@ -235,6 +239,38 @@ function placeHole({ xMm, yMm }: { xMm: number; yMm: number }) {
   const xRatio = Math.min(1, Math.max(0, xMm / g.widthMm))
   const yRatio = Math.min(1, Math.max(0, yMm / g.heightMm))
   onSettings({ ...item.settings, holes: [...item.settings.holes, { xRatio, yRatio }] })
+}
+
+// Bỏ một đường cắt bằng tay (khe hở, lỗ không muốn cắt), hoặc khôi phục đường
+// đã bỏ. Chỉ nhận cú bấm SÁT đường — bấm giữa hình thì không đoán.
+function toggleRing({ xMm, yMm, tolMm }: { xMm: number; yMm: number; tolMm: number }) {
+  const item = active.value
+  if (!item?.geometry) return
+  const g = item.geometry
+  const pt: [number, number] = [xMm, yMm]
+  // Bấm lại đường nét đứt → khôi phục.
+  const si = nearestRingIndex(g.skippedRings.map((k) => k.ring), pt, tolMm)
+  if (si >= 0) {
+    const anchorIndex = g.skippedRings[si].anchorIndex
+    onSettings({ ...item.settings, skippedRings: item.settings.skippedRings.filter((_, i) => i !== anchorIndex) })
+    return
+  }
+  const ri = nearestRingIndex(g.rings, pt, tolMm)
+  if (ri < 0) {
+    toast.error('Bấm sát vào một đường đỏ để bỏ đúng đường đó.')
+    return
+  }
+  // Đường bao ngoài là mép sản phẩm — không có "bỏ mép".
+  const outer = g.rings.reduce((best, r, i) => (Math.abs(signedArea(r)) > Math.abs(signedArea(g.rings[best])) ? i : best), 0)
+  if (ri === outer) {
+    toast.error('Không bỏ được đường bao ngoài — đó là mép sản phẩm. Muốn đổi mép thì sửa viền cắt.')
+    return
+  }
+  const { point } = closestPointOnRing(g.rings[ri], pt)
+  onSettings({
+    ...item.settings,
+    skippedRings: [...item.settings.skippedRings, { xRatio: point[0] / g.widthMm, yRatio: point[1] / g.heightMm }],
+  })
 }
 
 // Lỗ treo trên đỉnh: bám mép trên THẬT của đường cắt tại cột giữa, nên hình vai
@@ -440,6 +476,23 @@ const knownSizeMm = computed(() => {
                 Đường cắt
               </button>
             </div>
+            <!-- Bấm vào ảnh làm gì. Alt + bấm luôn là bỏ đường, không cần đổi chế độ. -->
+            <div class="flex gap-1 rounded-lg bg-muted p-1" title="Bấm vào ảnh xem trước sẽ làm gì">
+              <button
+                class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                :class="pick === 'hole' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'"
+                @click="pick = 'hole'"
+              >
+                Bấm: thêm lỗ khoan
+              </button>
+              <button
+                class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                :class="pick === 'ring' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'"
+                @click="pick = 'ring'"
+              >
+                Bấm: bỏ đường cắt
+              </button>
+            </div>
             <div v-if="active?.geometry" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
               <span class="tabular-nums">
                 Thành phẩm
@@ -467,7 +520,9 @@ const knownSizeMm = computed(() => {
             :show-print="showPrint"
             :show-cut="showCut"
             :busy="busy"
+            :pick="pick"
             @place-hole="placeHole"
+            @toggle-ring="toggleRing"
           />
         </div>
 

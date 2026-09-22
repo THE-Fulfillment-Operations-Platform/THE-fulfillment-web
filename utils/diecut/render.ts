@@ -98,6 +98,8 @@ export interface PreviewOptions {
   /** Lề trống quanh khổ cắt, mm. Không có lề thì đường cắt nằm đúng trên mép
    *  khung và bị viền khung che mất một nửa nét. */
   marginMm?: number
+  /** Vẽ cả đường đã bỏ bằng tay (nét đứt xám) — màn hình bật, file xuất tắt. */
+  showSkipped?: boolean
 }
 
 /** Lề xem trước mặc định: đủ để nhìn rõ đường cắt ở mọi khổ. */
@@ -154,6 +156,21 @@ export function drawPreview(
       })
       ctx.closePath()
       ctx.stroke()
+    }
+    if (opts.showSkipped && g.skippedRings.length) {
+      ctx.save()
+      ctx.setLineDash([pxPerMm * 1.2, pxPerMm * 0.8])
+      ctx.strokeStyle = '#94a3b8'
+      for (const { ring } of g.skippedRings) {
+        ctx.beginPath()
+        ring.forEach(([x, y], i) => {
+          if (i === 0) ctx.moveTo(x * pxPerMm, y * pxPerMm)
+          else ctx.lineTo(x * pxPerMm, y * pxPerMm)
+        })
+        ctx.closePath()
+        ctx.stroke()
+      }
+      ctx.restore()
     }
     // Lỗ khoan: đỏ cảnh báo khi còn quá ít vật liệu tới mép cắt, xanh khi ổn —
     // nhìn phát biết lỗ nào phải dời, không phải đọc chữ.

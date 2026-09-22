@@ -13,8 +13,13 @@ const props = defineProps<{
   showPrint: boolean
   showCut: boolean
   busy: boolean
+  /** Bấm vào ảnh làm gì: thêm lỗ khoan, hay bỏ / khôi phục một đường cắt. */
+  pick: 'hole' | 'ring'
 }>()
-const emit = defineEmits<{ (e: 'place-hole', payload: { xMm: number; yMm: number }): void }>()
+const emit = defineEmits<{
+  (e: 'place-hole', payload: { xMm: number; yMm: number }): void
+  (e: 'toggle-ring', payload: { xMm: number; yMm: number; tolMm: number }): void
+}>()
 
 const box = ref<HTMLDivElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -66,6 +71,7 @@ function render() {
     showCut: props.showCut,
     showPrint: props.showPrint,
     marginMm,
+    showSkipped: true,
   })
 }
 
@@ -83,10 +89,16 @@ function onClick(e: MouseEvent) {
   const rect = cv.getBoundingClientRect()
   const boxW = g.widthMm + margin.value * 2
   const boxH = g.heightMm + margin.value * 2
-  emit('place-hole', {
-    xMm: ((e.clientX - rect.left) / rect.width) * boxW - margin.value,
-    yMm: ((e.clientY - rect.top) / rect.height) * boxH - margin.value,
-  })
+  const xMm = ((e.clientX - rect.left) / rect.width) * boxW - margin.value
+  const yMm = ((e.clientY - rect.top) / rect.height) * boxH - margin.value
+  // Alt (Option) + bấm luôn là bỏ / khôi phục đường, dù đang ở chế độ nào —
+  // không phải đổi chế độ chỉ để sửa một đường.
+  if (props.pick === 'ring' || e.altKey) {
+    // Trúng trong ~8 điểm ảnh màn hình, đổi ra mm theo mức phóng hiện tại.
+    emit('toggle-ring', { xMm, yMm, tolMm: Math.max(1.5, 8 / pxPerMm.value) })
+    return
+  }
+  emit('place-hole', { xMm, yMm })
 }
 
 let ro: ResizeObserver | null = null
@@ -126,8 +138,9 @@ watch(
       <div ref="box" class="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 p-3">
         <canvas
           ref="canvas"
-          class="max-h-full max-w-full cursor-crosshair rounded shadow-sm"
-          title="Bấm để thêm một lỗ khoan tại đây"
+          class="max-h-full max-w-full rounded shadow-sm"
+          :class="props.pick === 'ring' ? 'cursor-pointer' : 'cursor-crosshair'"
+          :title="props.pick === 'ring' ? 'Bấm vào một đường đỏ để bỏ; bấm đường nét đứt để khôi phục' : 'Bấm để thêm một lỗ khoan tại đây (giữ Alt để bỏ một đường cắt)'"
           @click="onClick"
         />
       </div>
