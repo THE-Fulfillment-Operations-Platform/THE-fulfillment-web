@@ -59,6 +59,7 @@ function specText(job: DiecutJob, dxfProblems: string[]): string {
     `  Thành phẩm sau cắt : ${g.widthMm.toFixed(1)} × ${g.heightMm.toFixed(1)} mm`,
     `  Phần hình in       : ${g.artwork.widthMm.toFixed(1)} × ${g.artwork.heightMm.toFixed(1)} mm`,
     `  Viền cắt quanh hình: ${s.offsetMm} mm`,
+    `  Bo tròn góc lõm    : ${s.roundInsideMm > 0 ? `bán kính ${s.roundInsideMm} mm` : 'không'}`,
     Math.abs(g.stats.stretchPct) >= 1
       ? `  Tỷ lệ so với ảnh gốc: ĐÃ KÉO ${g.stats.stretchPct > 0 ? 'cao' : 'bẹt'} ${Math.abs(g.stats.stretchPct).toFixed(1)}%`
       : '  Tỷ lệ so với ảnh gốc: giữ nguyên',
@@ -73,8 +74,8 @@ function specText(job: DiecutJob, dxfProblems: string[]): string {
     '',
     'FILE TRONG GÓI',
     `  *_IN.png         — file in, ${s.printDpi} DPI, nền trong suốt`,
-    `  *_CAT.dxf        — file cắt, DXF R12, lớp ${CUT_LAYER}${g.holes.length ? ` và ${HOLE_LAYER}` : ''}`,
-    '  *_CAT.svg        — file cắt bản SVG, mở bằng Corel/Illustrator',
+    `  *_CAT.dxf        — file cắt, DXF R12, lớp ${CUT_LAYER}${g.holes.length ? ` và ${HOLE_LAYER}` : ''}; đường cong đã chia mịn ≤ 2°/đỉnh`,
+    '  *_CAT.svg        — file cắt bản SVG, đường cong Bézier thật, mở bằng Corel/Illustrator',
     '  *_XEM-TRUOC.png  — ảnh chồng đường cắt lên hình in để soi bằng mắt',
     '',
     'LƯU Ý KHI DÙNG',
@@ -83,7 +84,7 @@ function specText(job: DiecutJob, dxfProblems: string[]): string {
     '  • Đường cắt nằm trên lớp riêng; mạch cắt (kerf) của máy chưa được bù trong file này.',
     '',
     'MÁY ĐÃ KIỂM',
-    `  Số đường cắt: ${g.stats.ringCount} · số điểm: ${g.stats.pointCount} · chu vi: ${g.stats.perimeterMm.toFixed(0)} mm`,
+    `  Số đường cắt: ${g.stats.ringCount} · khúc cong: ${g.stats.nodeCount} · đỉnh DXF: ${g.stats.pointCount} · chu vi: ${g.stats.perimeterMm.toFixed(0)} mm`,
     `  Độ nét ảnh in ở khổ này: ${Math.round(g.stats.dpi)} DPI`,
     `  Đọc ngược DXF: ${dxfProblems.length ? 'CÓ VẤN ĐỀ → ' + dxfProblems.join('; ') : 'khớp số đường, số lỗ và khổ'}`,
   ]
@@ -126,7 +127,7 @@ export async function buildFiles(job: DiecutJob): Promise<PackagedFile[]> {
   })
 
   const svg = buildCutSvg({
-    rings: g.rings,
+    curves: g.curves,
     holes: g.holes,
     widthMm: g.widthMm,
     heightMm: g.heightMm,

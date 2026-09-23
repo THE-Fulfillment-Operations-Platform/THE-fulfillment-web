@@ -135,10 +135,11 @@ export function signedArea(ring: Ring): number {
   return a / 2
 }
 
+/** Chu vi vòng kín (tính cả đoạn khép từ điểm cuối về điểm đầu). */
 export function perimeter(ring: Ring): number {
   let p = 0
-  for (let i = 1; i < ring.length; i++) {
-    p += Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1])
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    p += Math.hypot(ring[i][0] - ring[j][0], ring[i][1] - ring[j][1])
   }
   return p
 }

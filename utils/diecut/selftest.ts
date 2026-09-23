@@ -5,6 +5,34 @@ import { analyze, buildGeometry, DEFAULT_SETTINGS } from './pipeline'
 import { buildDxf, verifyDxf } from './dxf'
 import { buildCutSvg } from './svg'
 import { signedArea, perimeter } from './contour'
+import { flattenCurve, type Curve } from './curve'
+
+/** Góc gãy lớn nhất (độ) tại các mối nối khúc cong — 0 nghĩa là trơn tuyệt đối. */
+function maxJointKink(curve: Curve): number {
+  let worst = 0
+  for (let i = 0; i < curve.length; i++) {
+    const a = curve[i]
+    const b = curve[(i + 1) % curve.length]
+    const inDir = [a[3][0] - a[2][0], a[3][1] - a[2][1]]
+    const outDir = [b[1][0] - b[0][0], b[1][1] - b[0][1]]
+    const ang = Math.abs(Math.atan2(inDir[0] * outDir[1] - inDir[1] * outDir[0], inDir[0] * outDir[0] + inDir[1] * outDir[1]))
+    if (ang > worst) worst = ang
+  }
+  return (worst * 180) / Math.PI
+}
+
+/** Góc đổi hướng lớn nhất (độ) giữa hai đoạn kề nhau của đa giác. */
+function maxPolyTurn(ring: [number, number][]): number {
+  let worst = 0
+  const n = ring.length
+  for (let i = 0; i < n; i++) {
+    const p = ring[(i - 1 + n) % n], q = ring[i], r = ring[(i + 1) % n]
+    const a = [q[0] - p[0], q[1] - p[1]], b = [r[0] - q[0], r[1] - q[1]]
+    const ang = Math.abs(Math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1]))
+    if (ang > worst) worst = ang
+  }
+  return (worst * 180) / Math.PI
+}
 
 let failures = 0
 function check(name: string, ok: boolean, detail: string) {
@@ -63,6 +91,9 @@ for (const size of [200, 800]) {
   check(`[${size}px] lỗ đặt đúng chỗ`, g.holes.length === 1 && Math.abs(g.holes[0].cyMm - g.heightMm * 0.05) < 0.2 && Math.abs(g.holes[0].cxMm - g.widthMm / 2) < 0.2, `(${g.holes[0]?.cxMm.toFixed(1)}, ${g.holes[0]?.cyMm.toFixed(1)}) mm`)
   check(`[${size}px] không báo nhầm chỗ mảnh`, !g.warnings.some((w) => w.includes('mảnh')), g.warnings.join(' | ') || 'không cảnh báo')
   check(`[${size}px] file cắt gọn`, g.stats.pointCount < 600, `${g.stats.pointCount} điểm`)
+  check(`[${size}px] hình tròn → ít khúc cong`, g.stats.nodeCount <= 16, `${g.stats.nodeCount} khúc`)
+  check(`[${size}px] mối nối trơn (G1)`, maxJointKink(g.curves[0]) < 0.5, `gãy tối đa ${maxJointKink(g.curves[0]).toFixed(2)}°`)
+  check(`[${size}px] DXF không có góc gãy nhìn thấy`, maxPolyTurn(g.rings[0]) <= 2.05, `đổi hướng tối đa ${maxPolyTurn(g.rings[0]).toFixed(2)}°/đỉnh`)
 }
 
 // --- Viền 0 và viền âm -----------------------------------------------------
@@ -179,10 +210,11 @@ for (const size of [200, 800]) {
   const holeY = Number(dxf.split('CIRCLE')[1].split('\r\n20\r\n')[1].split('\r\n')[0])
   check('DXF: lỗ treo ở nửa trên', holeY > g.heightMm / 2, `y=${holeY.toFixed(2)} / khổ ${g.heightMm.toFixed(2)}`)
 
-  const svg = buildCutSvg({ rings: g.rings, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'thử' })
+  const svg = buildCutSvg({ curves: g.curves, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'thử' })
   check('SVG ghi kích thước bằng mm', /width="[\d.]+mm" height="[\d.]+mm"/.test(svg), svg.match(/width="[^"]+" height="[^"]+"/)?.[0] ?? '')
   check('SVG viewBox 1:1', svg.includes(`viewBox="0 0 ${(Math.round(g.widthMm * 1000) / 1000).toString()}`), 'ok')
-  check('SVG đủ đường cắt', (svg.match(/<path/g) || []).length === g.rings.length, 'ok')
+  check('SVG đủ đường cắt', (svg.match(/<path/g) || []).length === g.curves.length, 'ok')
+  check('SVG là đường cong thật (C), không có nét thẳng (L)', / C /.test(svg) && !/ L /.test(svg), 'ok')
 }
 
 // --- Hình chạm mép ảnh (file design cắt khít, hay gặp nhất) -----------------
@@ -246,8 +278,59 @@ for (const size of [200, 800]) {
   check('4 lỗ đều đủ vật liệu', g.holes.every((h) => h.clearanceMm > 2), g.holes.map((h) => h.clearanceMm.toFixed(1)).join(' · '))
   const dxf = buildDxf({ rings: g.rings, circles: g.holes.map((h) => ({ cx: h.cxMm, cy: h.cyMm, r: h.rMm, layer: 'LO_KHOAN' })), widthMm: g.widthMm, heightMm: g.heightMm, layer: 'CAT' })
   check('DXF ghi đủ 4 lỗ', verifyDxf(dxf, { rings: g.rings.length, circles: 4, widthMm: g.widthMm, heightMm: g.heightMm }).length === 0, 'ok')
-  const svg = buildCutSvg({ rings: g.rings, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'n lỗ' })
+  const svg = buildCutSvg({ curves: g.curves, holes: g.holes, widthMm: g.widthMm, heightMm: g.heightMm, title: 'n lỗ' })
   check('SVG ghi đủ 4 lỗ', (svg.match(/<circle/g) || []).length === 4, 'ok')
+}
+
+// --- Góc vuông ở viền 0 phải ra góc vuông, không bo ----------------------------
+{
+  const size = 800
+  const data = new Uint8ClampedArray(size * size * 4)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    if (x >= 100 && x < 700 && y >= 100 && y < 500) data[(y * size + x) * 4 + 3] = 255
+  }
+  const img = { width: size, height: size, data } as unknown as ImageData
+  const s = { ...DEFAULT_SETTINGS, artworkWidthMm: 120, offsetMm: 0, roundInsideMm: 0 }
+  const g = buildGeometry(analyze(img, s, 1, 1)!, s)!
+  const c = g.curves[0]
+  const kinks = Array.from({ length: c.length }, (_, i) => {
+    const a = c[i], b = c[(i + 1) % c.length]
+    const u = [a[3][0] - a[2][0], a[3][1] - a[2][1]], v = [b[1][0] - b[0][0], b[1][1] - b[0][1]]
+    return (Math.abs(Math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1])) * 180) / Math.PI
+  })
+  const sharp = kinks.filter((k) => k > 60).length
+  check('hình chữ nhật viền 0 → đúng 4 góc gãy', sharp === 4, `${sharp} góc gãy > 60°, các mối nối: ${kinks.map((k) => k.toFixed(0)).join('/')}`)
+  check('hình chữ nhật viền 0 → góc đúng 90°', kinks.filter((k) => k > 60).every((k) => Math.abs(k - 90) < 1.5), kinks.filter((k) => k > 60).map((k) => k.toFixed(1)).join('/'))
+  const corner = c.map((seg) => seg[0]).reduce((best, p) => (p[0] + p[1] < best[0] + best[1] ? p : best), c[0][0])
+  check('hình chữ nhật viền 0 → nút góc nằm đúng đỉnh', Math.hypot(corner[0], corner[1]) < 0.15, `góc trên-trái tại (${corner[0].toFixed(3)}, ${corner[1].toFixed(3)}) mm`)
+  check('hình chữ nhật viền 0 → ít khúc', c.length <= 12, `${c.length} khúc`)
+  check('hình chữ nhật viền 0 → đúng khổ', Math.abs(g.widthMm - 120) < 0.3 && Math.abs(g.heightMm - 80) < 0.3, `${g.widthMm.toFixed(2)} × ${g.heightMm.toFixed(2)} mm`)
+}
+
+// --- Bo góc lõm: hai đĩa chồng nhau tạo cổ lõm nhọn -----------------------------
+{
+  const w = 1000, h = 600
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (Math.hypot(x - 320, y - 300) <= 220 || Math.hypot(x - 680, y - 300) <= 220) data[(y * w + x) * 4 + 3] = 255
+  }
+  const img = { width: w, height: h, data } as unknown as ImageData
+  const base = { ...DEFAULT_SETTINGS, artworkWidthMm: 90, offsetMm: 0 }
+  const a = analyze(img, { ...base, roundInsideMm: 6 }, 1, 1)!
+  const sharp = buildGeometry(a, { ...base, roundInsideMm: 0 })!
+  const round = buildGeometry(a, { ...base, roundInsideMm: 6 })!
+  const areaS = Math.abs(signedArea(sharp.rings[0]))
+  const areaR = Math.abs(signedArea(round.rings[0]))
+  // Cổ lõm giữa hai đĩa được lấp thêm vật liệu; góc lồi và khổ không đổi.
+  check('bo góc lõm → có thêm vật liệu ở cổ', areaR > areaS + 10, `${areaS.toFixed(0)} → ${areaR.toFixed(0)} mm²`)
+  check('bo góc lõm → khổ không đổi', Math.abs(round.widthMm - sharp.widthMm) < 0.15 && Math.abs(round.heightMm - sharp.heightMm) < 0.15, `${sharp.widthMm.toFixed(2)}×${sharp.heightMm.toFixed(2)} vs ${round.widthMm.toFixed(2)}×${round.heightMm.toFixed(2)} mm`)
+  check('bo góc lõm → không còn góc gãy', maxJointKink(round.curves[0]) < 5, `gãy tối đa ${maxJointKink(round.curves[0]).toFixed(1)}°`)
+  check('không bo → cổ vẫn là góc nhọn', maxJointKink(sharp.curves[0]) > 30, `gãy tối đa ${maxJointKink(sharp.curves[0]).toFixed(1)}°`)
+  // Đường cong bám sát bản chia mịn: chia lại rất mịn rồi so từng điểm với đường
+  // đồng mức gốc là việc của phép đo diện tích ở trên; ở đây kiểm chu vi hợp lý.
+  const perimR = perimeter(round.rings[0])
+  const flat = flattenCurve(round.curves[0], 0.001, 0.5 * Math.PI / 180)
+  check('chia mịn hơn nữa không đổi chu vi', Math.abs(perimeter(flat) - perimR) < perimR * 0.002, `${perimR.toFixed(2)} vs ${perimeter(flat).toFixed(2)} mm`)
 }
 
 console.log(failures ? `\n${failures} phép thử HỎNG` : '\nTất cả phép thử đạt')

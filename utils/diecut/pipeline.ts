@@ -7,9 +7,9 @@
 //                nên kéo tới đâu thấy tới đó.
 
 import { buildMask, padImage, thinPartCheck, type MaskMode } from './mask'
-import { signedDistanceField } from './edt'
+import { signedDistanceField, distanceTransform } from './edt'
 import { isoContours, signedArea, perimeter, ringBounds, nearestRingIndex, type Point, type Ring } from './contour'
-import { chaikin, simplifyRing, dedupe } from './simplify'
+import { fitRing, flattenCurve, type Curve } from './curve'
 
 export interface HoleSpec {
   /** 0 = mép trái khung cắt, 1 = mép phải. */
@@ -42,8 +42,14 @@ export interface DiecutSettings {
   lockAspect: boolean
   /** Viền cắt cộng ra ngoài hình, mm. 0 = cắt sát mép hình. */
   offsetMm: number
-  /** Sai số cho phép khi làm gọn đường cắt, mm. */
+  /** Sai số cho phép khi fit đường cong so với đường tính toán, mm. */
   simplifyMm: number
+  /**
+   * Bán kính nhỏ nhất ở GÓC LÕM, mm. Viền cắt tự bo tròn góc lồi (bán kính =
+   * viền) nhưng chỗ hai chi tiết gặp nhau vẫn là góc nhọn; số này bo nốt chỗ đó
+   * và lấp luôn khe hẹp hơn hai lần bán kính. 0 = giữ góc nhọn.
+   */
+  roundInsideMm: number
   /** Bỏ mảnh vụn nhỏ hơn, mm². */
   despeckleMm2: number
   /** Lấp lỗ kín nhỏ hơn, mm². */
@@ -79,6 +85,7 @@ export const DEFAULT_SETTINGS: DiecutSettings = {
   lockAspect: true,
   offsetMm: 5,
   simplifyMm: 0.08,
+  roundInsideMm: 2,
   despeckleMm2: 1,
   fillHolesMm2: 3,
   thinWarnMm: 2,
@@ -111,14 +118,22 @@ export interface Analysis {
 }
 
 export interface DiecutGeometry {
-  /** Đường cắt, mm, gốc (0,0) ở góc trên-trái khung cắt, Y hướng xuống. */
+  /**
+   * Đường cắt dạng đường cong Bézier, mm, gốc (0,0) ở góc trên-trái khung cắt,
+   * Y hướng xuống. Đây là bản gốc: SVG và ảnh xem trước vẽ thẳng từ đây.
+   */
+  curves: Curve[]
+  /**
+   * Cùng các đường đó, đã chia thành đoạn thẳng mịn (cùng chỉ số với `curves`).
+   * Dùng cho DXF R12 (không có thực thể cong), đo đạc và bắt cú bấm chuột.
+   */
   rings: Ring[]
   /**
    * Đường người dùng đã bỏ bằng tay — KHÔNG có trong file cắt, chỉ để ảnh xem
    * trước vẽ nét đứt cho bấm lại mà khôi phục. anchorIndex trỏ về
    * settings.skippedRings.
    */
-  skippedRings: { ring: Ring; anchorIndex: number }[]
+  skippedRings: { ring: Ring; curve: Curve; anchorIndex: number }[]
   widthMm: number
   heightMm: number
   /** Vị trí phần hình trong khung cắt, mm. */
@@ -133,6 +148,9 @@ export interface DiecutGeometry {
     skippedByUser: number
     removedSpecks: number
     filledHoles: number
+    /** Số khúc cong Bézier trong file cắt. */
+    nodeCount: number
+    /** Số đỉnh của bản chia mịn (DXF). */
     pointCount: number
     /** Lệch bao nhiêu phần trăm so với tỷ lệ gốc của ảnh (dương = kéo cao). */
     stretchPct: number
@@ -146,12 +164,12 @@ export const WORK_MAX_EDGE = 1600
 
 /**
  * Lề trống cần chèn quanh ảnh để đường cắt có chỗ vòng ra ngoài. Cộng dư 10 mm
- * so với viền đang đặt: kéo thanh viền trong khoảng đó thì không phải tách nền
- * lại, mà vẫn đủ chỗ cho đường cắt.
+ * so với viền + bán kính bo góc đang đặt: kéo thanh viền trong khoảng đó thì
+ * không phải tách nền lại, mà vẫn đủ chỗ cho đường cắt.
  */
 export function requiredPadPx(s: DiecutSettings, imgWidth: number): number {
   const pxPerMm = Math.max(1, imgWidth) / Math.max(1, s.artworkWidthMm)
-  const pad = Math.ceil((Math.abs(s.offsetMm) + 10) * pxPerMm) + 8
+  const pad = Math.ceil((Math.abs(s.offsetMm) + Math.max(0, s.roundInsideMm) + 10) * pxPerMm) + 8
   // Chặn trên: ảnh lề quá dày chỉ tốn bộ nhớ chứ không thêm gì.
   return Math.min(pad, Math.round(imgWidth))
 }
@@ -202,7 +220,18 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
   // đồng mức chính là viền cắt — âm thì cắt lẹm vào trong hình.
   const level = s.offsetMm / mmPerPx
 
-  const raw = isoContours(a.sdf, a.width, a.height, level)
+  // Bo góc lõm = closing hình học trên trường khoảng cách: nở thêm r rồi co lại
+  // r. Góc lồi giữ nguyên, góc lõm thành cung bán kính r, khe hẹp hơn 2r lấp
+  // kín. Tốn thêm một phép biến đổi khoảng cách nên chỉ làm khi cần.
+  let field = a.sdf
+  let iso = level
+  const rPx = Math.min(s.roundInsideMm / mmPerPx, Math.max(0, a.pad - 1 - level))
+  if (s.roundInsideMm > 0 && rPx >= 1) {
+    field = closedField(a, level, rPx)
+    iso = 0
+  }
+
+  const raw = isoContours(field, a.width, a.height, iso)
   if (!raw.length) return null
 
   // Đổi sang mm, gốc đặt tạm ở mép ngoài khung bao phần hình (nên phần hình
@@ -215,27 +244,36 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
 
   const minRingMm2 = Math.max(s.despeckleMm2, s.fillHolesMm2)
   let dropped = 0
+  const curves: Curve[] = []
   const rings: Ring[] = []
   for (const r of raw) {
-    let ring = toMm(r)
+    const ring = toMm(r)
     if (Math.abs(signedArea(ring)) < minRingMm2) {
       dropped++
       continue
     }
-    // Mượt trước, gọn sau: Chaikin xoá răng cưa mức điểm ảnh, rồi Douglas–Peucker
-    // bỏ điểm thừa trong sai số mm đã đặt.
-    ring = chaikin(ring, 1)
-    ring = simplifyRing(ring, s.simplifyMm)
-    ring = dedupe(ring, s.simplifyMm / 4)
-    if (ring.length >= 3) rings.push(ring)
-    else dropped++
+    // Đường đồng mức dày đặc → đường cong Bézier trơn (xem curve.ts), rồi chia
+    // mịn lại thành đoạn thẳng cho DXF và cho mọi phép đo phía sau.
+    const curve = fitRing(ring, {
+      stepMm: mmPerPx,
+      tolMm: s.simplifyMm,
+      cornerSpanMm: CORNER_SPAN_MM,
+      cornerAngle: CORNER_ANGLE,
+    })
+    const flat = flattenCurve(curve, DXF_CHORD_TOL_MM, DXF_MAX_ANGLE)
+    if (curve.length && flat.length >= 3) {
+      curves.push(curve)
+      rings.push(flat)
+    } else dropped++
   }
   if (!rings.length) return null
 
   // Dời gốc về góc trên-trái của khung CẮT (file in và file cắt dùng chung gốc
   // này, nên chồng hai file lên nhau là khớp tuyệt đối).
   const b = ringBounds(rings)
-  const shifted = rings.map((r) => r.map(([x, y]) => [x - b.x0, y - b.y0] as [number, number]))
+  const shift = ([x, y]: Point): Point => [x - b.x0, y - b.y0]
+  const shifted = rings.map((r) => r.map(shift))
+  const shiftedCurves = curves.map((c) => c.map((seg) => seg.map(shift) as Curve[number]))
   const widthMm = b.x1 - b.x0
   const heightMm = b.y1 - b.y0
 
@@ -256,10 +294,11 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
       const i = nearestRingIndex(shifted, pt, tol)
       if (i < 0 || i === outer || skipIdx.has(i)) return
       skipIdx.add(i)
-      skippedRings.push({ ring: shifted[i], anchorIndex })
+      skippedRings.push({ ring: shifted[i], curve: shiftedCurves[i], anchorIndex })
     })
   }
   const kept = skipIdx.size ? shifted.filter((_, i) => !skipIdx.has(i)) : shifted
+  const keptCurves = skipIdx.size ? shiftedCurves.filter((_, i) => !skipIdx.has(i)) : shiftedCurves
   const artwork = {
     xMm: -b.x0,
     yMm: -b.y0,
@@ -279,8 +318,8 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
     const cy = Math.min(Math.max(h.yRatio, 0), 1) * heightMm
     const px = (cx + b.x0) / mmPerPx + a.bbox.x0 - 0.5
     const py = (cy + b.y0) / mmPerPx + a.bbox.y0 - 0.5
-    const sdfAt = sampleField(a.sdf, a.width, a.height, px, py)
-    return { cxMm: cx, cyMm: cy, rMm: r, clearanceMm: (level - sdfAt) * mmPerPx - r }
+    const fieldAt = sampleField(field, a.width, a.height, px, py)
+    return { cxMm: cx, cyMm: cy, rMm: r, clearanceMm: (iso - fieldAt) * mmPerPx - r }
   })
   const tight = holes
     .map((h, i) => ({ i, c: h.clearanceMm }))
@@ -336,6 +375,7 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
   if (skippedRings.length) notes.push(`Đã bỏ ${skippedRings.length} đường cắt bằng tay (nét đứt trong ảnh xem trước).`)
 
   return {
+    curves: keptCurves,
     rings: kept,
     skippedRings,
     widthMm,
@@ -350,12 +390,60 @@ export function buildGeometry(a: Analysis, s: DiecutSettings): DiecutGeometry | 
       skippedByUser: skippedRings.length,
       removedSpecks: a.removedSpecks,
       filledHoles: a.filledHoles,
+      nodeCount: keptCurves.reduce((sum, c) => sum + c.length, 0),
       pointCount: kept.reduce((sum, r) => sum + r.length, 0),
       stretchPct,
     },
     warnings,
     notes,
   }
+}
+
+// Chia mịn cho DXF: dây cung lệch ≤ 0,005 mm và đổi hướng ≤ 2° mỗi đỉnh. Đủ để
+// phần mềm xưởng nhìn ra đường cong, và vẫn chỉ vài trăm đỉnh cho một đường.
+const DXF_CHORD_TOL_MM = 0.005
+const DXF_MAX_ANGLE = (2 * Math.PI) / 180
+// Góc thật: hướng đổi hơn 70° trong ±0,4 mm (bán kính cong dưới ~0,8 mm). Góc
+// lồi đã bo bằng viền ≥ 1 mm không tới ngưỡng này, nên chỉ góc của chính hình
+// (viền 0) mới được giữ nhọn; ảnh thô (điểm ảnh > 0,1 mm) thì cửa sổ rộng theo.
+const CORNER_SPAN_MM = 0.4
+const CORNER_ANGLE = (70 * Math.PI) / 180
+
+/**
+ * Trường khoảng cách sau khi bo góc lõm bán kính `rPx` quanh mức `level`:
+ * closing = nở (level + r) rồi co r. Mặt nạ nở lấy từ trường gốc, co lại bằng
+ * một phép biến đổi khoảng cách nữa — chỉ trên vùng quanh hình, không cả ảnh.
+ * Lấy min với trường gốc: chỗ không phải góc lõm giữ nguyên độ chính xác dưới
+ * điểm ảnh của trường gốc, chỗ lấp thì trường mới thấp hơn và thắng.
+ */
+function closedField(a: Analysis, level: number, rPx: number): Float32Array {
+  const { sdf, width: w, height: h } = a
+  const out = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i++) out[i] = sdf[i] - level
+  const reach = Math.max(2, Math.ceil(level + rPx) + 2)
+  const x0 = Math.max(0, a.bbox.x0 - reach)
+  const y0 = Math.max(0, a.bbox.y0 - reach)
+  const x1 = Math.min(w - 1, a.bbox.x1 + reach)
+  const y1 = Math.min(h - 1, a.bbox.y1 + reach)
+  const cw = x1 - x0 + 1
+  const ch = y1 - y0 + 1
+  if (cw < 3 || ch < 3) return out
+  const grown = new Uint8Array(cw * ch)
+  const lim = level + rPx
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) grown[y * cw + x] = sdf[(y + y0) * w + x + x0] < lim ? 1 : 0
+  }
+  const inside = distanceTransform(grown, cw, ch, 0)
+  for (let y = 0; y < ch; y++) {
+    for (let x = 0; x < cw; x++) {
+      const j = y * cw + x
+      if (!grown[j]) continue
+      const i = (y + y0) * w + x + x0
+      const v = rPx + 0.5 - inside[j]
+      if (v < out[i]) out[i] = v
+    }
+  }
+  return out
 }
 
 /**

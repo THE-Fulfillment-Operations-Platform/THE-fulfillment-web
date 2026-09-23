@@ -228,12 +228,21 @@ function applyKnownSize() {
           @update:model-value="patch({ offsetMm: $event })"
         />
         <DiecutField
+          :model-value="props.modelValue.roundInsideMm"
+          label="Bo tròn góc lõm"
+          :min="0"
+          :max="10"
+          :step="0.5"
+          hint="Bán kính nhỏ nhất ở chỗ hai chi tiết gặp nhau; khe hẹp hơn 2 lần số này được lấp kín. 0 = giữ góc nhọn."
+          @update:model-value="patch({ roundInsideMm: $event })"
+        />
+        <DiecutField
           :model-value="props.modelValue.simplifyMm"
-          label="Sai số làm gọn"
+          label="Sai số đường cong"
           :min="0.01"
           :max="1"
           :step="0.01"
-          hint="Nhỏ thì đường bám sát hình nhưng file nặng; lớn thì đường mượt và gọn hơn."
+          hint="Đường cong được phép lệch tối đa bấy nhiêu so với đường tính toán (không nhỏ hơn nửa điểm ảnh của ảnh gốc). Nhỏ thì bám sát từng chi tiết; lớn thì mềm và ít nút hơn."
           @update:model-value="patch({ simplifyMm: $event })"
         />
         <DiecutField

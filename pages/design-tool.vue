@@ -370,7 +370,7 @@ async function exportOne(kind: 'print' | 'dxf' | 'svg') {
       downloadBlob(bytesToBlob(await canvasToBytes(canvas), 'image/png'), `${base}_IN.png`)
     } else if (kind === 'svg') {
       const svg = buildCutSvg({
-        rings: item.geometry.rings,
+        curves: item.geometry.curves,
         holes: item.geometry.holes,
         widthMm: item.geometry.widthMm,
         heightMm: item.geometry.heightMm,
@@ -499,7 +499,7 @@ const knownSizeMm = computed(() => {
                 <b class="text-foreground">{{ active.geometry.widthMm.toFixed(1) }} × {{ active.geometry.heightMm.toFixed(1) }} mm</b>
               </span>
               <span class="tabular-nums">In {{ Math.round(active.geometry.stats.dpi) }} DPI</span>
-              <span class="tabular-nums">{{ active.geometry.stats.ringCount }} đường · {{ active.geometry.stats.pointCount }} điểm</span>
+              <span class="tabular-nums">{{ active.geometry.stats.ringCount }} đường · {{ active.geometry.stats.nodeCount }} khúc cong</span>
             </div>
           </div>
 

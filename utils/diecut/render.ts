@@ -5,6 +5,7 @@
 // và lỗi "in lệch so với đường cắt" biến mất ngay từ khâu sinh file.
 
 import type { Analysis, DiecutGeometry, DiecutSettings } from './pipeline'
+import type { Curve } from './curve'
 
 /** Mặt nạ (độ phân giải làm việc) dựng thành canvas để cắt nền ảnh in. */
 function maskCanvas(a: Analysis): HTMLCanvasElement {
@@ -102,6 +103,18 @@ export interface PreviewOptions {
   showSkipped?: boolean
 }
 
+/** Vẽ một đường cắt bằng chính các khúc Bézier — màn hình thấy đúng đường cong sẽ cắt. */
+function strokeCurve(ctx: CanvasRenderingContext2D, curve: Curve, k: number): void {
+  if (!curve.length) return
+  ctx.beginPath()
+  ctx.moveTo(curve[0][0][0] * k, curve[0][0][1] * k)
+  for (const [, c1, c2, p3] of curve) {
+    ctx.bezierCurveTo(c1[0] * k, c1[1] * k, c2[0] * k, c2[1] * k, p3[0] * k, p3[1] * k)
+  }
+  ctx.closePath()
+  ctx.stroke()
+}
+
 /** Lề xem trước mặc định: đủ để nhìn rõ đường cắt ở mọi khổ. */
 export function previewMarginMm(g: DiecutGeometry): number {
   return Math.max(2, Math.min(12, Math.max(g.widthMm, g.heightMm) * 0.04))
@@ -145,31 +158,14 @@ export function drawPreview(
 
   if (opts.showCut) {
     ctx.lineWidth = Math.max(1, pxPerMm * 0.25)
+    ctx.lineJoin = 'round'
     ctx.strokeStyle = '#e11d48'
-    for (const ring of g.rings) {
-      ctx.beginPath()
-      ring.forEach(([x, y], i) => {
-        const px = x * pxPerMm
-        const py = y * pxPerMm
-        if (i === 0) ctx.moveTo(px, py)
-        else ctx.lineTo(px, py)
-      })
-      ctx.closePath()
-      ctx.stroke()
-    }
+    for (const curve of g.curves) strokeCurve(ctx, curve, pxPerMm)
     if (opts.showSkipped && g.skippedRings.length) {
       ctx.save()
       ctx.setLineDash([pxPerMm * 1.2, pxPerMm * 0.8])
       ctx.strokeStyle = '#94a3b8'
-      for (const { ring } of g.skippedRings) {
-        ctx.beginPath()
-        ring.forEach(([x, y], i) => {
-          if (i === 0) ctx.moveTo(x * pxPerMm, y * pxPerMm)
-          else ctx.lineTo(x * pxPerMm, y * pxPerMm)
-        })
-        ctx.closePath()
-        ctx.stroke()
-      }
+      for (const { curve } of g.skippedRings) strokeCurve(ctx, curve, pxPerMm)
       ctx.restore()
     }
     // Lỗ khoan: đỏ cảnh báo khi còn quá ít vật liệu tới mép cắt, xanh khi ổn —
