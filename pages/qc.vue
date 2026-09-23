@@ -369,9 +369,17 @@ onMounted(focusScan)
               <dt class="label">SKU</dt>
               <dd class="font-mono font-medium text-foreground">{{ result.sku_code }}</dd>
             </div>
+            <!-- Số lượng là ô hay đọc nhầm nhất (2 cái mà QC chỉ soi 1), nên để số
+                 to hẳn; khác 1 thì đổi màu cảnh báo cho đập vào mắt. -->
             <div v-if="result.quantity != null">
               <dt class="label">Số lượng</dt>
-              <dd class="font-medium text-foreground">{{ result.quantity }}</dd>
+              <dd
+                class="text-2xl font-bold leading-tight tabular-nums"
+                :class="result.quantity > 1 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'"
+              >
+                {{ result.quantity }}
+                <span v-if="result.quantity > 1" class="text-xs font-semibold">— đủ {{ result.quantity }} cái</span>
+              </dd>
             </div>
             <div v-if="result.material_name">
               <dt class="label">Loại VL</dt>
@@ -391,20 +399,24 @@ onMounted(focusScan)
             </p>
           </div>
 
-          <!-- Mô tả có thể dài → gói trong details để không phá layout.
-               Mô tả QC mở sẵn (thao tác chính), mô tả catalog thu gọn. -->
-          <details v-if="result.qc_description" class="mt-3 rounded-md border border-border bg-muted px-3 py-2" open>
-            <summary class="cursor-pointer select-none text-xs font-medium text-muted-foreground">
-              Mô tả SP để QC
-            </summary>
-            <p class="mt-2 whitespace-pre-line break-words text-sm text-foreground">{{ result.qc_description }}</p>
-          </details>
-          <details v-if="result.sku_description" class="mt-3 rounded-md border border-border bg-muted px-3 py-2">
-            <summary class="cursor-pointer select-none text-xs font-medium text-muted-foreground">
-              Mô tả sản phẩm (catalog)
-            </summary>
-            <p class="mt-2 whitespace-pre-line break-words text-sm text-foreground">{{ result.sku_description }}</p>
-          </details>
+          <!-- Mô tả hiện thẳng, không gập lại và không nhãn: ở xưởng không ai bấm
+               mở từng ô để đọc, mà mô tả chính là thứ dùng để đối chiếu hàng. Dài
+               thì cứ để dài, thà cuộn còn hơn bỏ sót. -->
+          <p
+            v-if="result.qc_description"
+            class="mt-3 whitespace-pre-line break-words rounded-md border border-border bg-muted px-3 py-2 text-lg font-semibold leading-snug text-foreground"
+          >
+            {{ result.qc_description }}
+          </p>
+          <!-- Chỉ một khối mô tả: có mô tả viết riêng cho QC thì dùng nó, không thì
+               lấy mô tả catalog. Hai khối chữ to giống hệt nhau nằm cạnh nhau chỉ
+               tổ làm người quét phải đọc hai lần cùng một thứ. -->
+          <p
+            v-else-if="result.sku_description"
+            class="mt-3 whitespace-pre-line break-words rounded-md border border-border bg-muted px-3 py-2 text-lg font-semibold leading-snug text-foreground"
+          >
+            {{ result.sku_description }}
+          </p>
 
           <!-- File in/cắt & link design — hiển thị link nào có, bỏ qua link trống -->
           <div class="mt-4 border-t border-border pt-3">
