@@ -66,17 +66,12 @@ function quotaForItem(it: OrderItem): number | null {
 const selectedItems = computed(() => items.value.filter((it) => selectedIds.value.has(it.id)))
 // Tổng sản phẩm = Σ quantity các item đã chọn.
 const selectedProducts = computed(() => productCount(selectedItems.value))
-// Kế hoạch chẻ: mỗi phần tử là 1 batch con. Sản phẩm của các SKU khác nhau
-// chiếm chỗ khác nhau trên cùng một tấm, nên nhóm đầy theo mức chiếm dụng chứ
-// không theo số sản phẩm.
+// Kế hoạch chẻ: mỗi phần tử là 1 batch con. Nhóm theo SKU trước (một batch =
+// một file cắt của một SKU), rồi mỗi SKU chẻ theo định mức của nó.
 const splitGroups = computed(() => planBatchSplitByQuota(selectedItems.value, quotaForItem))
 const willSplit = computed(() => splitGroups.value.length > 1)
-// Các SKU đang chọn có định mức khác nhau trên NVL này → nói rõ để người vận
-// hành không thắc mắc vì sao "20 sản phẩm" lại không vừa một tấm.
-const mixedQuotas = computed(() => {
-  const quotas = new Set(selectedItems.value.map((it) => quotaForItem(it) ?? 0))
-  return quotas.size > 1
-})
+// Số SKU khác nhau đang chọn → nói rõ vì sao 7 sản phẩm lại thành 2 batch.
+const skuCount = computed(() => new Set(selectedItems.value.map((it) => it.sku_code)).size)
 // Item đang chọn mà không ra định mức (SKU chưa khai D x R, hoặc tấm chưa khai
 // kích thước): chúng không chiếm chỗ trên tấm nên không được tính vào cách chẻ —
 // phải nói ra, không để người vận hành tưởng một tấm chứa được vô hạn.
@@ -316,15 +311,14 @@ onMounted(() => {
           <div class="flex justify-between"><dt class="text-muted-foreground">Tổng sản phẩm</dt><dd class="font-medium">{{ selectedProducts }}</dd></div>
         </dl>
 
-        <!-- Định mức nằm ở cặp (SKU, NVL): các SKU khác nhau chiếm chỗ khác
-             nhau trên cùng một tấm, nên "tổng sản phẩm" không quyết định số tấm. -->
+        <!-- Một batch = một file in + một file cắt của MỘT SKU: SKU khác nhau
+             không chung batch, rồi mỗi SKU chẻ theo định mức của cặp (SKU, NVL). -->
         <p
-          v-if="mixedQuotas"
+          v-if="skuCount > 1"
           class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
         >
-          Các SKU đang chọn có định mức khác nhau trên NVL này — số batch được
-          tính theo mức chiếm dụng của từng SKU trên một đơn vị NVL, không theo
-          tổng số sản phẩm.
+          Đang chọn {{ skuCount }} SKU khác nhau — mỗi SKU là một batch riêng (một
+          batch = một file cắt), rồi SKU nào vượt định mức mới chẻ tiếp.
         </p>
 
         <!-- Kế hoạch chẻ batch mẹ–con -->
@@ -333,27 +327,27 @@ onMounted(() => {
           class="mt-3 rounded-lg border border-primary/40 bg-accent p-3 text-xs"
         >
           <p class="font-semibold text-primary">
-            Vượt định mức → tạo 1 batch mẹ + {{ splitGroups.length }} batch con
+            Tạo 1 batch mẹ + {{ splitGroups.length }} batch con
           </p>
           <ul class="mt-2 space-y-1 text-muted-foreground">
-            <li v-for="(g, i) in splitGroups" :key="i" class="flex justify-between">
-              <span>Batch con #{{ i + 1 }}</span>
-              <span class="font-medium text-foreground">{{ g.product_count }} sp · {{ g.items.length }} item</span>
+            <li v-for="(g, i) in splitGroups" :key="i" class="flex justify-between gap-2">
+              <span class="truncate">#{{ i + 1 }} · <span class="text-foreground">{{ g.sku_code || '—' }}</span></span>
+              <span class="shrink-0 font-medium text-foreground">{{ g.product_count }} sp · {{ g.items.length }} item</span>
             </li>
           </ul>
         </div>
         <p v-else-if="activeSheetHasSize && selectedCount > 0 && !unsizedCount" class="mt-3 text-xs text-muted-foreground">
-          Vừa một tấm → tạo 1 batch phẳng.
+          Một SKU, vừa một tấm → tạo 1 batch phẳng.
         </p>
         <p
           v-if="selectedCount > 0 && unsizedCount"
           class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
         >
           <template v-if="!activeSheetHasSize">
-            NVL này chưa khai kích thước tấm (Master Data → NVL) nên không có định mức: batch sẽ không chẻ dù bao nhiêu sản phẩm.
+            NVL này chưa khai kích thước tấm (Master Data → NVL) nên không có định mức: mỗi SKU vẫn là một batch riêng nhưng không chẻ dù bao nhiêu sản phẩm.
           </template>
           <template v-else>
-            {{ unsizedCount }}/{{ selectedCount }} item có SKU chưa khai D x R nên không có định mức — chúng không được tính khi chẻ batch.
+            {{ unsizedCount }}/{{ selectedCount }} item có SKU chưa khai D x R nên không có định mức — SKU đó thành một batch riêng không giới hạn.
           </template>
         </p>
 
