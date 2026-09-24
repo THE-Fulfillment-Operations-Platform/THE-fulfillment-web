@@ -120,9 +120,7 @@ const updating = computed(() => pendingStatus.value !== null)
 const busyStep = ref(0)
 const busySubtitle = computed(() => {
   if (!batch.value) return ''
-  return batch.value.is_parent
-    ? `Batch mẹ ${batch.value.code} — cập nhật lan sang các batch con.`
-    : `Batch ${batch.value.code} · ${items.value.length} item cập nhật theo.`
+  return `Batch ${batch.value.code} · ${items.value.length} item cập nhật theo.`
 })
 
 async function setStatus(status: InternalStatus) {
@@ -380,9 +378,6 @@ const scrapRouteOptions = [
   { value: 'PRODUCTION', label: 'Làm lại sản xuất (file design giữ nguyên)' },
   { value: 'DESIGN', label: 'Trả về Chờ thiết kế (cả tấm sai vì file sai)' },
 ]
-const openChildCount = computed(
-  () => (batch.value?.child_batches ?? []).filter((c) => !c.closed_at).length,
-)
 
 function openScrap() {
   scrapForm.reason = ''
@@ -415,27 +410,21 @@ async function submitScrap() {
 }
 
 // ---- Xoá batch chưa sản xuất ------------------------------------------------
-// Chỉ hiện khi còn xoá được: PENDING toàn bộ, chưa đóng, không phải batch con
-// (con xoá qua batch mẹ — cụm chia định mức đi cùng nhau). Role khớp guard BE
+// Chỉ hiện khi còn xoá được: PENDING toàn bộ, chưa đóng. Role khớp guard BE
 // (roleDesignOps). BE còn chặn lần cuối trong transaction nên bấm trễ sau khi
 // xưởng đã chuyển trạng thái chỉ nhận 422, không mất dữ liệu.
 const canDelete = computed(() =>
   auth.can('batches.manage') &&
   !!batch.value &&
   batch.value.status === 'PENDING' &&
-  !batch.value.parent_batch_id &&
   !batch.value.closed_at,
 )
 const deleting = ref(false)
 async function deleteBatch() {
   if (!batch.value || deleting.value) return
-  const childCount = batch.value.child_batches?.length ?? batch.value.child_count ?? 0
-  const scopeNote = batch.value.is_parent && childCount
-    ? ` (gồm cả ${childCount} batch con)`
-    : ''
   const ok = await useConfirm().confirm({
     title: `Xoá batch ${batch.value.code}`,
-    message: `Xoá batch${scopeNote}? Sản phẩm trong batch sẽ quay về màn gom batch để gom lại; tem QR đã in cho batch này (nếu có) phải bỏ, gom batch mới in tem mới. Chỉ xoá được batch chưa sản xuất.`,
+    message: `Xoá batch? Sản phẩm trong batch sẽ quay về màn gom batch để gom lại; tem QR đã in cho batch này (nếu có) phải bỏ, gom batch mới in tem mới. Chỉ xoá được batch chưa sản xuất.`,
     tone: 'danger',
     confirmText: 'Xoá batch',
   })
@@ -474,11 +463,7 @@ async function printLabels() {
   // Kiểm tra TRƯỚC khi mở popup: mở rồi mới phát hiện không có gì để in thì
   // người dùng phải tự đóng một cửa sổ trắng.
   if (!rows.length) {
-    toast.info(
-      batch.value.is_parent
-        ? 'Batch mẹ không giữ sản phẩm — mở từng batch con để in tem.'
-        : 'Batch không còn sản phẩm nào để in tem.',
-    )
+    toast.info('Batch không còn sản phẩm nào để in tem.')
     return
   }
   // Open the print window synchronously (before any await) so popup blockers
@@ -535,9 +520,9 @@ async function printLabels() {
     // tem sản phẩm), nên một ô QR ở đây chỉ mời người ta quét nhầm rồi nhận
     // "không tìm thấy item". Khung viền + chữ "TEM LÔ" là để trong chồng tem
     // vừa in ra, tờ này không bao giờ bị nhặt nhầm thành tem sản phẩm.
-    // Cỡ mã batch theo số ký tự. Mã thường là "#101041" (7); batch con thêm hậu
-    // tố thành "#101041-10" (10). Ở cỡ lớn nhất, mã 10 ký tự tràn bề ngang 70mm
-    // của tem và bị đẩy xuống dòng — nên mã càng dài thì hạ cỡ, thay vì để nó vỡ.
+    // Cỡ mã batch theo số ký tự. Mã thường là "#101041" (7); các batch con cũ
+    // (trước 24/09) còn hậu tố kiểu "#101041-10" (10). Ở cỡ lớn nhất, mã 10 ký
+    // tự tràn bề ngang 70mm của tem và bị đẩy xuống dòng — nên mã càng dài thì hạ cỡ.
     const batchCodeSize = (len: number): string => {
       if (len <= 8) return '10.5mm'
       if (len <= 10) return '8.25mm'
@@ -697,13 +682,6 @@ async function printLabels() {
   <div>
     <div class="mb-4 flex items-center gap-4">
       <NuxtLink to="/batches" class="text-sm text-primary hover:underline">← Về danh sách batch</NuxtLink>
-      <NuxtLink
-        v-if="batch?.parent_batch_id"
-        :to="`/batches/${batch.parent_batch_id}`"
-        class="text-sm text-primary hover:underline"
-      >
-        ↑ Về batch mẹ
-      </NuxtLink>
     </div>
 
     <!-- Chỉ blank cả trang ở lần tải đầu; reload sau thao tác giữ nguyên nội dung
@@ -850,7 +828,7 @@ async function printLabels() {
         </div>
 
         <!-- Bộ file sản xuất của batch (link in + link cắt) — nộp một lần cho cả batch -->
-        <div v-if="!batch.is_parent" class="card mb-5 p-5">
+        <div class="card mb-5 p-5">
           <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 class="text-sm font-semibold text-foreground">Bộ file sản xuất</h3>
@@ -905,41 +883,8 @@ async function printLabels() {
           </div>
         </div>
 
-        <!-- Batch mẹ: danh sách batch con -->
-        <div v-if="batch.is_parent" class="card mb-5 overflow-hidden">
-          <div class="border-b border-border bg-muted px-4 py-2.5">
-            <h3 class="text-sm font-semibold text-foreground">
-              Batch con ({{ batch.child_batches?.length ?? batch.child_count ?? 0 }}) — chẻ theo định mức NVL
-            </h3>
-          </div>
-          <UiStateBlock :empty="!(batch.child_batches && batch.child_batches.length)" empty-text="Chưa có batch con.">
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-border">
-                <thead class="bg-card">
-                  <tr>
-                    <th class="table-th">Batch con</th>
-                    <th class="table-th">Số item</th>
-                    <th class="table-th">Trạng thái</th>
-                    <th class="table-th"></th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-border">
-                  <tr v-for="c in batch.child_batches" :key="c.id" class="hover:bg-muted">
-                    <td class="table-td font-medium text-foreground">{{ c.code }}</td>
-                    <td class="table-td">{{ c.item_count ?? c.items?.length ?? 0 }}</td>
-                    <td class="table-td"><UiStatusBadge kind="internal" :value="c.status" /></td>
-                    <td class="table-td text-right">
-                      <NuxtLink :to="`/batches/${c.id}`" class="text-xs font-medium text-primary hover:underline">Open</NuxtLink>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </UiStateBlock>
-        </div>
-
-        <!-- Items (production template fields) — batch mẹ không giữ item trực tiếp -->
-        <div v-if="!batch.is_parent" class="card overflow-hidden">
+        <!-- Items (production template fields) -->
+        <div class="card overflow-hidden">
           <div class="border-b border-border bg-muted px-4 py-2.5">
             <h3 class="text-sm font-semibold text-foreground">Items trong batch (dữ liệu sản xuất)</h3>
           </div>
@@ -1042,9 +987,6 @@ async function printLabels() {
             {{ liveItemCount }} phần sản xuất trong batch sẽ được đánh dấu huỷ (vẫn lưu ở batch này để
             truy vết), batch đóng lại và sản phẩm quay về hàng chờ để làm lại ở một batch MỚI. Tem QR
             đã in cho batch này bỏ đi.
-            <template v-if="batch?.is_parent">
-              Đây là batch mẹ: huỷ cả {{ openChildCount }} batch con đang mở.
-            </template>
           </p>
           <p class="mt-1 text-xs">
             Sản phẩm nhiều NVL (combo): các phần NVL khác của cùng sản phẩm nếu đang “đã QC” sẽ được

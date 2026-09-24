@@ -31,7 +31,7 @@ export function overdueCount(batches: Batch[]): number {
   return batches.reduce((n, b) => n + (isBatchOverdue(b) ? 1 : 0), 0)
 }
 
-// ---- Chẻ batch mẹ–con theo nhóm SKU cha và định mức -------------------------
+// ---- Chia batch theo nhóm SKU cha và định mức (mỗi tấm một batch) -----------
 // Luật khách chốt 24/09/2026 (bản sao của planBatchSplitByQuota bên API, để
 // màn tạo batch xem trước đúng số con server sẽ tạo):
 //   1. Nhóm theo SKU CHA (SKU không có cha = nhóm của chính nó). Khác nhóm không
@@ -50,7 +50,7 @@ export function productCount<T extends { quantity?: number }>(items: T[]): numbe
   return items.reduce((n, it) => n + Math.max(1, Number(it.quantity) || 1), 0)
 }
 
-/** Một nhóm item sẽ trở thành 1 batch con. */
+/** Một nhóm item sẽ trở thành 1 batch (một tấm). */
 export interface BatchSplitGroup<T> {
   items: T[]
   /** Các mã SKU trong nhóm, theo thứ tự xếp vào. */
@@ -154,8 +154,7 @@ function distinctCodes<T extends SplitItem>(items: T[]): string[] {
 
 /**
  * Tổng SỐ SẢN PHẨM của batch = cộng SL từng dòng (một item là một dòng, SL có thể
- * >1). Batch mẹ không giữ item (hàng nằm ở các con) nên không tính được từ payload
- * list → null.
+ * >1). Payload list không có item → null.
  */
 export function batchProductTotal(b: Batch): number | null {
   const items = b.items ?? []
@@ -165,14 +164,11 @@ export function batchProductTotal(b: Batch): number | null {
 
 /**
  * Số TẤM NVL batch cần. Server tính (Batch.material_units) từ kích thước SKU
- * của từng phần và kích thước tấm — FE không có đủ dữ liệu để tính lại. Batch
- * mẹ = tổng tấm của các con (thiếu thì lấy số con). null = có phần chưa có
- * định mức (thiếu kích thước).
+ * của từng phần và kích thước tấm — FE không có đủ dữ liệu để tính lại. null =
+ * có phần chưa có định mức.
  */
 export function batchMaterialUnits(b: Batch): number | null {
-  if (b.material_units != null) return b.material_units
-  if (b.is_parent) return b.child_count ?? b.child_batches?.length ?? null
-  return null
+  return b.material_units ?? null
 }
 
 export function batchMaterialLabel(b: Batch): string {
@@ -184,10 +180,9 @@ export function batchMaterialLabel(b: Batch): string {
 /**
  * Link sản xuất batch còn thiếu. Batch phải có đủ CẢ link in lẫn link cắt mới vào
  * sản xuất được — backend chặn chuyển sang Đã in/Đã cắt khi thiếu, và màn chi tiết
- * batch dùng đúng luật này. Batch mẹ không giữ link nên không áp dụng.
+ * batch dùng đúng luật này.
  */
-export function missingBatchLinks(b: Pick<Batch, 'links' | 'is_parent'>): BatchLinkKind[] {
-  if (b.is_parent) return []
+export function missingBatchLinks(b: Pick<Batch, 'links'>): BatchLinkKind[] {
   return (['PRINT', 'CUT'] as const).filter((kind) => !b.links?.some((l) => l.kind === kind && l.url))
 }
 
@@ -203,7 +198,7 @@ export const PRODUCTION_FILES_READY: BadgeMeta = {
  * và đếm theo status ở backend vẫn gộp chung hai loại vào Chờ xử lý.
  */
 export function batchStatusBadge(b: Batch): BadgeMeta {
-  if (b.status === 'PENDING' && !b.is_parent && !b.closed_at && missingBatchLinks(b).length === 0) {
+  if (b.status === 'PENDING' && !b.closed_at && missingBatchLinks(b).length === 0) {
     return PRODUCTION_FILES_READY
   }
   return INTERNAL_STATUS[b.status] ?? { label: b.status, classes: 'bg-muted text-muted-foreground' }

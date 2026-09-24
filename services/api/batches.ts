@@ -11,12 +11,10 @@ export interface AutoCreatedBatch {
   material_id: number
   material_code: string
   material_name: string
-  /** Batch gốc trả về: batch phẳng, hoặc batch MẸ khi vượt định mức. */
+  /** Batch đầu tiên đã tạo (để bấm mở nhanh). */
   batch_id: number
   batch_code: string
-  is_parent: boolean
-  child_count: number
-  /** Mã các batch SẢN XUẤT thật (các con, hoặc chính batch phẳng). */
+  /** Mã mọi batch đã tạo cho NVL này — mỗi tấm một batch. */
   batch_codes: string[]
   item_count: number
   skipped_item_ids: number[]
@@ -62,7 +60,6 @@ export type BatchLinkImportIssueCode =
   | 'MISSING_CODE'
   | 'NOT_FOUND'
   | 'CODE_MISMATCH'
-  | 'PARENT_BATCH'
   | 'CLOSED'
   | 'ALREADY_STARTED'
   | 'NO_ITEMS'
@@ -136,13 +133,10 @@ export interface BatchListParams extends ListParams {
   priority?: string
   date_from?: string
   date_to?: string
-  // Lọc batch con của 1 batch mẹ. Mặc định danh sách chỉ trả batch mẹ + batch
-  // phẳng (ẩn con) để không rối; truyền id mẹ để lấy riêng các con của nó.
-  parent_batch_id?: number
   // open=true: chỉ batch còn việc — bỏ batch đã đóng vì toàn bộ hàng bị huỷ ở QC.
   open?: boolean
   // Mã nội bộ đơn ("100047") hoặc mã tem item ("100047_1/1") — trả về (các)
-  // batch đang sản xuất đơn đó, kể cả batch con (list thường ẩn con).
+  // batch đang sản xuất đơn đó.
   code?: string
 }
 
@@ -161,13 +155,12 @@ export const batchesApi = {
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),
   // Xoá batch CHƯA sản xuất (PENDING toàn bộ, chưa QC/scrap) — item được thả về
-  // màn gom batch. Batch mẹ xoá cả cụm con; batch đã in/cắt bị BE từ chối (422).
+  // màn gom batch. Batch đã in/cắt bị BE từ chối (422).
   remove: (id: number | string) => apiDelete<{ deleted: boolean }>(`/api/batches/${id}`),
   // Huỷ batch ĐÃ sản xuất: ngược lại với remove(). Xoá là undo của lệnh gom
   // batch (chưa ai đụng vào, xoá sạch dấu vết); huỷ ghi nhận một tấm đã in/cắt
   // hỏng thật — phần sản xuất được đánh dấu huỷ kèm lý do, batch đóng lại, sản
   // phẩm quay về hàng chờ gom batch (hoặc hàng chờ thiết kế nếu lỗi từ file).
-  // Batch mẹ = huỷ mọi con còn mở; huỷ được từng con vì mỗi con là một tấm.
   scrap: (id: number | string, body: ScrapBatchInput) =>
     apiPost<ScrapBatchResult>(`/api/batches/${id}/scrap`, body),
   // Hệ thống tự gom CẢ pool design-ready thành batch (phân theo NVL, chia theo

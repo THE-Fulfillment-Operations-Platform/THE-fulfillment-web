@@ -773,24 +773,12 @@ export interface Batch {
   close_reason?: string
   // Số phần đã huỷ do QC fail (vẫn thuộc batch này để truy vết).
   scrapped_count?: number
-  // Số tấm NVL batch cần: ⌈Σ SL / định mức⌉ theo kích thước SKU × tấm, server
-  // tính từ các phần còn sống. Batch mẹ = số batch con. null = có phần chưa có
-  // định mức (thiếu kích thước) → không có con số để nói.
+  // Số tấm NVL batch cần: ⌈Σ SL / định mức⌉ theo định mức của từng cặp SKU – NVL
+  // (khai, chưa khai thì ước tính theo kích thước), server tính từ các phần còn
+  // sống. null = có phần chưa có định mức → không có con số để nói.
   material_units?: number | null
-  // ---- Batch mẹ–con (chẻ theo định mức NVL) ----
-  // Một batch "mẹ" gom nhiều batch "con"; mỗi con vừa trong MỘT tấm NVL theo định
-  // mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước).
-  // Batch phẳng (không chẻ) để trống toàn bộ các trường này.
-  is_parent?: boolean
-  // Set trên batch CON, trỏ về id batch mẹ. null/undefined = batch mẹ hoặc batch phẳng.
-  parent_batch_id?: number | null
-  // Thứ tự batch con trong mẹ (1..k) — dùng đặt hậu tố mã & sắp xếp hiển thị.
-  sequence?: number
-  // Số batch con (chỉ có ý nghĩa trên batch mẹ). Backend có thể trả kèm để list
-  // hiển thị "Mẹ (k con)" mà không cần preload cả cây.
-  child_count?: number
-  // Danh sách batch con (batch mẹ preload ở endpoint chi tiết).
-  child_batches?: Batch[]
+  // Một batch = một tấm, phẳng. Lớp batch mẹ/con (18–24/09/2026) đã bỏ theo
+  // yêu cầu khách; các batch con cũ giờ là batch thường (giữ nguyên mã).
   // Print/Cut links attached to the whole batch (entered once, shared by designs).
   links?: BatchLink[]
 }
@@ -813,7 +801,7 @@ export interface ScrapBatchInput {
 
 /** Kết quả một lần huỷ batch — đủ để trạm hiện một dòng tóm tắt. */
 export interface ScrapBatchResult {
-  /** Mã các batch đã huỷ (huỷ batch mẹ = huỷ mọi con còn mở). */
+  /** Mã batch đã huỷ. */
   batch_codes: string[]
   scrapped_parts: number
   item_ids: number[]
@@ -833,8 +821,9 @@ export interface QcUndoResult {
 }
 
 export interface CreateBatchResult {
-  // Khi NVL có định mức và tổng sản phẩm vượt định mức, `batch` là batch MẸ và
-  // `batch.child_batches` chứa các con. Ngược lại `batch` là batch phẳng như cũ.
+  // Mỗi tấm là một batch phẳng: `batches` là toàn bộ batch vừa tạo theo thứ tự
+  // tấm; `batch` là batch đầu tiên (server giữ cho client cũ).
+  batches: Batch[]
   batch: Batch
   skipped_item_ids: number[]
 }

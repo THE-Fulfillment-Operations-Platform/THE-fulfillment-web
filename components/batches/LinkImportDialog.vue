@@ -138,7 +138,6 @@ const ISSUE_LABEL: Record<BatchLinkImportIssueCode, string> = {
   MISSING_CODE: 'Thiếu mã batch',
   NOT_FOUND: 'Không có batch này',
   CODE_MISMATCH: 'Mã batch không khớp ID',
-  PARENT_BATCH: 'Batch mẹ',
   CLOSED: 'Batch đã đóng',
   ALREADY_STARTED: 'Đã bắt đầu sản xuất',
   NO_ITEMS: 'Batch không còn sản phẩm',

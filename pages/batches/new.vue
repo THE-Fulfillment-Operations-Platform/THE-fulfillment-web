@@ -34,8 +34,8 @@ const dueDate = ref('')
 const note = ref('')
 const creating = ref(false)
 
-// Kích thước tấm của từng NVL (material_id → Material). Cần cho preview chẻ
-// batch mẹ–con; MaterialBucket không mang kích thước nên nạp riêng danh sách.
+// Kích thước tấm của từng NVL (material_id → Material). Cần cho preview chia
+// batch; MaterialBucket không mang kích thước nên nạp riêng danh sách.
 const materialById = ref<Map<number, Material>>(new Map())
 async function loadMaterialCaps() {
   try {
@@ -67,7 +67,7 @@ function quotaForItem(it: OrderItem): number | null {
 const selectedItems = computed(() => items.value.filter((it) => selectedIds.value.has(it.id)))
 // Tổng sản phẩm = Σ quantity các item đã chọn.
 const selectedProducts = computed(() => productCount(selectedItems.value))
-// Kế hoạch chẻ: mỗi phần tử là 1 batch con. Nhóm theo SKU cha (khác nhóm không
+// Kế hoạch chia: mỗi phần tử là 1 batch (một tấm). Nhóm theo SKU cha (khác nhóm không
 // chung batch), trong nhóm SKU cùng mã xếp trước rồi SKU anh em nhét vào chỗ
 // trống theo định mức của từng SKU.
 const splitGroups = computed(() => planBatchSplitByQuota(selectedItems.value, quotaForItem))
@@ -167,7 +167,7 @@ async function createBatch() {
     `Số item đã chọn: ${selectedCount.value}\n` +
     `Tổng sản phẩm: ${selectedProducts.value}\n` +
     `SKU: ${skuSummary}` +
-    (willSplit.value ? `\nSẽ tạo 1 batch mẹ + ${splitGroups.value.length} batch con.` : '')
+    (willSplit.value ? `\nSẽ tạo ${splitGroups.value.length} batch (mỗi tấm một batch).` : '')
 
   const ok = await useConfirm().confirm({
     title: 'Tạo Batch',
@@ -183,19 +183,21 @@ async function createBatch() {
       material_id: activeMaterial.value.material_id,
       // Gửi theo THỨ TỰ HIỂN THỊ, không theo thứ tự tick: backend chia nhóm
       // theo đúng thứ tự nhận được, nên gửi thứ tự khác preview sẽ cho ra cách
-      // phân bổ item vào từng batch con khác với cái người dùng vừa xem.
+      // phân bổ item vào từng batch khác với cái người dùng vừa xem.
       order_item_ids: selectedItems.value.map((it) => it.id),
       priority: priority.value,
       due_date: dueDate.value || undefined,
       note: note.value || undefined,
     })
     const skipped = data.skipped_item_ids?.length ?? 0
-    const children = data.batch.child_batches?.length ?? data.batch.child_count ?? 0
-    const base = children
-      ? `Đã tạo batch mẹ ${data.batch.code} + ${children} batch con`
-      : `Đã tạo batch ${data.batch.code}`
+    const created = data.batches?.length ? data.batches : [data.batch]
+    const base =
+      created.length > 1
+        ? `Đã tạo ${created.length} batch: ${created.map((b) => b.code).join(', ')}`
+        : `Đã tạo batch ${created[0].code}`
     toast.success(base + (skipped ? ` (bỏ qua ${skipped} item)` : ''))
-    router.push(`/batches/${data.batch.id}`)
+    // Một batch → mở luôn; nhiều batch → về danh sách, các batch mới nằm trên cùng.
+    router.push(created.length === 1 ? `/batches/${created[0].id}` : '/batches')
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -326,13 +328,13 @@ onMounted(() => {
           tấm khi còn chỗ (theo định mức từng SKU); khác nhóm thì tách batch.
         </p>
 
-        <!-- Kế hoạch chẻ batch mẹ–con -->
+        <!-- Kế hoạch chia batch: mỗi tấm một batch phẳng -->
         <div
           v-if="willSplit"
           class="mt-3 rounded-lg border border-primary/40 bg-accent p-3 text-xs"
         >
           <p class="font-semibold text-primary">
-            Tạo 1 batch mẹ + {{ splitGroups.length }} batch con
+            Tạo {{ splitGroups.length }} batch (mỗi tấm một batch)
           </p>
           <ul class="mt-2 space-y-1 text-muted-foreground">
             <li v-for="(g, i) in splitGroups" :key="i" class="flex justify-between gap-2">
@@ -342,7 +344,7 @@ onMounted(() => {
           </ul>
         </div>
         <p v-else-if="activeSheetHasSize && selectedCount > 0 && !unsizedCount" class="mt-3 text-xs text-muted-foreground">
-          Vừa một tấm → tạo 1 batch phẳng.
+          Vừa một tấm → tạo 1 batch.
         </p>
         <p
           v-if="selectedCount > 0 && unsizedCount"
@@ -377,7 +379,7 @@ onMounted(() => {
             creating
               ? 'Đang tạo…'
               : willSplit
-                ? `Tạo batch mẹ + ${splitGroups.length} con`
+                ? `Tạo ${splitGroups.length} batch`
                 : `Tạo batch (${selectedCount})`
           }}
         </button>

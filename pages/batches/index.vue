@@ -297,25 +297,11 @@ async function autoCreateBatches() {
                   <div class="flex items-center gap-1.5">
                     <span>{{ b.code }}</span>
                     <span
-                      v-if="b.is_parent"
-                      class="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
-                      title="Batch mẹ — gom nhiều batch con theo định mức NVL"
-                    >
-                      Mẹ · {{ b.child_count ?? b.child_batches?.length ?? 0 }} con
-                    </span>
-                    <span
                       v-if="b.closed_at"
                       class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                       :title="b.close_reason || 'Batch đã đóng'"
                     >
                       Đã đóng
-                    </span>
-                    <span
-                      v-else-if="b.parent_batch_id"
-                      class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                      title="Batch con"
-                    >
-                      con
                     </span>
                   </div>
                 </td>
@@ -335,9 +321,7 @@ async function autoCreateBatches() {
                 <td class="table-td">
                   <span
                     v-if="batchMaterialUnits(b) != null"
-                    :title="b.is_parent
-                      ? 'Batch mẹ — mỗi batch con dùng tối đa một tấm NVL'
-                      : 'Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)'"
+                    title="Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)"
                   >{{ batchMaterialUnits(b) }} tấm</span>
                   <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Master Data — chưa tính được số tấm">—</span>
                 </td>
@@ -412,8 +396,7 @@ async function autoCreateBatches() {
                 <span class="text-xs font-normal text-muted-foreground">({{ c.material_code }})</span>
               </div>
               <div class="text-xs text-muted-foreground">
-                {{ c.item_count }} sản phẩm
-                <template v-if="c.is_parent"> · batch mẹ {{ c.batch_code }} + {{ c.child_count }} con</template>
+                {{ c.item_count }} sản phẩm · {{ (c.batch_codes ?? []).length }} batch
               </div>
             </div>
             <div class="mt-2 flex flex-wrap gap-1">
