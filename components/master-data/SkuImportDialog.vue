@@ -112,11 +112,11 @@ const STATUS_LABEL: Record<MasterSkuStatus, string> = {
 }
 
 const SAMPLE_CSV = [
-  'SKU cha,SKU,Tên sản phẩm,Loại VL,D (mm),R (mm),Mô tả',
-  'HOP-NHUA,HOP-NHUA-BE,Hộp nhựa bé,Mica trong 3 ly,80,60,Hộp nắp trượt',
-  'HOP-NHUA,HOP-NHUA-LON,Hộp nhựa lớn,Mica trong 3 ly,160,120,',
-  ',3LWD 12in,Thớt gỗ khắc tên,Gỗ 5 ly 3 layer,"304,8","203,2",',
-  ',BR A 2 Gai,Đèn gỗ combo,Mica trong 3 ly + Mica Hologram,,,',
+  'SKU cha,SKU,Tên sản phẩm,Loại VL,D (mm),R (mm),Định mức,Mô tả',
+  'HOP-NHUA,HOP-NHUA-BE,Hộp nhựa bé,Mica trong 3 ly,80,60,90,Hộp nắp trượt',
+  'HOP-NHUA,HOP-NHUA-LON,Hộp nhựa lớn,Mica trong 3 ly,160,120,20,',
+  ',3LWD 12in,Thớt gỗ khắc tên,Gỗ 5 ly 3 layer,"304,8","203,2",12,',
+  ',BR A 2 Gai,Đèn gỗ combo,Mica trong 3 ly + Mica Hologram,,,,',
 ].join('\n')
 
 function loadSample() {
@@ -125,6 +125,19 @@ function loadSample() {
 }
 
 const downloadingTemplate = ref(false)
+const downloadingExport = ref(false)
+// Toàn bộ SKU hiện có theo đúng khổ file import: điền cột "Định mức" từ file
+// layout của xưởng rồi nạp lại chính file đó.
+async function downloadExport() {
+  downloadingExport.value = true
+  try {
+    await masterDataApi.downloadExport()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    downloadingExport.value = false
+  }
+}
 // Lấy file mẫu .xlsx thật từ backend: cột tách đúng trong Excel ở mọi locale,
 // không bị vỡ như blob CSV sinh ở client.
 async function downloadTemplate() {
@@ -148,8 +161,12 @@ async function downloadTemplate() {
         <span class="font-medium text-foreground">Tên sản phẩm</span>,
         <span class="font-medium text-foreground">Loại VL</span>,
         <span class="font-medium text-foreground">D (mm)</span>,
-        <span class="font-medium text-foreground">R (mm)</span> và
+        <span class="font-medium text-foreground">R (mm)</span>,
+        <span class="font-medium text-foreground">Định mức</span> và
         <span class="font-medium text-foreground">Mô tả</span>. Các cột khác được bỏ qua.
+        <span class="font-medium text-foreground">Định mức</span> là số sản phẩm một tấm Loại VL trên cùng dòng
+        làm ra (từ file layout của xưởng); để trống thì giữ số đã khai, chưa khai thì hệ thống ước tính theo
+        kích thước (hiện dấu ~).
         <span class="font-medium text-foreground">SKU cha</span> phải có sẵn trong hệ thống (import ở bước 1)
         — chưa có thì dòng đó báo lỗi, không tự tạo. Để trống SKU cha = SKU lẻ. Kích thước ghi số
         mm (vd <span class="font-mono">80</span> hoặc <span class="font-mono">80,5</span>), không nhận inch/cm.
@@ -210,13 +227,23 @@ async function downloadTemplate() {
         </div>
 
         <div class="mt-2 flex items-center justify-between">
-          <button
-            class="text-xs text-primary hover:underline disabled:opacity-50"
-            :disabled="downloadingTemplate"
-            @click="downloadTemplate"
-          >
-            <UiSpinner v-if="downloadingTemplate" :size="12" /> Tải template mẫu (.xlsx)
-          </button>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              class="text-xs text-primary hover:underline disabled:opacity-50"
+              :disabled="downloadingTemplate"
+              @click="downloadTemplate"
+            >
+              <UiSpinner v-if="downloadingTemplate" :size="12" /> Tải template mẫu (.xlsx)
+            </button>
+            <button
+              class="text-xs text-primary hover:underline disabled:opacity-50"
+              :disabled="downloadingExport"
+              title="Mọi SKU con / SKU lẻ hiện có, mỗi dòng một cặp SKU × NVL, kèm định mức đã khai và ước tính — điền cột Định mức rồi nạp lại"
+              @click="downloadExport"
+            >
+              <UiSpinner v-if="downloadingExport" :size="12" /> Tải SKU hiện có (.xlsx)
+            </button>
+          </div>
           <button class="btn-primary" :disabled="previewing" @click="runPreview">
             <UiSpinner v-if="previewing" :size="14" />
             {{ previewing ? 'Đang phân tích…' : 'Xem trước' }}
@@ -377,7 +404,12 @@ async function downloadTemplate() {
                   <td class="table-td tabular-nums text-muted-foreground">{{ formatDimMM(k.length_mm, k.width_mm) }}</td>
                   <td class="table-td whitespace-normal text-xs tabular-nums text-muted-foreground">
                     <template v-if="k.quota_by_material && Object.keys(k.quota_by_material).length">
-                      <span v-for="(q, name) in k.quota_by_material" :key="name" class="mr-1 inline-block" :title="`${name}: ${q} sản phẩm / tấm`">{{ q }} <span class="opacity-70">({{ name }})</span></span>
+                      <span
+                        v-for="(q, name) in k.quota_by_material"
+                        :key="name"
+                        class="mr-1 inline-block"
+                        :title="`${name}: ${q} sản phẩm / tấm — ${k.quota_sources?.[name] === 'estimated' ? 'ước tính theo kích thước' : 'định mức khai'}`"
+                      >{{ k.quota_sources?.[name] === 'estimated' ? '~' : '' }}{{ q }} <span class="opacity-70">({{ name }})</span></span>
                     </template>
                     <span v-else>—</span>
                   </td>

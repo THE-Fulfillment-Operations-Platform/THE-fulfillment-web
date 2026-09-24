@@ -5,7 +5,7 @@ import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
 import { formatDimMM } from '~/utils/format'
-import { productionQuota } from '~/utils/quota'
+import { quotaInfo, quotaLabel, estimatedQuota, QUOTA_TITLE, type QuotaSource } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
@@ -122,12 +122,13 @@ const pagedRows = computed(() => rowsOf(paged.value))
 // bị chọn ngầm (xoá cha mà con còn lại thì server bỏ qua cha kèm lý do).
 const visibleSkus = computed(() => rowsOf(groups.value).map((r) => r.sku))
 
-// Chip NVL kèm định mức "· 66/tấm" — tính từ kích thước SKU × kích thước tấm,
-// không ai nhập. Không có số = một trong hai bên chưa khai kích thước.
-function materialChips(s: Sku): { key: string; label: string; quota: number }[] {
+// Chip NVL kèm định mức "· 40/tấm" (khai) hoặc "· ~24/tấm" (ước tính theo kích
+// thước). Không có số = chưa khai và một trong hai bên chưa có kích thước.
+function materialChips(s: Sku): { key: string; label: string; quota: string; source: QuotaSource }[] {
   return (s.materials ?? []).map((m) => {
     const name = m.material?.name ?? m.material?.code ?? `#${m.material_id}`
-    return { key: name, label: name, quota: productionQuota(s, m.material) }
+    const info = quotaInfo(s, m.material)
+    return { key: name, label: name, quota: quotaLabel(info), source: info.source }
   })
 }
 
@@ -147,13 +148,16 @@ const form = reactive<Required<Pick<SkuInput, 'code' | 'name' | 'product_name' |
 const parentId = ref(0)
 const lengthMM = ref<string | number>('')
 const widthMM = ref<string | number>('')
-// selected material ids + per-material quantity
+// selected material ids + per-material quantity + per-material declared quota
 const selectedMats = ref<number[]>([])
 const qtyByMat = reactive<Record<number, number>>({})
-// Định mức của SKU đang nhập trên NVL m, tính sống từ hai ô D/R và kích thước
-// tấm — để người nhập thấy ngay "80 × 60 trên tấm 1220 × 2440 = 620/tấm".
+// Định mức KHAI cho từng NVL (sp/tấm, từ file layout của xưởng). '' = chưa khai
+// → hệ thống ước tính theo kích thước.
+const quotaByMat = reactive<Record<number, number | ''>>({})
+// Ước tính của SKU đang nhập trên NVL m, tính sống từ hai ô D/R và kích thước
+// tấm — để người nhập thấy ngay "80 × 60 trên tấm 600 × 800 ≈ 91/tấm".
 function liveQuota(m: Material): number {
-  return productionQuota({ length_mm: parseDim(lengthMM.value), width_mm: parseDim(widthMM.value) }, m)
+  return estimatedQuota({ length_mm: parseDim(lengthMM.value), width_mm: parseDim(widthMM.value) }, m)
 }
 
 // SKU đang sửa mà có con thì không gán cha được (chỉ 2 tầng).
@@ -174,6 +178,7 @@ function toggleMat(id: number) {
   else {
     selectedMats.value.push(id)
     if (!qtyByMat[id]) qtyByMat[id] = 1
+    if (quotaByMat[id] == null) quotaByMat[id] = ''
   }
 }
 
@@ -203,6 +208,7 @@ function openEdit(s: Sku) {
   selectedMats.value = (s.materials ?? []).map((m) => m.material_id)
   for (const m of s.materials ?? []) {
     qtyByMat[m.material_id] = m.quantity_per_unit || 1
+    quotaByMat[m.material_id] = m.products_per_unit && m.products_per_unit > 0 ? m.products_per_unit : ''
   }
   open.value = true
 }
@@ -225,7 +231,15 @@ const canSubmit = computed(
 )
 
 function buildMaterials() {
-  return selectedMats.value.map((id) => ({ material_id: id, quantity_per_unit: qtyByMat[id] || 1 }))
+  return selectedMats.value.map((id) => {
+    const q = Number(quotaByMat[id])
+    return {
+      material_id: id,
+      quantity_per_unit: qtyByMat[id] || 1,
+      // Ô trống / 0 = chưa khai → gửi null, server ước tính theo kích thước.
+      products_per_unit: Number.isFinite(q) && q > 0 ? Math.floor(q) : null,
+    }
+  })
 }
 
 async function submit() {
@@ -493,7 +507,7 @@ async function remove(s: Sku) {
                     class="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
                   >
                     {{ c.label }}
-                    <span v-if="c.quota" class="tabular-nums text-muted-foreground" title="Định mức: sản phẩm / tấm, tính từ kích thước SKU và kích thước tấm">· {{ c.quota }}/tấm</span>
+                    <span v-if="c.quota" class="tabular-nums text-muted-foreground" :title="QUOTA_TITLE[c.source]">· {{ c.quota }}</span>
                   </span>
                   <span v-if="r.sku.is_combo" class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">Combo</span>
                 </div>
@@ -612,7 +626,7 @@ async function remove(s: Sku) {
           </div>
         </div>
         <p class="-mt-2 text-[11px] text-muted-foreground">
-          Kích thước sản phẩm cùng kích thước tấm NVL cho ra định mức: ⌊S tấm / S sản phẩm⌋ sản phẩm mỗi tấm — không nhập tay.
+          Định mức (sản phẩm / tấm) khai ở từng NVL bên dưới, theo file layout của xưởng; chưa khai thì hệ thống ước tính bằng cách xếp D x R lên tấm (hiện dấu ≈).
         </p>
         <div v-if="editingKids.length" class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           Đang chứa {{ editingKids.length }} SKU con:
@@ -647,24 +661,33 @@ async function remove(s: Sku) {
               <span class="flex-1 text-sm text-foreground">
                 {{ m.name }} <span class="text-xs text-muted-foreground">({{ m.code }})</span>
                 <span v-if="selectedMats.includes(m.id)" class="ml-1 text-xs tabular-nums text-muted-foreground">
-                  <template v-if="liveQuota(m)">≈ {{ liveQuota(m) }} sp/tấm</template>
+                  <template v-if="liveQuota(m)">ước tính ≈ {{ liveQuota(m) }} sp/tấm</template>
                   <template v-else-if="m.length_mm == null">— tấm chưa khai kích thước</template>
-                  <template v-else>— nhập D x R để ra định mức</template>
+                  <template v-else>— nhập D x R để có ước tính</template>
                 </span>
               </span>
+              <input
+                v-if="selectedMats.includes(m.id)"
+                v-model.number="quotaByMat[m.id]"
+                type="number"
+                min="1"
+                class="input w-24 py-1 text-sm"
+                :placeholder="liveQuota(m) ? `≈ ${liveQuota(m)}` : 'sp/tấm'"
+                title="Định mức khai: sản phẩm / tấm NVL này, theo file layout của xưởng. Để trống = dùng ước tính theo kích thước"
+              />
               <input
                 v-if="selectedMats.includes(m.id)"
                 v-model.number="qtyByMat[m.id]"
                 type="number"
                 min="1"
-                class="input w-20 py-1 text-sm"
-                title="SL NVL cho MỘT sản phẩm"
+                class="input w-16 py-1 text-sm"
+                title="SL NVL cho MỘT sản phẩm (định lượng vật tư)"
               />
             </label>
           </div>
           <p v-if="selectedMats.length" class="mt-1 text-[11px] text-muted-foreground">
-            Ô số: một sản phẩm ăn bao nhiêu NVL (định lượng vật tư). Định mức sp/tấm
-            hiện bên cạnh tên NVL, tính từ kích thước — không nhập.
+            Ô rộng: <b class="text-foreground">định mức</b> — số sản phẩm một tấm NVL này làm ra, lấy từ file layout
+            của xưởng; để trống thì hệ thống ước tính theo kích thước (≈). Ô hẹp: một sản phẩm ăn bao nhiêu NVL.
           </p>
           <p v-if="selectedMats.length > 1" class="mt-1 text-[11px] text-violet-600 dark:text-violet-400">
             SKU nhiều nguyên vật liệu sẽ được đánh dấu là Combo.

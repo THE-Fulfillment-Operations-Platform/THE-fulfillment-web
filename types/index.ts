@@ -203,9 +203,8 @@ export interface Material {
   code: string
   name: string
   description?: string
-  // Kích thước MỘT tấm NVL (mm). Cùng kích thước SKU tạo ra định mức sản xuất
-  // của từng SKU trên NVL này: ⌊S_tấm / S_sản phẩm⌋ (xem utils/quota.ts).
-  // null = chưa khai → không có định mức, batch NVL này không chẻ.
+  // Kích thước MỘT tấm NVL (mm). Cùng kích thước SKU cho ra định mức ƯỚC TÍNH
+  // (xếp lưới, utils/quota.ts) cho cặp nào chưa khai định mức. null = chưa khai.
   length_mm?: number | null
   width_mm?: number | null
 }
@@ -214,10 +213,10 @@ export interface SkuMaterial {
   material_id: number
   // Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư).
   quantity_per_unit: number
-  // Định mức sản xuất của cặp (SKU, NVL) KHÔNG còn là dữ liệu nhập — từ
-  // 18/09/2026 nó được TÍNH từ kích thước SKU và kích thước tấm NVL
-  // (productionQuota trong utils/quota.ts). Chiều vẫn như khách chốt 01/09:
-  // "sản phẩm trên một tấm".
+  // Định mức KHAI của cặp (SKU, NVL): số sản phẩm một tấm NVL này làm ra, lấy
+  // từ file layout thật của xưởng (khách chốt 24/09/2026). Luôn thắng ước tính
+  // theo kích thước. null/0 = chưa khai → utils/quota.ts ước tính bằng xếp lưới.
+  products_per_unit?: number | null
   note?: string
   material?: Material
 }
@@ -507,9 +506,11 @@ export interface MasterImportSkuPlan {
   length_mm?: number | null
   width_mm?: number | null
   description?: string
-  // Định mức sẽ có trên từng NVL sau khi áp dụng (tên NVL → sp/tấm), chỉ với
-  // NVL đã khai kích thước tấm.
+  // Định mức sẽ có trên từng NVL sau khi áp dụng (tên NVL → sp/tấm): số khai
+  // trong file, không thì số đã khai trên cặp, không nữa thì ước tính theo kích
+  // thước. quota_sources nói rõ từng NVL là 'declared' hay 'estimated'.
   quota_by_material?: Record<string, number>
+  quota_sources?: Record<string, string>
 }
 
 export interface MasterImportMappingPlan {
@@ -517,6 +518,8 @@ export interface MasterImportMappingPlan {
   material_code: string
   material_name: string
   exists: boolean
+  // Định mức file khai cho cặp này (0/không có = file không nói, giữ số cũ).
+  quota?: number
 }
 
 export interface MasterImportRowError {
@@ -776,7 +779,8 @@ export interface Batch {
   material_units?: number | null
   // ---- Batch mẹ–con (chẻ theo định mức NVL) ----
   // Một batch "mẹ" gom nhiều batch "con"; mỗi con vừa trong MỘT tấm NVL theo định
-  // mức tính từ kích thước. Batch phẳng (không chẻ) để trống toàn bộ các trường này.
+  // mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước).
+  // Batch phẳng (không chẻ) để trống toàn bộ các trường này.
   is_parent?: boolean
   // Set trên batch CON, trỏ về id batch mẹ. null/undefined = batch mẹ hoặc batch phẳng.
   parent_batch_id?: number | null

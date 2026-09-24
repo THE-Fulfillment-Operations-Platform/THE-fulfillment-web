@@ -276,7 +276,7 @@ async function autoCreateBatches() {
                 <th class="table-th">Batch</th>
                 <th class="table-th">Material</th>
                 <th class="table-th" title="Tổng số sản phẩm trong batch (cộng SL từng dòng)">Số lượng SP</th>
-                <th class="table-th" title="Số tấm NVL cần, tính từ kích thước SKU và kích thước tấm">NVL</th>
+                <th class="table-th" title="Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)">NVL</th>
                 <th class="table-th hidden lg:table-cell">SKU / Products</th>
                 <th class="table-th">Status</th>
                 <th class="table-th hidden sm:table-cell">Priority</th>
@@ -337,7 +337,7 @@ async function autoCreateBatches() {
                     v-if="batchMaterialUnits(b) != null"
                     :title="b.is_parent
                       ? 'Batch mẹ — mỗi batch con dùng tối đa một tấm NVL'
-                      : 'Số tấm NVL cần, tính từ kích thước SKU và kích thước tấm'"
+                      : 'Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)'"
                   >{{ batchMaterialUnits(b) }} tấm</span>
                   <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Master Data — chưa tính được số tấm">—</span>
                 </td>

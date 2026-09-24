@@ -34,6 +34,9 @@ export const masterDataApi = {
   // split cleanly in Excel on any locale, unlike a comma CSV that came out garbled).
   downloadTemplate: () =>
     apiDownload('/api/master-data/template.xlsx', 'master-data-template.xlsx'),
+  // Toàn bộ SKU con/lẻ hiện có theo đúng khổ file import (mỗi dòng một cặp SKU ×
+  // NVL, cột "Định mức" đã khai, cột ước tính để đối chiếu) — điền rồi nạp lại.
+  downloadExport: () => apiDownload('/api/master-data/export.xlsx', 'sku-hien-co.xlsx'),
 
   // Bước 1 của thiết lập cha → con: import SKU cha. Bước 2 là import SKU ở trên
   // (cột "SKU cha" phải trỏ tới SKU cha đã có).

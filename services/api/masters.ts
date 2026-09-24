@@ -25,6 +25,8 @@ export interface SkuMaterialInput {
   material_id: number
   /** Một sản phẩm ăn bao nhiêu đơn vị NVL (định lượng vật tư). */
   quantity_per_unit?: number
+  /** Định mức khai: sản phẩm / tấm của cặp này. null/0 = chưa khai → ước tính. */
+  products_per_unit?: number | null
   note?: string
 }
 

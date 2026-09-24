@@ -3,7 +3,7 @@ import { skusApi } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { parentSkuIds } from '~/utils/sku'
-import { productionQuota } from '~/utils/quota'
+import { quotaInfo, quotaLabel, QUOTA_TITLE, type QuotaSource } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useClientPager } from '~/composables/useClientPager'
@@ -25,11 +25,12 @@ function matCount(s: Sku) {
 function materialNames(s: Sku): string[] {
   return (s.materials ?? []).map((m) => m.material?.name ?? m.material?.code ?? `#${m.material_id}`)
 }
-// Nhãn chip: "Mica trong 3 ly · 66/tấm" khi cả SKU lẫn tấm đã có kích thước.
-function materialChips(s: Sku): { key: string; label: string; quota: number }[] {
+// Nhãn chip: "Mica trong 3 ly · 40/tấm" (khai) hoặc "· ~24/tấm" (ước tính).
+function materialChips(s: Sku): { key: string; label: string; quota: string; source: QuotaSource }[] {
   return (s.materials ?? []).map((m) => {
     const name = m.material?.name ?? m.material?.code ?? `#${m.material_id}`
-    return { key: name, label: name, quota: productionQuota(s, m.material) }
+    const info = quotaInfo(s, m.material)
+    return { key: name, label: name, quota: quotaLabel(info), source: info.source }
   })
 }
 
@@ -171,7 +172,7 @@ async function save() {
                       class="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground"
                     >
                       {{ c.label }}
-                      <span v-if="c.quota" class="tabular-nums text-muted-foreground" title="Định mức: sản phẩm / tấm, tính từ kích thước">· {{ c.quota }}/tấm</span>
+                      <span v-if="c.quota" class="tabular-nums text-muted-foreground" :title="QUOTA_TITLE[c.source]">· {{ c.quota }}</span>
                     </span>
                     <span v-if="matCount(s) > 1" class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
                       {{ matCount(s) }} NVL

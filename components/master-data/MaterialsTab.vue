@@ -5,7 +5,7 @@ import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
 import { normalizeCode } from '~/utils/code'
 import { formatDimMM } from '~/utils/format'
-import { productionQuota } from '~/utils/quota'
+import { quotaInfo, quotaLabel } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
@@ -19,7 +19,7 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 // Cột "Mã SKU": người vận hành nghĩ theo SKU chứ không theo mã material tự sinh
 // (CERAMIC-TRON chỉ là slug của cột Tên đứng ngay cạnh). Đảo mapping SKU→NVL đã
 // tải sẵn cho tab Mapping thành NVL→[SKU] để mỗi dòng NVL trả lời được "NVL này
-// làm cho những SKU nào" — kèm định mức sp/tấm của từng SKU, tính từ kích thước.
+// làm cho những SKU nào" — kèm định mức sp/tấm của từng SKU (khai, hoặc ~ước tính theo kích thước).
 const skusByMaterial = computed(() => {
   const map = new Map<number, Sku[]>()
   for (const s of props.skus ?? []) {
@@ -37,10 +37,11 @@ function skusOf(m: Material): Sku[] {
 function skuCodes(m: Material): string[] {
   return skusOf(m).map((s) => s.code)
 }
-// "AO1-3.5 · 376/tấm" — không có số khi SKU hoặc tấm chưa khai kích thước.
+// "AO1-3.5 · 40/tấm" (khai) hoặc "· ~24/tấm" (ước tính) — không có số khi chưa
+// khai và SKU hoặc tấm chưa có kích thước.
 function skuChip(m: Material, s: Sku): string {
-  const q = productionQuota(s, m)
-  return q ? `${s.code} · ${q}/tấm` : s.code
+  const label = quotaLabel(quotaInfo(s, m))
+  return label ? `${s.code} · ${label}` : s.code
 }
 // Một NVL có thể map hàng chục SKU — hiện vài mã đầu, phần còn lại gom "+N"
 // (đầy đủ nằm trong tooltip), giữ bảng không bị một ô kéo dãn cả hàng.
