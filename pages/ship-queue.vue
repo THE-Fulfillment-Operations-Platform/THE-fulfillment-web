@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { qcApi, handoffsApi } from '~/services/api'
+import type { ShipToCarrierResult } from '~/services/api/handoffs'
 import type { QcResultOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
+import { useSelection } from '~/composables/useSelection'
+import { useConfirm } from '~/composables/useConfirm'
 import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
@@ -17,10 +20,15 @@ const canShip = computed(() => useAuthStore().can('ship_queue.manage'))
 //   quét là gửi — mã nội bộ vừa đọc được chính là lệnh gửi đơn đó cho THE.
 //   Từ đó đơn sang màn Hành trình đơn hàng để CS gắn mã vận đơn.
 //
-// Luồng tick-từng-đơn rồi bấm nút đã bỏ: với vài chục đơn mỗi lượt, dò mã trên
-// màn hình để tick đúng dòng chậm và dễ nhầm hơn nhiều so với quét thẳng tờ đơn
-// đang cầm trên tay. Bảng bên dưới giữ vai trò hàng đợi để đối chiếu còn bao
-// nhiêu đơn chưa quét.
+// HAI đường gửi, vì có hai hoàn cảnh thật khác nhau:
+//
+//   • Quét QR — người đứng trạm cầm chồng đơn giấy, quét tờ nào gửi tờ ấy. Nhanh
+//     và gần như không thể gửi nhầm đơn, vì mã đọc từ chính tờ đang cầm.
+//   • Tick rồi gửi hàng loạt — chỗ không có máy quét (quán/văn phòng), hoặc khi
+//     cần tống cả hàng đợi đi một lệnh thay vì quét từng cái.
+//
+// Giữ cả hai chứ không chọn một: ép nơi không có máy quét phải quét là bắt họ
+// ngồi gõ tay từng mã, còn bỏ quét thì trạm xưởng mất đường nhanh nhất.
 
 const toast = useToastStore()
 
@@ -52,20 +60,101 @@ function qcDoneAt(o: QcResultOrder): string | undefined {
 
 function applyFilters() {
   filters.page = 1
+  clearSelection()
   reload()
 }
 function changePage(p: number) {
   filters.page = p
+  clearSelection()
   reload()
 }
 function changePageSize(size: number) {
   filters.page_size = size
   filters.page = 1
+  clearSelection()
   reload()
 }
 function resetSearch() {
   filters.q = ''
   applyFilters()
+}
+
+// ---- Chọn nhiều + gửi hàng loạt ---------------------------------------------
+// Chỉ tick được trong trang đang xem; đổi trang hay đổi bộ lọc là bỏ chọn, để
+// không bao giờ gửi đi thứ mình không nhìn thấy. Muốn gửi cả hàng đợi thì có nút
+// "chọn tất cả N đơn" riêng, bấm có ý thức.
+const selectionRows = computed(() => orders.value.map((o) => ({ id: o.order_id })))
+const { isSelected, toggle, rowClick, allSelected, someSelected, toggleAll, clear: clearSelection, selectedIds, count } =
+  useSelection(() => selectionRows.value)
+
+const shipping = ref(false)
+const selectingAll = ref(false)
+/** Kết quả lượt gửi gần nhất — giữ trên màn để soát, toast thì trôi mất. */
+const lastResult = ref<ShipToCarrierResult | null>(null)
+
+const totalMatching = computed(() => meta.value?.total ?? orders.value.length)
+const hasMoreThanPage = computed(() => totalMatching.value > orders.value.length)
+
+/** Tick luôn mọi đơn khớp bộ lọc, kể cả trang sau. */
+async function selectAllMatching() {
+  if (selectingAll.value) return
+  selectingAll.value = true
+  try {
+    const { data } = await qcApi.results({
+      state: 'done',
+      handed_over: false,
+      q: filters.q.trim() || undefined,
+      page: 1,
+      // -1 = lấy tất cả (quy ước phân trang của API), không phải 200 dòng đầu.
+      page_size: -1,
+    })
+    const all = data?.orders ?? []
+    clearSelection()
+    for (const o of all) toggle(o.order_id)
+    toast.info(`Đã chọn ${all.length} đơn khớp bộ lọc.`)
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    selectingAll.value = false
+  }
+}
+
+// Máy chủ chặn quá 200 đơn mỗi lệnh, nên chia lô ở đây rồi gộp kết quả lại —
+// người dùng chỉ thấy một lần bấm, một bản tổng kết.
+const SHIP_CHUNK = 200
+
+async function shipSelected() {
+  const ids = selectedIds.value
+  if (!ids.length || shipping.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Gửi đơn cho THE',
+    message:
+      `Gửi ${ids.length} đơn đã chọn cho THE? Sau khi gửi, đơn rời hàng đợi này và sang màn ` +
+      'Hành trình đơn hàng để CS gắn mã vận đơn. Đơn nào chưa QC đủ sẽ bị bỏ qua kèm lý do.',
+    confirmText: `Gửi ${ids.length} đơn`,
+  })
+  if (!ok) return
+
+  shipping.value = true
+  const merged: ShipToCarrierResult = { shipped: [], skipped: [] }
+  try {
+    for (let i = 0; i < ids.length; i += SHIP_CHUNK) {
+      const { data } = await handoffsApi.shipToCarrier(ids.slice(i, i + SHIP_CHUNK))
+      merged.shipped.push(...(data?.shipped ?? []))
+      merged.skipped.push(...(data?.skipped ?? []))
+    }
+    lastResult.value = merged
+    if (merged.shipped.length) toast.success(`Đã gửi ${merged.shipped.length} đơn cho THE.`)
+    if (merged.skipped.length) {
+      toast.error(`${merged.skipped.length} đơn không gửi được — xem lý do bên dưới bảng.`)
+    }
+    clearSelection()
+    reload()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    shipping.value = false
+  }
 }
 
 // ---- Trạm quét gửi hàng ------------------------------------------------------
@@ -150,7 +239,7 @@ function submitScan() {
   <div>
     <PageHeader
       title="Chờ gửi hàng"
-      subtitle="Đơn đã QC đủ và chưa gửi — bấm Quét gửi hàng rồi quét QR trên đơn, quét là gửi cho THE"
+      subtitle="Đơn đã QC đủ và chưa gửi — tick chọn rồi gửi hàng loạt, hoặc bấm Quét gửi hàng để quét QR từng đơn"
     >
       <template #actions>
         <button class="btn-secondary" @click="reload">
@@ -247,6 +336,26 @@ function submitScan() {
     </div>
 
     <div class="card overflow-hidden">
+      <!-- Thanh thao tác: chỉ hiện khi có dòng được tick -->
+      <UiBulkBar :count="count" noun="đơn" @clear="clearSelection">
+        <template #note>
+          <button
+            v-if="hasMoreThanPage"
+            class="table-action text-primary"
+            :disabled="selectingAll"
+            @click="selectAllMatching"
+          >
+            <UiSpinner v-if="selectingAll" :size="13" />
+            Chọn tất cả {{ totalMatching }} đơn khớp bộ lọc
+          </button>
+        </template>
+        <button class="btn-primary px-3 py-1.5 text-xs" :disabled="shipping" @click="shipSelected">
+          <UiSpinner v-if="shipping" :size="14" />
+          <UiIcon v-else name="shipping" :size="14" />
+          Gửi {{ count }} đơn cho THE
+        </button>
+      </UiBulkBar>
+
       <UiStateBlock
         :loading="loading"
         :error="error"
@@ -258,6 +367,16 @@ function submitScan() {
           <table class="min-w-full divide-y divide-border">
             <thead class="bg-muted">
               <tr>
+                <th v-if="canShip" class="table-th w-10">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 cursor-pointer rounded border-input accent-primary"
+                    :checked="allSelected"
+                    :indeterminate.prop="someSelected"
+                    aria-label="Chọn tất cả đơn trong trang"
+                    @change="toggleAll"
+                  />
+                </th>
                 <th class="table-th">Mã đơn shop</th>
                 <th class="table-th">Mã nội bộ</th>
                 <th class="table-th hidden md:table-cell">Seller</th>
@@ -266,7 +385,22 @@ function submitScan() {
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
-              <tr v-for="o in orders" :key="o.order_id" class="transition-colors hover:bg-muted/60">
+              <tr
+                v-for="o in orders"
+                :key="o.order_id"
+                class="transition-colors hover:bg-muted/60"
+                :class="isSelected(o.order_id) ? 'bg-primary/5' : ''"
+                @click="canShip && rowClick(o.order_id, $event)"
+              >
+                <td v-if="canShip" class="table-td">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 cursor-pointer rounded border-input accent-primary"
+                    :checked="isSelected(o.order_id)"
+                    :aria-label="`Chọn đơn ${o.store_order_id}`"
+                    @change="toggle(o.order_id)"
+                  />
+                </td>
                 <td class="table-td font-medium text-foreground">{{ o.store_order_id }}</td>
                 <td class="table-td font-mono text-xs text-muted-foreground">{{ o.internal_code }}</td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>
@@ -288,6 +422,31 @@ function submitScan() {
           @update:page-size="changePageSize"
         />
       </UiStateBlock>
+    </div>
+
+    <!-- Kết quả lượt gửi gần nhất. Đơn bị bỏ qua phải nêu đích danh kèm lý do:
+         bấm một nút gửi 50 đơn mà chỉ nói "xong" thì không ai biết 3 đơn nào rơi. -->
+    <div v-if="lastResult" class="card mt-4 p-4">
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <p class="text-sm font-semibold text-foreground">Kết quả lượt gửi vừa rồi</p>
+        <button class="table-action text-muted-foreground" @click="lastResult = null">Đóng</button>
+      </div>
+      <p class="text-sm text-muted-foreground">
+        <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ lastResult.shipped.length }}</span>
+        đơn đã gửi cho THE<template v-if="lastResult.skipped.length">
+          · <span class="font-semibold text-red-700 dark:text-rose-300">{{ lastResult.skipped.length }}</span>
+          đơn bị bỏ qua</template>
+      </p>
+      <ul v-if="lastResult.skipped.length" class="mt-2 max-h-56 space-y-1 overflow-y-auto">
+        <li
+          v-for="sk in lastResult.skipped"
+          :key="sk.order_id"
+          class="flex items-start gap-2 rounded-md bg-red-50 px-2.5 py-1.5 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300"
+        >
+          <UiIcon name="alert" :size="15" class="mt-0.5 shrink-0" />
+          <span><span class="font-mono font-semibold">{{ sk.internal_code || sk.order_id }}</span> — {{ sk.reason }}</span>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
