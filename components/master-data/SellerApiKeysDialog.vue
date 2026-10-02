@@ -6,6 +6,7 @@ import { formatDateTime } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
+import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
 
 // API key của một seller — chìa khoá để HỆ THỐNG của seller tự đẩy đơn vào xưởng
 // qua Open API (/api/open/v1), không cần người đăng nhập.
@@ -31,12 +32,7 @@ const open = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 
-// Tài liệu do API phục vụ (dưới /api vì proxy chỉ chuyển tiếp /api/*), nên link
-// ghép từ địa chỉ API chứ không phải địa chỉ web.
-const docsUrl = computed(() => {
-  const base = String(useRuntimeConfig().public.apiBaseUrl ?? '').replace(/\/+$/, '')
-  return `${base}/api/open/docs`
-})
+const docsUrl = useApiDocsUrl()
 
 const keys = ref<SellerApiKey[]>([])
 const loading = ref(false)

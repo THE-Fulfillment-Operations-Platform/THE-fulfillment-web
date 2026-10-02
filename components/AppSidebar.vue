@@ -3,12 +3,14 @@ import { useAuthStore } from '~/stores/auth'
 import { navForUser } from '~/utils/navigation'
 import { ROLE_LABEL } from '~/utils/enums'
 import { useActionCounts } from '~/composables/useActionCounts'
+import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
 
 defineEmits<{ (e: 'navigate'): void; (e: 'close'): void }>()
 
 const auth = useAuthStore()
 const items = computed(() => navForUser(auth.user))
 const { countForPath } = useActionCounts()
+const apiDocsUrl = useApiDocsUrl()
 </script>
 
 <template>
@@ -48,6 +50,19 @@ const { countForPath } = useActionCounts()
           {{ countForPath(item.to) > 99 ? '99+' : countForPath(item.to) }}
         </span>
       </NuxtLink>
+
+      <!-- Tài liệu kết nối API: trang ngoài (do API phục vụ), mở tab mới để gửi
+           link cho đối tác hoặc tự tra khi họ hỏi. -->
+      <a
+        :href="apiDocsUrl"
+        target="_blank"
+        rel="noopener"
+        class="mt-2 flex min-h-[2.75rem] items-center gap-3 rounded-xl border-t border-border px-3 py-2 pt-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        @click="$emit('navigate')"
+      >
+        <UiIcon name="link" :size="18" class="shrink-0" />
+        <span class="truncate">Tài liệu kết nối API</span>
+      </a>
     </nav>
 
     <div class="border-t border-border px-4 py-3">

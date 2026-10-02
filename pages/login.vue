@@ -2,12 +2,14 @@
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { ApiError, errorMessage } from '~/utils/api-error'
+import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
 
 definePageMeta({ layout: 'auth' })
 
 const auth = useAuthStore()
 const toast = useToastStore()
 const route = useRoute()
+const apiDocsUrl = useApiDocsUrl()
 
 const email = ref('')
 const password = ref('')
@@ -75,5 +77,16 @@ async function submit() {
       <UiIcon name="download" :size="16" />
       Cài app vào màn hình chính điện thoại
     </NuxtLink>
+    <!-- Người ngoài (đội kỹ thuật của đối tác) chưa có tài khoản vẫn phải tìm
+         được tài liệu kết nối từ trang đầu tiên họ thấy. -->
+    <a
+      :href="apiDocsUrl"
+      target="_blank"
+      rel="noopener"
+      class="mt-3 flex items-center justify-center gap-2 text-sm text-primary hover:underline"
+    >
+      <UiIcon name="link" :size="16" />
+      Tài liệu kết nối API cho đối tác
+    </a>
   </div>
 </template>

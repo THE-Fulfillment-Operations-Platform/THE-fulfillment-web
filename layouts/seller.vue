@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useAuthStore } from '~/stores/auth'
 import { SELLER_NAV } from '~/utils/navigation'
+import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
+const apiDocsUrl = useApiDocsUrl()
 const auth = useAuthStore()
 const route = useRoute()
 
@@ -31,6 +33,17 @@ function isActive(to: string) {
             <UiIcon :name="item.icon" :size="16" />
             <span class="hidden sm:inline">{{ item.label }}</span>
           </NuxtLink>
+          <!-- Seller có hệ thống riêng thì đội kỹ thuật của họ cần trang này. -->
+          <a
+            :href="apiDocsUrl"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Tài liệu kết nối API"
+          >
+            <UiIcon name="link" :size="16" />
+            <span class="hidden sm:inline">Kết nối API</span>
+          </a>
         </nav>
       </div>
       <div class="flex shrink-0 items-center gap-2 sm:gap-3">
