@@ -1,6 +1,8 @@
 import { apiGet, apiPost, apiPut, apiDelete, apiDownload } from '../http'
 import type {
   Seller,
+  SellerApiKey,
+  CreatedSellerApiKey,
   Store,
   Material,
   Sku,
@@ -64,6 +66,13 @@ export const sellersApi = {
   create: (body: Partial<Seller>) => apiPost<Seller>('/api/sellers', body),
   update: (id: number | string, body: Partial<Seller>) => apiPut<Seller>(`/api/sellers/${id}`, body),
   remove: (id: number | string) => apiDelete<unknown>(`/api/sellers/${id}`),
+  // API key để hệ thống của seller tự đẩy đơn (Open API). Tạo / thu hồi cần
+  // Admin/Owner; key gốc chỉ nằm trong câu trả lời của createApiKey.
+  apiKeys: (id: number | string) => apiGet<SellerApiKey[]>(`/api/sellers/${id}/api-keys`),
+  createApiKey: (id: number | string, name: string) =>
+    apiPost<CreatedSellerApiKey>(`/api/sellers/${id}/api-keys`, { name }),
+  revokeApiKey: (id: number | string, keyId: number | string) =>
+    apiDelete<SellerApiKey>(`/api/sellers/${id}/api-keys/${keyId}`),
 }
 
 // ---- Stores ----------------------------------------------------------------

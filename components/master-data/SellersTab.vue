@@ -6,6 +6,7 @@ import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useClientPager } from '~/composables/useClientPager'
+import SellerApiKeysDialog from './SellerApiKeysDialog.vue'
 
 // Seller (gian hàng) management. A Seller is the business entity that owns a
 // batch of orders; a SELLER-role user account is then linked to it by id. This
@@ -112,6 +113,14 @@ async function submit() {
   }
 }
 
+// Kết nối API: cấp key cho hệ thống của seller tự đẩy đơn.
+const apiOpen = ref(false)
+const apiSeller = ref<Seller | null>(null)
+function openApi(s: Seller) {
+  apiSeller.value = s
+  apiOpen.value = true
+}
+
 const removingId = ref<number | null>(null)
 async function remove(s: Seller) {
   if (
@@ -184,6 +193,7 @@ async function remove(s: Seller) {
               </td>
               <td class="table-td">
                 <div class="flex items-center justify-end gap-1">
+                  <button v-if="canManage" class="table-action text-primary" @click="openApi(s)">API</button>
                   <button v-if="canManage" class="table-action text-primary" @click="openEdit(s)">Sửa</button>
                   <button
                     v-if="canDelete"
@@ -252,5 +262,7 @@ async function remove(s: Seller) {
         </button>
       </template>
     </UiModal>
+
+    <SellerApiKeysDialog v-model="apiOpen" :seller="apiSeller" />
   </div>
 </template>

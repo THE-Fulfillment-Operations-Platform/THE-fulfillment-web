@@ -190,6 +190,25 @@ export interface Seller {
   stores?: StoreRef[]
 }
 
+/**
+ * Key để HỆ THỐNG của seller gọi Open API (/api/open/v1). Máy chủ chỉ lưu mã
+ * băm: `prefix` (12 ký tự đầu) là thứ duy nhất còn lại để phân biệt các key.
+ */
+export interface SellerApiKey {
+  id: number
+  seller_id: number
+  name: string
+  prefix: string
+  last_used_at?: string | null
+  revoked_at?: string | null
+  created_at: string
+}
+
+/** Câu trả lời lúc tạo key — lần duy nhất có `key` (key gốc). */
+export interface CreatedSellerApiKey extends SellerApiKey {
+  key: string
+}
+
 export interface Store {
   id: number
   seller_id: number
