@@ -13,6 +13,7 @@ import {
   batchMaterialLabel,
   batchStatusBadge,
   missingBatchLinks,
+  PRODUCTION_FILES_READY,
 } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { errorMessage } from '~/utils/api-error'
@@ -47,7 +48,7 @@ const filters = reactive({
 const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
   batchesApi.list({
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
-    status: filters.status || undefined,
+    ...statusQuery(filters.status),
     priority: filters.priority || undefined,
     code: filters.code.trim() || undefined,
     page: filters.page,
@@ -59,10 +60,26 @@ const materialOptions = computed(() => [
   { value: '', label: 'Tất cả' },
   ...materials.value.map((m) => ({ value: m.id, label: m.name })),
 ])
+// "Đã có file SX" không phải status lưu trong DB — là PENDING đã đủ link in +
+// cắt (xem batchStatusBadge). Lọc vẫn chạy ở backend (?files=) để phân trang và
+// tổng số đúng; "Chờ xử lý" vì thế chỉ còn các batch chưa đủ file, khớp nhãn.
+const FILES_READY = 'FILES_READY'
 const statusOptions = [
   { value: '', label: 'Tất cả' },
-  ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+  ...INTERNAL_STATUS_ORDER.flatMap((s) =>
+    s === 'PENDING'
+      ? [
+          { value: s, label: INTERNAL_STATUS[s].label },
+          { value: FILES_READY, label: PRODUCTION_FILES_READY.label },
+        ]
+      : [{ value: s, label: INTERNAL_STATUS[s].label }],
+  ),
 ]
+function statusQuery(v: string): { status?: string; files?: 'ready' | 'missing' } {
+  if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
+  if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
+  return { status: v || undefined }
+}
 const priorityOptions = [
   { value: '', label: 'Tất cả' },
   ...PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label })),

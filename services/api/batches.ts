@@ -138,6 +138,9 @@ export interface BatchListParams extends ListParams {
   // Mã nội bộ đơn ("100047") hoặc mã tem item ("100047_1/1") — trả về (các)
   // batch đang sản xuất đơn đó.
   code?: string
+  // Tách "Chờ xử lý" như nhãn trên bảng: ready = đã đủ link in + cắt ("Đã có file
+  // SX"), missing = chưa đủ. Đi kèm status=PENDING.
+  files?: 'ready' | 'missing'
 }
 
 export interface CreateBatchInput {
