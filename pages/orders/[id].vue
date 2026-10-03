@@ -26,6 +26,18 @@ const { data: order, loading, error, reload } = useApiResource<Order>(() => orde
 
 // This is an operational detail view. Cancelled lines remain in the database
 // for audit, but must not appear as work that Design/Production still owns.
+// Link design của một sản phẩm, theo thứ tự mặt trước → mặt sau. Sản phẩm 2 mặt
+// ghi rõ mặt; 1 mặt chỉ gọi là "Design".
+function designRefs(it: OrderItem): { label: string; value: string; isUrl: boolean }[] {
+  const front = (it.design_url ?? '').trim()
+  const back = (it.back_design_url ?? '').trim()
+  const isUrl = (v: string) => /^https?:\/\//i.test(v)
+  const out: { label: string; value: string; isUrl: boolean }[] = []
+  if (front) out.push({ label: back ? 'Design mặt trước' : 'Design', value: front, isUrl: isUrl(front) })
+  if (back) out.push({ label: 'Design mặt sau', value: back, isUrl: isUrl(back) })
+  return out
+}
+
 const items = computed<OrderItem[]>(() =>
   (order.value?.items ?? []).filter(
     (item) => item.cancellation_status !== 'SELLER_CANCELLED' && item.cancellation_status !== 'APPROVED',
@@ -501,6 +513,15 @@ async function syncTracking() {
 
               <div class="mt-3 flex flex-wrap items-center gap-4 border-t border-border pt-3 text-sm">
                 <UiMockupLink :url="it.mockup_url" label="Mockup seller" />
+                <!-- File design seller gửi (mặt trước / mặt sau). Cột design có thể là
+                     link hoặc chỉ là mã tham chiếu — mã thì in ra để copy, không làm link. -->
+                <template v-for="d in designRefs(it)" :key="d.label">
+                  <a v-if="d.isUrl" :href="d.value" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-primary hover:underline">
+                    <UiIcon name="link" :size="14" /> {{ d.label }}
+                  </a>
+                  <span v-else class="text-xs text-muted-foreground">{{ d.label }}: <span class="select-all font-mono text-foreground">{{ d.value }}</span></span>
+                </template>
+                <span v-if="!designRefs(it).length" class="text-xs text-muted-foreground">Design: chưa có</span>
                 <a v-if="it.print_file_url" :href="it.print_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline">
                   <UiIcon name="link" :size="14" /> File in
                 </a>
