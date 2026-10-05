@@ -52,6 +52,14 @@ export interface SkuInput {
   parent_id?: number | null
   length_mm?: number | null
   width_mm?: number | null
+  // Thông tin vận chuyển cho MỘT sản phẩm đã đóng gói. Khi sửa: bỏ field = giữ
+  // nguyên, 0 / '' = xoá (SKU con khi đó lấy theo SKU cha).
+  ship_weight_g?: number | null
+  ship_length_cm?: number | null
+  ship_width_cm?: number | null
+  ship_height_cm?: number | null
+  declared_value?: number | null
+  hs_code?: string
   // Optional: a SKU may be created unmapped and get its material(s) later.
   materials?: SkuMaterialInput[]
 }
@@ -126,4 +134,42 @@ export const skusApi = {
   bulkRemove: (ids: number[]) => apiPost<SkuDeleteResult>('/api/skus/bulk-delete', { ids }),
   bulkSetActive: (ids: number[], isActive: boolean) =>
     apiPost<{ updated: number }>('/api/skus/bulk-active', { ids, is_active: isActive }),
+  // Thông tin vận chuyển (cân nặng, hộp, giá trị khai báo, mã HS) hàng loạt:
+  // tải file mọi SKU → điền → xem trước → ghi. Commit gửi LẠI đúng file đó,
+  // máy chủ đối chiếu lại từ đầu rồi mới ghi (không tin bản xem trước cũ).
+  downloadShippingExport: () =>
+    apiDownload('/api/skus/shipping/export.xlsx', 'sku-thong-tin-van-chuyen.xlsx'),
+  shippingImportPreview: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiPost<SkuShippingPreview>('/api/skus/shipping/import/preview', fd)
+  },
+  shippingImportCommit: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiPost<SkuShippingPreview>('/api/skus/shipping/import/commit', fd)
+  },
+}
+
+export interface SkuShippingPreviewRow {
+  row: number
+  code: string
+  sku_id?: number
+  status: 'CHANGED' | 'UNCHANGED' | 'ERROR'
+  changes?: string[]
+  error?: string
+  // Sau khi nạp, SKU này (tính cả phần lấy theo SKU cha) vẫn còn thiếu gì.
+  missing?: string[]
+}
+
+export interface SkuShippingPreview {
+  columns: string[]
+  rows: SkuShippingPreviewRow[]
+  total: number
+  changed: number
+  unchanged: number
+  errors: number
+  incomplete: number
+  can_commit: boolean
+  committed: boolean
 }

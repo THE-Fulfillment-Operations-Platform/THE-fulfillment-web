@@ -11,8 +11,10 @@ import { useAuthStore } from '~/stores/auth'
 import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
 import { useClientPager } from '~/composables/useClientPager'
+import { effectiveShipping, missingShipping, formatShipping } from '~/utils/shipping'
 import SkuImportDialog from './SkuImportDialog.vue'
 import ParentSkuImportDialog from './ParentSkuImportDialog.vue'
+import SkuShippingImportDialog from './SkuShippingImportDialog.vue'
 
 const props = defineProps<{ skus: Sku[]; materials: Material[]; loading?: boolean }>()
 const emit = defineEmits<{ (e: 'changed'): void; (e: 'imported'): void }>()
@@ -21,6 +23,8 @@ const emit = defineEmits<{ (e: 'changed'): void; (e: 'imported'): void }>()
 // (SkuImportDialog — chính là import Excel vận hành cũ, thêm cột SKU cha + D/R).
 const importOpen = ref(false)
 const parentImportOpen = ref(false)
+// Khai thông tin vận chuyển hàng loạt bằng Excel (cân nặng, hộp, giá trị, mã HS).
+const shippingImportOpen = ref(false)
 
 const toast = useToastStore()
 const auth = useAuthStore()
@@ -50,6 +54,14 @@ function isTopLevel(s: Sku): boolean {
   return s.parent_id == null || !byId.value.has(s.parent_id)
 }
 const parentCount = computed(() => childrenOf.value.size)
+
+// Thông tin vận chuyển thực tế (kể cả phần lấy theo SKU cha) và phần còn thiếu.
+// SKU cha chỉ để gom nhóm thì không bị báo thiếu: nó không đi đơn, con nó mới đi.
+function shippingOf(s: Sku) {
+  const parent = s.parent_id != null ? byId.value.get(s.parent_id) ?? null : null
+  const spec = effectiveShipping(s, parent)
+  return { spec, missing: missingShipping(spec), summary: formatShipping(spec) }
+}
 
 const search = ref('')
 // Chỉ hiện các SKU cha — nhìn một lượt xem mỗi cha đang chứa bao nhiêu con.
@@ -148,6 +160,28 @@ const form = reactive<Required<Pick<SkuInput, 'code' | 'name' | 'product_name' |
 const parentId = ref(0)
 const lengthMM = ref<string | number>('')
 const widthMM = ref<string | number>('')
+// Thông tin vận chuyển của MỘT sản phẩm đã đóng gói. '' = không tự khai → lấy
+// theo SKU cha (placeholder hiện giá trị sẽ được lấy).
+const ship = reactive({
+  weight: '' as string | number,
+  length: '' as string | number,
+  width: '' as string | number,
+  height: '' as string | number,
+  value: '' as string | number,
+  hs: '',
+})
+function resetShip(s?: Sku) {
+  ship.weight = s?.ship_weight_g ?? ''
+  ship.length = s?.ship_length_cm ?? ''
+  ship.width = s?.ship_width_cm ?? ''
+  ship.height = s?.ship_height_cm ?? ''
+  ship.value = s?.declared_value ?? ''
+  ship.hs = s?.hs_code ?? ''
+}
+// Giá trị SKU cha đang khai — làm placeholder để thấy ô trống sẽ lấy số nào.
+function inheritedHint(v?: number | string | null): string {
+  return v != null && v !== '' ? `Theo SKU cha: ${v}` : ''
+}
 // selected material ids + per-material quantity + per-material declared quota
 const selectedMats = ref<number[]>([])
 const qtyByMat = reactive<Record<number, number>>({})
@@ -192,6 +226,7 @@ function openCreate(parent?: Sku) {
   parentId.value = parent?.id ?? 0
   lengthMM.value = ''
   widthMM.value = ''
+  resetShip()
   selectedMats.value = []
   open.value = true
 }
@@ -205,6 +240,7 @@ function openEdit(s: Sku) {
   parentId.value = s.parent_id ?? 0
   lengthMM.value = s.length_mm ?? ''
   widthMM.value = s.width_mm ?? ''
+  resetShip(s)
   selectedMats.value = (s.materials ?? []).map((m) => m.material_id)
   for (const m of s.materials ?? []) {
     qtyByMat[m.material_id] = m.quantity_per_unit || 1
@@ -229,6 +265,26 @@ const sizeError = computed(() => {
 const canSubmit = computed(
   () => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !sizeError.value,
 )
+
+// Ô vận chuyển → số dương, hoặc null khi để trống (= lấy theo SKU cha).
+function shipNum(v: string | number): number | null {
+  const raw = String(v).trim().replace(',', '.')
+  const n = Number(raw)
+  return raw !== '' && Number.isFinite(n) && n > 0 ? n : null
+}
+// Gói phần vận chuyển cho API. clear=true (đang sửa): ô trống gửi 0 / '' để xoá
+// giá trị đang lưu, vì form đang hiện đúng giá trị hiện tại.
+function shipPayload(clear: boolean) {
+  const n = (v: string | number) => shipNum(v) ?? (clear ? 0 : null)
+  return {
+    ship_weight_g: n(ship.weight),
+    ship_length_cm: n(ship.length),
+    ship_width_cm: n(ship.width),
+    ship_height_cm: n(ship.height),
+    declared_value: n(ship.value),
+    hs_code: ship.hs.trim(),
+  }
+}
 
 function buildMaterials() {
   return selectedMats.value.map((id) => {
@@ -258,6 +314,7 @@ async function submit() {
         parent_id: parent ?? 0,
         length_mm: parseDim(lengthMM.value) ?? 0,
         width_mm: parseDim(widthMM.value) ?? 0,
+        ...shipPayload(true),
         materials: buildMaterials(),
       })
       toast.success('Đã cập nhật SKU')
@@ -271,6 +328,7 @@ async function submit() {
         parent_id: parent,
         length_mm: parseDim(lengthMM.value),
         width_mm: parseDim(widthMM.value),
+        ...shipPayload(false),
         materials: buildMaterials(),
       })
       toast.success('Đã tạo SKU')
@@ -401,6 +459,14 @@ async function remove(s: Sku) {
         <button
           v-if="canManage"
           class="btn-secondary"
+          title="Khai cân nặng + kích thước hộp cho nhiều SKU bằng Excel — cần để tạo đơn THE"
+          @click="shippingImportOpen = true"
+        >
+          <UiIcon name="shipping" :size="16" /> Vận chuyển (Excel)
+        </button>
+        <button
+          v-if="canManage"
+          class="btn-secondary"
           title="Bước 1: tạo các SKU cha (vd Hộp nhựa) trước"
           @click="parentImportOpen = true"
         >
@@ -448,6 +514,7 @@ async function remove(s: Sku) {
               <th class="table-th">SKU</th>
               <th class="table-th">Tên sản phẩm</th>
               <th class="table-th">D x R</th>
+              <th class="table-th" title="Cân nặng · hộp (· giá trị khai báo nếu SKU khai riêng) — để tạo đơn THE. Ô trống ở SKU con lấy theo SKU cha">Vận chuyển</th>
               <th class="table-th">Nguyên vật liệu</th>
               <th class="table-th">Trạng thái</th>
               <th class="table-th"></th>
@@ -498,6 +565,28 @@ async function remove(s: Sku) {
               <td class="table-td text-foreground">{{ r.sku.product_name || r.sku.name }}</td>
               <td class="table-td whitespace-nowrap tabular-nums text-muted-foreground">
                 {{ formatDimMM(r.sku.length_mm, r.sku.width_mm) }}
+              </td>
+              <td class="table-td whitespace-normal text-xs">
+                <!-- SKU cha chỉ gom nhóm: không đi đơn, nên không báo thiếu — chỉ hiện
+                     phần nó khai (các con lấy theo). -->
+                <template v-if="!r.child && kids(r.sku).length">
+                  <span v-if="shippingOf(r.sku).summary" class="tabular-nums text-muted-foreground">{{ shippingOf(r.sku).summary }}</span>
+                  <span v-else class="text-muted-foreground">—</span>
+                </template>
+                <span
+                  v-else-if="shippingOf(r.sku).missing.length"
+                  class="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                  :title="shippingOf(r.sku).summary || 'Chưa khai'"
+                >
+                  <UiIcon name="alert" :size="12" /> Thiếu {{ shippingOf(r.sku).missing.join(', ') }}
+                </span>
+                <span
+                  v-else
+                  class="tabular-nums text-muted-foreground"
+                  :title="shippingOf(r.sku).spec.hs_code ? `Mã HS ${shippingOf(r.sku).spec.hs_code}` : 'Mã HS, giá trị: theo mặc định bên THE'"
+                >
+                  {{ shippingOf(r.sku).summary }}
+                </span>
               </td>
               <td class="table-td whitespace-normal">
                 <div v-if="materialChips(r.sku).length" class="flex flex-wrap gap-1">
@@ -638,6 +727,60 @@ async function remove(s: Sku) {
           <textarea v-model="form.description" rows="2" class="input" placeholder="Ghi chú (tuỳ chọn)" />
         </div>
 
+        <!-- Vận chuyển: thứ THE cần để tạo đơn. Một sản phẩm, đã đóng gói. -->
+        <div class="rounded-lg border border-border p-3">
+          <p class="mb-2 text-sm font-medium text-foreground">Vận chuyển (gửi THE)</p>
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div>
+              <label class="label">Cân nặng (g)</label>
+              <input
+                v-model="ship.weight" type="number" min="0" step="0.1" class="input"
+                :placeholder="inheritedHint(resolvedParent?.ship_weight_g) || 'VD: 120'"
+              />
+            </div>
+            <div>
+              <label class="label">Giá trị khai báo (USD)</label>
+              <input
+                v-model="ship.value" type="number" min="0" step="0.01" class="input"
+                :placeholder="inheritedHint(resolvedParent?.declared_value) || 'Theo mặc định bên THE'"
+              />
+            </div>
+            <div>
+              <label class="label">Mã HS</label>
+              <input
+                v-model="ship.hs" class="input font-mono"
+                :placeholder="inheritedHint(resolvedParent?.hs_code) || 'Theo mặc định bên THE'"
+              />
+            </div>
+            <div>
+              <label class="label">Dài hộp (cm)</label>
+              <input
+                v-model="ship.length" type="number" min="0" step="0.1" class="input"
+                :placeholder="inheritedHint(resolvedParent?.ship_length_cm) || 'VD: 20'"
+              />
+            </div>
+            <div>
+              <label class="label">Rộng hộp (cm)</label>
+              <input
+                v-model="ship.width" type="number" min="0" step="0.1" class="input"
+                :placeholder="inheritedHint(resolvedParent?.ship_width_cm) || 'VD: 15'"
+              />
+            </div>
+            <div>
+              <label class="label">Cao hộp (cm)</label>
+              <input
+                v-model="ship.height" type="number" min="0" step="0.1" class="input"
+                :placeholder="inheritedHint(resolvedParent?.ship_height_cm) || 'VD: 2'"
+              />
+            </div>
+          </div>
+          <p class="mt-2 text-[11px] text-muted-foreground">
+            Xưởng khai <b class="text-foreground">cân nặng</b> và <b class="text-foreground">kích thước hộp</b> cho MỘT sản phẩm đã đóng gói.
+            Ô để trống ở SKU con lấy theo SKU cha — khai một lần ở SKU cha, SKU con chỉ điền chỗ khác.
+            Giá trị khai báo và mã HS do bên THE đặt mặc định; chỉ điền khi sản phẩm này cần khác.
+          </p>
+        </div>
+
         <div>
           <label class="label">Nguyên vật liệu (chọn 1 hoặc nhiều cho combo)</label>
           <p class="mb-2 text-[11px] text-muted-foreground">
@@ -706,5 +849,6 @@ async function remove(s: Sku) {
          lại cả hai danh sách chứ không chỉ SKU. -->
     <ParentSkuImportDialog v-model="parentImportOpen" @imported="emit('imported')" />
     <SkuImportDialog v-model="importOpen" @imported="emit('imported')" />
+    <SkuShippingImportDialog v-model="shippingImportOpen" @imported="emit('changed')" />
   </div>
 </template>

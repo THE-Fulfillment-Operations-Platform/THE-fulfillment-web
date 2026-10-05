@@ -256,6 +256,15 @@ export interface Sku {
   // định mức. null = chưa khai (phải có cả hai hoặc không có cả hai).
   length_mm?: number | null
   width_mm?: number | null
+  // Thông tin vận chuyển của MỘT sản phẩm đã đóng gói (gửi cho THE khi tạo đơn):
+  // cân nặng gram, hộp cm, giá trị khai báo USD, mã HS. null / '' = SKU này không
+  // tự khai → lấy theo SKU cha, từng ô một.
+  ship_weight_g?: number | null
+  ship_length_cm?: number | null
+  ship_width_cm?: number | null
+  ship_height_cm?: number | null
+  declared_value?: number | null
+  hs_code?: string
   materials?: SkuMaterial[]
 }
 
