@@ -201,6 +201,17 @@ async function commit() {
           <span class="font-medium text-foreground">Link cắt</span> vào đúng dòng rồi upload lại.
           Sắp xếp lại các dòng thoải mái — hệ thống đối chiếu bằng Batch ID, không theo vị trí dòng.
         </p>
+        <!-- File ngắn xưởng tự gõ (anh Kiên, 04/10/2026): một thư mục Drive chứa cả
+             file in lẫn file cắt của batch → gắn vào CẢ link in và link cắt. -->
+        <div class="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+          <p class="font-medium text-foreground">Hoặc dùng file 2 cột tự làm</p>
+          <p class="mt-0.5">
+            Cột <span class="font-mono text-foreground">Số batch</span> (vd #101198) và cột
+            <span class="font-mono text-foreground">Link Drive</span> — mỗi dòng một batch. Link Drive được gắn vào
+            cả link in lẫn link cắt. Muốn link in và link cắt khác nhau thì thay cột Link Drive bằng hai cột
+            <span class="font-mono text-foreground">Link in</span> và <span class="font-mono text-foreground">Link cắt</span>.
+          </p>
+        </div>
         <div class="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           <UiIcon name="alert" :size="14" class="mt-0.5 shrink-0" />
           <span>
