@@ -101,19 +101,28 @@ export async function request<T>(
  * envelope. Callers wrap this in try/catch and surface it as a toast.
  */
 export async function apiDownload(url: string, filename: string): Promise<void> {
+  const blob = await apiBlob(url, 'Không tải được file')
+  const objectUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = objectUrl
+  a.download = filename
+  // Append to the DOM before clicking and defer revoke — Firefox/Safari can
+  // cancel the download if the anchor is detached or the URL is revoked in the
+  // same tick as the click.
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+}
+
+/**
+ * Fetch an authenticated binary (a label, an export) as a Blob, without saving
+ * it — for callers that render or print it themselves. Errors carry the
+ * server's own message, read out of the blob-typed error envelope.
+ */
+export async function apiBlob(url: string, fallbackMessage = 'Không tải được file'): Promise<Blob> {
   try {
-    const blob = await client()<Blob>(url, { method: 'GET', responseType: 'blob' })
-    const objectUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = objectUrl
-    a.download = filename
-    // Append to the DOM before clicking and defer revoke — Firefox/Safari can
-    // cancel the download if the anchor is detached or the URL is revoked in the
-    // same tick as the click.
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+    return await client()<Blob>(url, { method: 'GET', responseType: 'blob' })
   } catch (e) {
     if (e instanceof ApiError) throw e
     const fe = e as { data?: unknown; status?: number; statusCode?: number; message?: string }
@@ -123,7 +132,7 @@ export async function apiDownload(url: string, filename: string): Promise<void> 
     // bị thay bằng "[GET] …: 422 Unprocessable Entity".
     const env = await blobEnvelope(fe?.data)
     throw new ApiError(
-      env?.error?.message || fe?.message || 'Không tải được file',
+      env?.error?.message || fe?.message || fallbackMessage,
       env?.error?.code || (status ? `HTTP_${status}` : 'DOWNLOAD_FAILED'),
       status,
       env?.error?.details,

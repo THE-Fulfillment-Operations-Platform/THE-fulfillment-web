@@ -3,6 +3,7 @@ import { adminApi } from '~/services/api'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
+import TheConnectionCard from '~/components/settings/TheConnectionCard.vue'
 
 // System settings. Currently a single "danger zone": wiping all order/production
 // data so the operator can re-import from scratch. Route is OWNER-gated in
@@ -19,6 +20,7 @@ const WILL_DELETE = [
   'Đóng gói & bàn giao (packages/handoffs)',
   'Bản ghi QC',
   'Lịch sử import đơn (import jobs)',
+  'Lịch sử đơn THE trong FFM (đơn bên THE vẫn giữ nguyên)',
 ]
 const WILL_KEEP = [
   'Nguyên vật liệu (NVL)',
@@ -68,6 +70,8 @@ async function confirmReset() {
     </div>
 
     <div v-else class="max-w-2xl space-y-4">
+      <TheConnectionCard />
+
       <!-- Danger zone -->
       <div class="card overflow-hidden border-rose-200/70 dark:border-rose-500/30">
         <div class="border-b border-rose-200/70 bg-rose-50 px-5 py-3 dark:border-rose-500/30 dark:bg-rose-500/10">

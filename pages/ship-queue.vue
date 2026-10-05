@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { qcApi, handoffsApi } from '~/services/api'
-import type { ShipToCarrierResult } from '~/services/api/handoffs'
+import { qcApi, handoffsApi, carrierApi } from '~/services/api'
+import type { ShipToCarrierResult, ShipOptions } from '~/services/api/handoffs'
+import type { THEPreflight } from '~/services/api/carrier'
+import { printTHELabels } from '~/utils/theLabels'
 import type { QcResultOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
@@ -120,12 +122,44 @@ async function selectAllMatching() {
 }
 
 // Máy chủ chặn quá 200 đơn mỗi lệnh, nên chia lô ở đây rồi gộp kết quả lại —
-// người dùng chỉ thấy một lần bấm, một bản tổng kết.
+// người dùng chỉ thấy một lần bấm, một bản tổng kết. Khi kết nối THE đang bật,
+// mỗi đơn là vài lời gọi THE (tạo + chốt đơn, có khi tới cả phút) nên chia lô
+// 10 đơn và hiện tiến độ, thay vì một request treo vài phút.
 const SHIP_CHUNK = 200
+const THE_CHUNK = 10
+
+// ---- Kết nối THE -------------------------------------------------------------
+// Bấm gửi khi kết nối THE bật: kiểm tra trước (không tốn tiền) → hộp xác nhận
+// nêu số đơn sẵn sàng / bị giữ lại + số dư ví → mới tạo đơn THE thật.
+const preflight = ref<THEPreflight | null>(null)
+const confirmOpen = ref(false)
+const progress = ref<{ done: number; total: number } | null>(null)
+const readyIds = computed(() => (preflight.value?.orders ?? []).filter((o) => o.ready).map((o) => o.order_id))
+const blockedOrders = computed(() => (preflight.value?.orders ?? []).filter((o) => !o.ready))
+const paidAlready = computed(() => (preflight.value?.orders ?? []).filter((o) => o.already_paid).length)
 
 async function shipSelected() {
   const ids = selectedIds.value
   if (!ids.length || shipping.value) return
+  shipping.value = true
+  try {
+    const { data: pf } = await carrierApi.preflight(ids.slice(0, SHIP_CHUNK))
+    if (pf.enabled) {
+      if (pf.problem && !pf.orders.length) {
+        toast.error(pf.problem)
+        return
+      }
+      preflight.value = pf
+      confirmOpen.value = true
+      return
+    }
+  } catch (e) {
+    toast.error(errorMessage(e))
+    return
+  } finally {
+    shipping.value = false
+  }
+  // Kết nối THE đang tắt: như trước — ghi nhận bàn giao.
   const ok = await useConfirm().confirm({
     title: 'Gửi đơn cho THE',
     message:
@@ -134,27 +168,96 @@ async function shipSelected() {
     confirmText: `Gửi ${ids.length} đơn`,
   })
   if (!ok) return
+  await send(ids, {}, SHIP_CHUNK)
+}
 
+/** Xác nhận trong hộp THE: tạo đơn THE cho các đơn sẵn sàng. */
+async function confirmTHE() {
+  confirmOpen.value = false
+  await send(readyIds.value, {}, THE_CHUNK)
+}
+
+/** Ghi nhận bàn giao KHÔNG tạo đơn THE — cho đơn THE không nhận qua API. */
+async function sendManual(ids: number[]) {
+  const ok = await useConfirm().confirm({
+    title: 'Chỉ ghi nhận bàn giao',
+    message:
+      `Ghi nhận ${ids.length} đơn đã bàn giao cho THE mà KHÔNG tạo đơn trên THE qua API ` +
+      '(không có label, không tự gắn mã). Chỉ dùng cho đơn đã tạo trên THE bằng cách khác.',
+    confirmText: 'Ghi nhận',
+  })
+  if (!ok) return
+  confirmOpen.value = false
+  await send(ids, { manual_handoff: true }, SHIP_CHUNK)
+}
+
+/** Gửi lại các đơn trượt kiểm tra địa chỉ, bỏ qua kiểm tra (địa chỉ đã soát tay). */
+async function resendSkippingAddress(ids: number[]) {
+  const ok = await useConfirm().confirm({
+    title: 'Gửi bỏ qua kiểm tra địa chỉ',
+    message:
+      `Gửi ${ids.length} đơn mà không kiểm tra địa chỉ với USPS. Chỉ làm khi đã xem kỹ địa chỉ: ` +
+      'địa chỉ sai thì kiện có thể bị trả về và vẫn mất cước.',
+    confirmText: `Gửi ${ids.length} đơn`,
+  })
+  if (!ok) return
+  await send(ids, { skip_address_check: true }, THE_CHUNK)
+}
+
+async function send(ids: number[], opts: ShipOptions, chunk: number) {
+  if (!ids.length || shipping.value) return
   shipping.value = true
   const merged: ShipToCarrierResult = { shipped: [], skipped: [] }
+  progress.value = { done: 0, total: ids.length }
   try {
-    for (let i = 0; i < ids.length; i += SHIP_CHUNK) {
-      const { data } = await handoffsApi.shipToCarrier(ids.slice(i, i + SHIP_CHUNK))
+    for (let i = 0; i < ids.length; i += chunk) {
+      const part = ids.slice(i, i + chunk)
+      const { data } = await handoffsApi.shipToCarrier(part, opts)
       merged.shipped.push(...(data?.shipped ?? []))
       merged.skipped.push(...(data?.skipped ?? []))
+      progress.value = { done: Math.min(i + part.length, ids.length), total: ids.length }
     }
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
     lastResult.value = merged
     if (merged.shipped.length) toast.success(`Đã gửi ${merged.shipped.length} đơn cho THE.`)
     if (merged.skipped.length) {
       toast.error(`${merged.skipped.length} đơn không gửi được — xem lý do bên dưới bảng.`)
     }
+    progress.value = null
+    shipping.value = false
     clearSelection()
     reload()
+  }
+}
+
+// ---- In label ------------------------------------------------------------------
+const printing = ref(false)
+const labelOrders = computed(() =>
+  (lastResult.value?.shipped ?? []).filter((s) => s.the?.has_label).map((s) => ({ id: s.order_id, code: s.internal_code })),
+)
+const addressSkipped = computed(() => (lastResult.value?.skipped ?? []).filter((s) => s.code === 'ADDRESS'))
+
+async function printLabels(orders: Array<{ id: number; code?: string }>) {
+  if (!orders.length || printing.value) return
+  printing.value = true
+  try {
+    const res = await printTHELabels(orders)
+    if (res.failed.length) toast.error(`${res.failed.length} label chưa tải được — in lại từ chi tiết đơn.`)
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
-    shipping.value = false
+    printing.value = false
   }
+}
+
+const SKIP_HINT: Record<string, string> = {
+  DATA: 'Sửa dữ liệu đơn / SKU rồi gửi lại',
+  ADDRESS: 'Kiểm tra địa chỉ, hoặc gửi bỏ qua kiểm tra',
+  THE: 'THE từ chối',
+  WAIT: 'Đợi rồi gửi lại — an toàn, không trừ tiền 2 lần',
+  UNCLEAR: 'Gửi lại sau — hệ thống tự đối chiếu với THE',
 }
 
 // ---- Trạm quét gửi hàng ------------------------------------------------------
@@ -186,6 +289,9 @@ interface ScanLogEntry {
   internal_code?: string
   store_order_id?: string
   handoff_code?: string
+  order_id?: number
+  the_tracking?: string
+  has_label?: boolean
   reason?: string
 }
 const scanLog = ref<ScanLogEntry[]>([])
@@ -215,7 +321,8 @@ function submitScan() {
       scanLog.value.unshift({
         key: ++logKey, code: value, ok: true, time: timeNow(),
         internal_code: res?.internal_code, store_order_id: res?.store_order_id,
-        handoff_code: res?.handoff_code,
+        handoff_code: res?.handoff_code, order_id: res?.order_id,
+        the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
       })
       toast.success(`Đã gửi đơn ${res?.internal_code ?? value} cho THE`)
       void reload()
@@ -300,7 +407,16 @@ function submitScan() {
               <span class="font-mono font-semibold">{{ entry.internal_code || entry.code }}</span>
               <template v-if="entry.ok">
                 <span v-if="entry.store_order_id"> · {{ entry.store_order_id }}</span>
-                — đã gửi cho THE<span v-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
+                — đã gửi cho THE<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
+                <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
+                <button
+                  v-if="entry.has_label && entry.order_id"
+                  class="ml-2 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium text-emerald-800 hover:bg-white dark:bg-white/10 dark:text-emerald-200"
+                  :disabled="printing"
+                  @click="printLabels([{ id: entry.order_id, code: entry.internal_code }])"
+                >
+                  In label
+                </button>
               </template>
               <template v-else> — {{ entry.reason }}</template>
             </span>
@@ -352,7 +468,8 @@ function submitScan() {
         <button class="btn-primary px-3 py-1.5 text-xs" :disabled="shipping" @click="shipSelected">
           <UiSpinner v-if="shipping" :size="14" />
           <UiIcon v-else name="shipping" :size="14" />
-          Gửi {{ count }} đơn cho THE
+          <template v-if="progress">Đang gửi {{ progress.done }}/{{ progress.total }}…</template>
+          <template v-else>Gửi {{ count }} đơn cho THE</template>
         </button>
       </UiBulkBar>
 
@@ -431,12 +548,42 @@ function submitScan() {
         <p class="text-sm font-semibold text-foreground">Kết quả lượt gửi vừa rồi</p>
         <button class="table-action text-muted-foreground" @click="lastResult = null">Đóng</button>
       </div>
-      <p class="text-sm text-muted-foreground">
-        <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ lastResult.shipped.length }}</span>
-        đơn đã gửi cho THE<template v-if="lastResult.skipped.length">
-          · <span class="font-semibold text-red-700 dark:text-rose-300">{{ lastResult.skipped.length }}</span>
-          đơn bị bỏ qua</template>
-      </p>
+      <div class="flex flex-wrap items-center gap-2">
+        <p class="text-sm text-muted-foreground">
+          <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ lastResult.shipped.length }}</span>
+          đơn đã gửi cho THE<template v-if="lastResult.skipped.length">
+            · <span class="font-semibold text-red-700 dark:text-rose-300">{{ lastResult.skipped.length }}</span>
+            đơn bị bỏ qua</template>
+        </p>
+        <span class="flex-1" />
+        <button v-if="labelOrders.length" class="btn-primary px-3 py-1.5 text-xs" :disabled="printing" @click="printLabels(labelOrders)">
+          <UiSpinner v-if="printing" :size="14" />
+          <UiIcon v-else name="print" :size="14" />
+          In {{ labelOrders.length }} label THE
+        </button>
+        <button
+          v-if="addressSkipped.length && canShip"
+          class="btn-secondary px-3 py-1.5 text-xs"
+          :disabled="shipping"
+          @click="resendSkippingAddress(addressSkipped.map((x) => x.order_id))"
+        >
+          Gửi lại {{ addressSkipped.length }} đơn, bỏ qua kiểm tra địa chỉ
+        </button>
+      </div>
+      <ul v-if="lastResult.shipped.some((x) => x.the)" class="mt-2 max-h-40 space-y-1 overflow-y-auto">
+        <li
+          v-for="sh in lastResult.shipped.filter((x) => x.the)"
+          :key="sh.order_id"
+          class="flex items-center gap-2 rounded-md bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200"
+        >
+          <UiIcon name="check" :size="13" class="shrink-0" />
+          <span class="font-mono font-semibold">{{ sh.internal_code }}</span>
+          <span class="font-mono">{{ sh.the?.tracking_code }}</span>
+          <span v-if="sh.the?.last_mile_tracking" class="font-mono opacity-80">· {{ sh.the.last_mile_tracking }}</span>
+          <span v-if="sh.the?.cost" class="opacity-80">· ${{ sh.the.cost.toFixed(2) }}</span>
+          <span v-if="sh.the?.reused" class="opacity-80">· đã có đơn THE từ trước</span>
+        </li>
+      </ul>
       <ul v-if="lastResult.skipped.length" class="mt-2 max-h-56 space-y-1 overflow-y-auto">
         <li
           v-for="sk in lastResult.skipped"
@@ -444,9 +591,73 @@ function submitScan() {
           class="flex items-start gap-2 rounded-md bg-red-50 px-2.5 py-1.5 text-sm text-red-700 dark:bg-rose-500/10 dark:text-rose-300"
         >
           <UiIcon name="alert" :size="15" class="mt-0.5 shrink-0" />
-          <span><span class="font-mono font-semibold">{{ sk.internal_code || sk.order_id }}</span> — {{ sk.reason }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="font-mono font-semibold">{{ sk.internal_code || sk.order_id }}</span> — {{ sk.reason }}
+            <span v-if="sk.code && SKIP_HINT[sk.code]" class="block text-xs opacity-80">{{ SKIP_HINT[sk.code] }}</span>
+          </span>
+          <button
+            v-if="sk.code === 'ADDRESS' && canShip"
+            class="shrink-0 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium hover:bg-white dark:bg-white/10"
+            :disabled="shipping"
+            @click="resendSkippingAddress([sk.order_id])"
+          >
+            Gửi bỏ qua kiểm tra
+          </button>
         </li>
       </ul>
     </div>
+
+    <!-- Xác nhận trước khi tạo đơn THE thật (trừ tiền ví THE). -->
+    <UiModal v-model="confirmOpen" title="Tạo đơn trên THE" wide>
+      <div v-if="preflight" class="space-y-3 text-sm">
+        <p v-if="preflight.problem" class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          {{ preflight.problem }}
+        </p>
+        <div class="grid grid-cols-3 gap-2">
+          <div class="rounded-md bg-emerald-50 p-2 dark:bg-emerald-500/10">
+            <p class="text-lg font-semibold text-emerald-700 dark:text-emerald-300">{{ preflight.ready }}</p>
+            <p class="text-[11px] text-muted-foreground">Đơn sẵn sàng<template v-if="paidAlready"> ({{ paidAlready }} đã có đơn THE)</template></p>
+          </div>
+          <div class="rounded-md bg-rose-50 p-2 dark:bg-rose-500/10">
+            <p class="text-lg font-semibold text-rose-600 dark:text-rose-300">{{ preflight.blocked }}</p>
+            <p class="text-[11px] text-muted-foreground">Bị giữ lại</p>
+          </div>
+          <div class="rounded-md bg-muted p-2">
+            <p class="text-lg font-semibold text-foreground">
+              {{ preflight.balance != null ? '$' + preflight.balance.toFixed(2) : '—' }}
+            </p>
+            <p class="text-[11px] text-muted-foreground">Số dư ví THE</p>
+          </div>
+        </div>
+        <p class="text-xs text-muted-foreground">
+          Mỗi đơn sẵn sàng sẽ được tạo và chốt trên THE — <b class="text-foreground">THE trừ tiền ví lúc chốt</b>, mỗi đơn một lần.
+          Địa chỉ đơn đi Mỹ được kiểm với USPS trước; đơn trượt sẽ được giữ lại kèm lý do. Xong là in label ngay tại đây.
+        </p>
+        <p v-if="count > 200" class="text-xs text-amber-700 dark:text-amber-300">Mỗi lần chỉ xử lý 200 đơn đầu — gửi phần còn lại ở lượt sau.</p>
+        <div v-if="blockedOrders.length" class="max-h-48 overflow-y-auto rounded-md border border-border">
+          <p class="border-b border-border bg-muted px-3 py-1.5 text-xs font-semibold text-foreground">Bị giữ lại — sửa rồi gửi lại</p>
+          <ul class="divide-y divide-border">
+            <li v-for="b in blockedOrders" :key="b.order_id" class="px-3 py-1.5 text-xs">
+              <span class="font-mono font-semibold">{{ b.internal_code || b.order_id }}</span>
+              <span class="text-rose-600 dark:text-rose-400"> — {{ b.reason }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <button
+          class="btn-secondary mr-auto text-xs"
+          title="Chỉ ghi nhận đã bàn giao, KHÔNG tạo đơn trên THE qua API — cho đơn đã tạo trên THE bằng cách khác"
+          :disabled="shipping || !preflight?.orders.length"
+          @click="sendManual((preflight?.orders ?? []).map((o) => o.order_id))"
+        >
+          Chỉ ghi nhận bàn giao
+        </button>
+        <button class="btn-secondary" @click="confirmOpen = false">Huỷ</button>
+        <button class="btn-primary" :disabled="shipping || !readyIds.length || !!(preflight?.problem && !preflight.ready)" @click="confirmTHE">
+          Tạo & gửi {{ readyIds.length }} đơn
+        </button>
+      </template>
+    </UiModal>
   </div>
 </template>

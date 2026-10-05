@@ -9,6 +9,7 @@ import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
+import TheShipmentCard from '~/components/orders/TheShipmentCard.vue'
 import {
   TRACKING_STATUS_OPTIONS,
   cancelStageLabel,
@@ -563,6 +564,9 @@ async function syncTracking() {
                 </div>
               </dl>
             </div>
+
+            <!-- Đơn THE: mã THE, label, huỷ — chỉ hiện khi đơn đã được tạo trên THE. -->
+            <TheShipmentCard :order-id="Number(id)" :internal-code="order.internal_code" @changed="reload" />
 
             <!-- Tracking (YC8) -->
             <div class="card p-4">
