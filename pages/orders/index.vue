@@ -29,6 +29,12 @@ import { errorMessage } from '~/utils/api-error'
 // Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
 const { rowLinkAttrs } = useRowLink()
 
+// "Đã giao hàng" nằm chung ô lọc trạng thái nhưng không phải một trạng thái nội
+// bộ: đơn đã bàn giao THE thì sản phẩm vẫn đứng ở Đã QC. Nó lọc theo trạng thái
+// của đơn (đã bàn giao / đã gửi đi / đã giao) — đúng nhóm hiện nhãn "Đã bàn
+// giao" ở cột Trạng thái — nên gửi đi bằng ?handed_over, không phải ?status.
+const HANDED_OVER = 'HANDED_OVER'
+
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
 const filters = reactive({
@@ -77,7 +83,8 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku || undefined,
     internal_code: filters.internal_code || undefined,
-    status: filters.status || undefined,
+    status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
+    handed_over: filters.status === HANDED_OVER || undefined,
     design_status: filters.design_status || undefined,
     review_status: filters.review_status || undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
@@ -144,6 +151,7 @@ onMounted(async () => {
 const statusOptions = computed(() => [
   { value: '', label: 'Tất cả' },
   ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+  { value: HANDED_OVER, label: 'Đã giao hàng' },
 ])
 const designStatusOptions = [
   { value: '', label: 'Tất cả' },

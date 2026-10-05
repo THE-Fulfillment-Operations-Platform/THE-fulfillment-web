@@ -4,6 +4,9 @@ import type { OrderItem, ListParams } from '~/types'
 export interface ItemListParams extends ListParams {
   sku?: string
   status?: string // = internal_status
+  // Chỉ sản phẩm của đơn đã rời xưởng (bàn giao THE / đã gửi đi / đã giao) —
+  // nhãn "Đã bàn giao" ở cột Trạng thái, đọc từ seller_status của đơn.
+  handed_over?: boolean
   design_status?: string
   review_status?: string // parent order review status
   // Kéo cả dòng đã huỷ vào kết quả. Mặc định tắt ở mọi hàng chờ việc (dòng huỷ
