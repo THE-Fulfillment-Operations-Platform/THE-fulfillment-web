@@ -245,6 +245,12 @@ function statusNeedsLinks(s: InternalStatus) {
   return s === 'PRINTED' || s === 'CUT'
 }
 function statusBlockedReason(s: InternalStatus) {
+  // In xong mới được cắt (khách chốt 06/10/2026: "tránh vượt rào") — khớp guard
+  // BE cutNeedsPrint, áp cho mọi vai trò kể cả OWNER.
+  const cur = batch.value?.status
+  if (s === 'CUT' && cur && cur !== 'PRINTED' && cur !== 'CUT' && !isPastStep(s)) {
+    return 'Batch chưa in — bấm "Đã in" trước, in xong mới được cắt.'
+  }
   if (!statusNeedsLinks(s) || !missingProductionLinks.value.length) return ''
   return `Batch chưa có ${missingProductionLinks.value.join(' và ')} — thêm link sản xuất dùng chung trước.`
 }
@@ -817,6 +823,12 @@ async function printLabels() {
                 (cascade xuống item · QC làm 1 lần ở trạm QC{{ isOwner ? ' · OWNER được hạ để sửa nhầm' : '' }})
               </span>
             </div>
+            <p
+              v-if="!qcLocked && !missingProductionLinks.length && batch.status === 'PENDING'"
+              class="mt-2 text-xs text-muted-foreground"
+            >
+              In xong bấm “Đã in” — nút “Đã cắt” chỉ mở sau khi batch đã in.
+            </p>
             <p
               v-if="!qcLocked && missingProductionLinks.length"
               class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400"
