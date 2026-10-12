@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { usersApi, sellersApi, ERR_USER_DELETED_EMAIL } from '~/services/api'
 import type { UserInput } from '~/services/api'
 import type { PermissionCatalog, Role, User, Seller } from '~/types'
@@ -18,6 +19,7 @@ function isSelf(u: User): boolean {
   return auth.user?.id === u.id
 }
 const pager = reactive({ page: 1, page_size: 20 })
+usePersistedFilters('users', pager)
 const { data, meta, loading, error, reload } = useApiResource<User[]>(() =>
   usersApi.list({ page: pager.page, page_size: pager.page_size }),
 )

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { qcApi } from '~/services/api'
 import type { QcResultOrder, QcResultItem, QcOrderStatus } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -15,6 +16,7 @@ import { reasonCodeLabel, INTERNAL_STATUS } from '~/utils/enums'
 // hình, cần chi tiết mới phải mở.
 
 const filters = reactive({ state: '', q: '', page: 1, page_size: 20 })
+usePersistedFilters('qc-results', filters)
 
 const { data, meta, loading, error, reload } = useApiResource(() =>
   qcApi.results({

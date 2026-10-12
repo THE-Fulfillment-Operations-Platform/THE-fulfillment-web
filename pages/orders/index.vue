@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { itemsApi, ordersApi, sellersApi } from '~/services/api'
 import type { OrderItem, Seller } from '~/types'
 import {
@@ -51,6 +52,7 @@ const filters = reactive({
   page: 1,
   page_size: 20,
 })
+usePersistedFilters('orders', filters)
 
 // The backend filters created_at <= date_to; to make "Đến ngày" INCLUSIVE of the
 // whole selected day (so from=to=today still matches today's items), send the
@@ -73,6 +75,7 @@ const sort = reactive<{ by: '' | 'sku' | 'quantity' | 'created_at'; dir: 'asc' |
   by: '',
   dir: 'asc',
 })
+usePersistedFilters('orders-sort', sort)
 
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   itemsApi.list({

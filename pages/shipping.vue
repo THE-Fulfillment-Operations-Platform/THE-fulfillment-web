@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { handoffsApi, trackingApi } from '~/services/api'
 import type { Handoff, HandoffStatus } from '~/types'
 import type { HandoffInput, ShipHandoffInput } from '~/services/api'
@@ -12,6 +13,7 @@ import { useToastStore } from '~/stores/toast'
 // tracking is populated by the SHIPPED stage, not at handoff time.
 const toast = useToastStore()
 const pager = reactive({ page: 1, page_size: 20 })
+usePersistedFilters('shipping', pager)
 const { data, meta, loading, error, reload } = useApiResource<Handoff[]>(() =>
   handoffsApi.list({ page: pager.page, page_size: pager.page_size }),
 )

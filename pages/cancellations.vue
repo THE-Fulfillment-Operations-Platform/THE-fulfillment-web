@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { cancellationApi } from '~/services/api'
 import type { Order, OrderItem, CancelStage } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -17,6 +18,7 @@ const canManage = computed(() => useAuthStore().can('cancellations.manage'))
 // huỷ nhưng khách vẫn phải trả, trừ khi người duyệt chủ động miễn.
 const toast = useToastStore()
 const filters = reactive({ search: '', page: 1, page_size: 20 })
+usePersistedFilters('cancellations', filters)
 
 const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>
   cancellationApi.list({

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedRef } from '~/composables/usePersistedFilters'
 import { skusApi } from '~/services/api'
 import type { SkuInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
@@ -64,6 +65,7 @@ function shippingOf(s: Sku) {
 }
 
 const search = ref('')
+usePersistedRef('md-skus', search)
 // Chỉ hiện các SKU cha — nhìn một lượt xem mỗi cha đang chứa bao nhiêu con.
 const onlyParents = ref(false)
 

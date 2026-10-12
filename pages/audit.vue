@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { auditApi } from '~/services/api'
 import type { AuditLog } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -11,6 +12,7 @@ import { useToastStore } from '~/stores/toast'
 // across the system. The trail grows with every action, so it is paged
 // server-side; the quick filter narrows the loaded page.
 const pager = reactive({ page: 1, page_size: 50 })
+usePersistedFilters('audit', pager)
 const { data, meta, loading, error, reload } = useApiResource<AuditLog[]>(() =>
   auditApi.list({ page: pager.page, page_size: pager.page_size }),
 )

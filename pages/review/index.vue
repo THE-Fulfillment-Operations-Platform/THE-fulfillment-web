@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { useAuthStore } from '~/stores/auth'
 import { reviewApi } from '~/services/api'
 import type { Order } from '~/types'
@@ -21,6 +22,7 @@ const { rowLinkAttrs } = useRowLink()
 // Pending Review — seller-uploaded/imported orders wait here until Ops/Design
 // approves them. Only approved orders enter the design/production flow.
 const filters = reactive({ status: '', search: '', page: 1, page_size: 20 })
+usePersistedFilters('review', filters)
 const toast = useToastStore()
 
 const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { designApi, itemsApi } from '~/services/api'
 import type { Batch, Material, MaterialBucket, OrderItem, SKUBucket } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -16,12 +17,14 @@ const canManage = computed(() => useAuthStore().can('design.manage'))
 const toast = useToastStore()
 const { confirm, state: confirmState } = useConfirm()
 const pager = reactive({ page: 1, page_size: 50 })
+usePersistedFilters('design-pager', pager)
 const filters = reactive({
   batch: '',
   appliedBatch: '',
   material: '' as '' | number,
   sku: '',
 })
+usePersistedFilters('design', filters)
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   designApi.queue({
     page: pager.page,

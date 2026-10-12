@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { ordersApi, trackingApi } from '~/services/api'
 import type { UpdateTrackingInput } from '~/services/api'
 import type { Order, OrderTrackingEvent } from '~/types'
@@ -37,6 +38,7 @@ const filters = reactive({
   page: 1,
   page_size: 20,
 })
+usePersistedFilters('journeys', filters)
 
 const hasTrackingParam = computed(() =>
   filters.scope === 'missing' ? false : filters.scope === 'has' ? true : undefined,

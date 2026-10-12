@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedRef } from '~/composables/usePersistedFilters'
 import { materialsApi } from '~/services/api'
 import type { MaterialInput } from '~/services/api'
 import type { Material, Sku } from '~/types'
@@ -61,6 +62,7 @@ const canManage = computed(() => auth.can('master_data.manage'))
 const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
 
 const search = ref('')
+usePersistedRef('md-materials', search)
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return props.materials

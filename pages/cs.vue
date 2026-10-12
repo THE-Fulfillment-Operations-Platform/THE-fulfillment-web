@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { ordersApi, trackingApi } from '~/services/api'
 import type { UpdateTrackingInput } from '~/services/api'
 import type { Order, OrderTrackingEvent } from '~/types'
@@ -29,6 +30,7 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const filters = reactive({ q: '', scope: 'all' as 'all' | 'missing' | 'has', page: 1, page_size: 20 })
+usePersistedFilters('cs', filters)
 
 // has_tracking chỉ gửi khi CS thực sự chọn lọc: gửi false mặc định sẽ biến màn
 // này thành "chỉ đơn chưa có mã", che mất đơn khách đang hỏi.

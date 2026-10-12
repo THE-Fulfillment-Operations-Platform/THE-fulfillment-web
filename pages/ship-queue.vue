@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { qcApi, handoffsApi, carrierApi } from '~/services/api'
 import type { ShipToCarrierResult, ShipOptions } from '~/services/api/handoffs'
 import type { THEPreflight } from '~/services/api/carrier'
@@ -35,6 +36,7 @@ const canShip = computed(() => useAuthStore().can('ship_queue.manage'))
 const toast = useToastStore()
 
 const filters = reactive({ q: '', page: 1, page_size: 20 })
+usePersistedFilters('ship-queue', filters)
 
 const { data, meta, loading, error, reload } = useApiResource(() =>
   qcApi.results({

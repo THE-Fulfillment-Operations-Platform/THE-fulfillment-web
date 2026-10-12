@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { sellerViewApi } from '~/services/api'
 import type { SellerOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
@@ -19,6 +20,7 @@ const toast = useToastStore()
 definePageMeta({ layout: 'seller', wide: true })
 
 const filters = reactive({ status: '', search: '', page: 1, page_size: 20 })
+usePersistedFilters('sellers', filters)
 
 const { data, meta, loading, error, reload } = useApiResource<SellerOrder[]>(() =>
   sellerViewApi.orders({

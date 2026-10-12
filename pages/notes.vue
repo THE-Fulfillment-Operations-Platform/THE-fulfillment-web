@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { notesApi } from '~/services/api'
 import type { NoteInput } from '~/services/api'
 import type { Note } from '~/types'
@@ -30,6 +31,7 @@ import {
 const toast = useToastStore()
 
 const filters = reactive({ status: '', severity: '', required: false, page: 1, page_size: 20 })
+usePersistedFilters('notes', filters)
 
 const statusFilterOptions = computed(() => [
   { value: '', label: 'Tất cả' },

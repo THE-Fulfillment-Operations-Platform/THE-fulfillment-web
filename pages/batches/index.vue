@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { batchesApi, materialsApi } from '~/services/api'
 import type { AutoCreateBatchesResult } from '~/services/api'
 import type { Batch, Material } from '~/types'
@@ -44,6 +45,7 @@ const filters = reactive({
   page: 1,
   page_size: 20,
 })
+usePersistedFilters('batches', filters)
 
 const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
   batchesApi.list({
