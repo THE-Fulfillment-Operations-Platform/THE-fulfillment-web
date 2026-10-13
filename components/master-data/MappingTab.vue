@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { usePersistedRef } from '~/composables/usePersistedFilters'
 import { skusApi } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
@@ -19,7 +18,6 @@ const canManage = computed(() => useAuthStore().can('master_data.manage'))
 type FilterKey = 'all' | 'unmapped' | 'multi'
 const filter = ref<FilterKey>('all')
 const search = ref('')
-usePersistedRef('md-mapping', search)
 
 function matCount(s: Sku) {
   return (s.materials ?? []).length

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { usePersistedRef } from '~/composables/usePersistedFilters'
 import { sellersApi } from '~/services/api'
 import type { Seller } from '~/types'
 import { errorMessage } from '~/utils/api-error'
@@ -27,7 +26,6 @@ const STATUS_OPTIONS = [
 ]
 
 const search = ref('')
-usePersistedRef('md-sellers', search)
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return props.sellers
