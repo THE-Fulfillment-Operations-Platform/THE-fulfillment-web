@@ -942,6 +942,7 @@ export interface QcScanResult {
   item_code: string
   order_code: string
   store_order_id: string
+  order_note?: string
   sku_code: string
   quantity?: number
   material_name?: string

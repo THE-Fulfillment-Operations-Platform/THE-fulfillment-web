@@ -33,7 +33,14 @@ const productName = computed(() => result.value?.sku_product_name || '')
 // QC là cổng cấp SẢN PHẨM, làm 1 lần: một sản phẩm có thể gồm nhiều NVL (mỗi NVL
 // một batch). PASS/FAIL áp cho cả sản phẩm. Chỉ QC được khi MỌI phần NVL đã đạt
 // 'Đã cắt' (CUT) — phần mới in (PRINTED) hay còn Chờ xử lý (PENDING) thì chưa xong.
-const READY_STATUSES = ['CUT', 'QC_PASSED']
+// Ghi chú của đơn: đơn "lạ" (khách dặn riêng, khác thường) được CS/design ghi ở đây.
+// Hiện thành banner to và bắt bấm "Đã đọc" trước khi PASS, để QC không soi đơn đó
+// như đơn thường. Reset mỗi lần quét (xem watch(result) bên dưới).
+const orderNote = computed(() => result.value?.order_note?.trim() || '')
+const noteAcked = ref(false)
+const mustAckNote = computed(() => !!orderNote.value && !noteAcked.value)
+
+const READY_STATUSES =['CUT', 'QC_PASSED']
 const parts = computed(() => result.value?.batches ?? [])
 const notReadyParts = computed(() => parts.value.filter((b) => !READY_STATUSES.includes(b.status)))
 const notProducedYet = computed(() => notReadyParts.value.length > 0)
@@ -73,6 +80,7 @@ function onMockupError() {
 // Reset per scan, keyed on the result object rather than the URL: scanning two
 // items that happen to share a mockup must still clear a previous failure.
 watch(result, () => {
+  noteAcked.value = false
   mockupError.value = false
   thumbFailed.value = false
 })
@@ -128,7 +136,7 @@ const pending = ref<string[]>([])
 
 function pass() {
   const item = result.value
-  if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value) return
+  if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || mustAckNote.value) return
   clearStation() // nhả trạm trước, quét mã tiếp theo được luôn
 
   pending.value.push(item.item_code)
@@ -330,6 +338,22 @@ onMounted(focusScan)
 
       <!-- Detail + checklist + actions -->
       <div class="space-y-5">
+        <!-- Ghi chú đơn: để trên cùng, to, đổi màu — đơn có ghi chú là đơn khác thường. -->
+        <div
+          v-if="orderNote"
+          class="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 dark:border-amber-500/60 dark:bg-amber-500/10"
+          role="alert"
+        >
+          <p class="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+            <UiIcon name="alert" :size="18" /> Đơn có ghi chú — đọc kỹ trước khi QC
+          </p>
+          <p class="mt-2 whitespace-pre-line break-words text-xl font-semibold leading-snug text-amber-900 dark:text-amber-100">
+            {{ orderNote }}
+          </p>
+          <button v-if="!noteAcked" class="btn-secondary mt-3" @click="noteAcked = true">Đã đọc ghi chú</button>
+          <p v-else class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">Đã đọc ghi chú</p>
+        </div>
+
         <div class="card p-5">
           <div class="flex items-start justify-between gap-3">
             <div>
@@ -486,8 +510,8 @@ onMounted(focusScan)
           <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
-              :disabled="alreadyQC || notProducedYet"
-              :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : '')"
+              :disabled="alreadyQC || notProducedYet || mustAckNote"
+              :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : ''))"
               @click="pass"
             >
               <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
