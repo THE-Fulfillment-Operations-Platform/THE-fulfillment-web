@@ -30,7 +30,7 @@ const toast = useToastStore()
 const auth = useAuthStore()
 // Thêm/sửa = "Thao tác" màn Master Data; xoá cần thêm vai trò Admin/Owner.
 const canManage = computed(() => auth.can('master_data.manage'))
-const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
+const canDelete = computed(() => auth.hasAdminRights && canManage.value)
 
 // ---- Cây SKU cha → con --------------------------------------------------------
 // Đúng 2 tầng: SKU cấp trên cùng (cha, hoặc SKU lẻ) và các SKU con của nó. Con

@@ -18,7 +18,7 @@ const toast = useToastStore()
 const auth = useAuthStore()
 // Thêm/sửa = "Thao tác" màn Master Data; xoá cần thêm vai trò Admin/Owner.
 const canManage = computed(() => auth.can('master_data.manage'))
-const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
+const canDelete = computed(() => auth.hasAdminRights && canManage.value)
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Đang hoạt động' },

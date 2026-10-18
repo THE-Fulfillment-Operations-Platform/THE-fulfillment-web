@@ -179,7 +179,7 @@ const partOptions = computed(() =>
 // Pass/Fail là "Thao tác" của màn Quét QC; chỉ có "Xem" thì quét để tra thôi.
 const canJudge = computed(() => auth.can('qc.manage'))
 const canUndoQC = computed(
-  () => ['OWNER', 'ADMIN'].includes(auth.role ?? '') && canJudge.value && alreadyQC.value,
+  () => auth.hasAdminRights && canJudge.value && alreadyQC.value,
 )
 const undoOpen = ref(false)
 const undoing = ref(false)

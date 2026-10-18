@@ -24,6 +24,13 @@ export const useAuthStore = defineStore('auth', {
     isAuthenticated: (s): boolean => !!s.token && !!s.user,
     role: (s): Role | null => s.user?.role ?? null,
     isSeller: (s): boolean => s.user?.role === 'SELLER',
+    /**
+     * Qua được các cửa "Admin/Owner" (xoá đơn / master data, hạ QC, huỷ đơn THE…).
+     * Khớp Role.HasAdminRights ở backend: OWNER, ADMIN và Kỹ thuật viên.
+     */
+    hasAdminRights: (s): boolean => ['OWNER', 'ADMIN', 'TECHNICIAN'].includes(s.user?.role ?? ''),
+    /** Kỹ thuật viên — chỉ role này thấy công cụ test (tạo đơn lẻ). */
+    isTechnician: (s): boolean => s.user?.role === 'TECHNICIAN',
     fullName: (s): string => s.user?.full_name || s.user?.email || '',
     /**
      * Có quyền `perm` ("orders.manage", "qc.view"…) không. Chỉ để ẩn/hiện giao

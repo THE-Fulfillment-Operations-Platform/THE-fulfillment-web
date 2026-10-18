@@ -214,7 +214,7 @@ const items = computed(() => data.value ?? [])
 // bỏ chọn, để không bao giờ xoá thứ không nhìn thấy.
 const auth = useAuthStore()
 const canDelete = computed(
-  () => (auth.role === 'OWNER' || auth.role === 'ADMIN') && auth.can('orders.manage'),
+  () => auth.hasAdminRights && auth.can('orders.manage'),
 )
 
 const { isSelected, toggle, toggleAll, allSelected, someSelected, clear } = useSelection(() => items.value)

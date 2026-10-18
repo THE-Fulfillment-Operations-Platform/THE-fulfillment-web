@@ -52,11 +52,19 @@ const form = reactive<UserInput>({
 
 const isSellerRole = computed(() => form.role === 'SELLER')
 
-// Chỉ OWNER tạo/sửa được tài khoản OWNER (backend chặn) — không mời bấm thứ
-// chắc chắn bị từ chối.
+// Chỉ OWNER tạo/sửa được tài khoản OWNER; chỉ OWNER hoặc Kỹ thuật viên tạo/sửa
+// được tài khoản Kỹ thuật viên (backend chặn) — không mời bấm thứ chắc chắn bị
+// từ chối.
+const canManageTechnician = computed(() => auth.role === 'OWNER' || auth.role === 'TECHNICIAN')
+function canManageAccount(u: User): boolean {
+  if (u.role === 'OWNER') return auth.role === 'OWNER'
+  if (u.role === 'TECHNICIAN') return canManageTechnician.value
+  return true
+}
 const roleOptions = computed(() =>
   (Object.entries(ROLE_LABEL) as [Role, string][])
     .filter(([value]) => value !== 'OWNER' || auth.role === 'OWNER')
+    .filter(([value]) => value !== 'TECHNICIAN' || canManageTechnician.value)
     .map(([value, label]) => ({ value, label })),
 )
 
@@ -329,6 +337,7 @@ const ROLE_BADGE: Record<Role, string> = {
   SHIPPING: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
   CS: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300',
   SELLER: 'bg-muted text-foreground',
+  TECHNICIAN: 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900',
 }
 </script>
 
@@ -385,7 +394,7 @@ const ROLE_BADGE: Record<Role, string> = {
                   </span>
                 </td>
                 <td class="table-td">
-                  <div v-if="u.role !== 'OWNER' || auth.role === 'OWNER'" class="flex items-center justify-end gap-2">
+                  <div v-if="canManageAccount(u)" class="flex items-center justify-end gap-2">
                     <button
                       class="text-xs font-medium hover:underline disabled:opacity-50"
                       :class="u.is_active ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'"

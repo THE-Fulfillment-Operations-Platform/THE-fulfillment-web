@@ -17,6 +17,8 @@ export type Role =
   /** Customer support: looks orders up and attaches tracking numbers. */
   | 'CS'
   | 'SELLER'
+  /** Kỹ thuật viên: quyền như ADMIN + công cụ test (tạo đơn lẻ) chỉ role này thấy. */
+  | 'TECHNICIAN'
 
 /** Internal item / batch status (hidden from sellers). */
 export type InternalStatus = 'PENDING' | 'PRINTED' | 'CUT' | 'QC_PASSED'

@@ -93,7 +93,7 @@ const shippingRows = computed<[string, string][]>(() => {
 
 // ---- Role gating (UX only — the backend enforces the real guard) -----------
 // Sửa/huỷ = "Thao tác" màn Đơn hàng; xoá cần thêm vai trò Admin/Owner.
-const isAdminOwner = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
+const isAdminOwner = computed(() => auth.hasAdminRights)
 const canEdit = computed(() => auth.can('orders.manage'))
 const canCancel = computed(() => auth.can('orders.manage'))
 const canDelete = computed(() => isAdminOwner.value && auth.can('orders.manage'))

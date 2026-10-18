@@ -142,6 +142,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   SHIPPING: 'Vận chuyển',
   CS: 'CSKH (hỗ trợ khách)',
   SELLER: 'Seller',
+  TECHNICIAN: 'Kỹ thuật viên',
 }
 
 // ---- Generic helpers -------------------------------------------------------

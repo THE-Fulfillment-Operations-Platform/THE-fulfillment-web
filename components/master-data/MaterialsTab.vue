@@ -58,7 +58,7 @@ const auth = useAuthStore()
 // Kích thước tấm là dữ liệu nền, không còn là "cần gạt" riêng của OWNER như định
 // mức nhập tay trước đây.
 const canManage = computed(() => auth.can('master_data.manage'))
-const canDelete = computed(() => (auth.role === 'OWNER' || auth.role === 'ADMIN') && canManage.value)
+const canDelete = computed(() => auth.hasAdminRights && canManage.value)
 
 const search = ref('')
 const filtered = computed(() => {

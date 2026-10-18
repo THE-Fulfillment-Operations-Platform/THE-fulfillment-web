@@ -16,7 +16,7 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const auth = useAuthStore()
 const toast = useToastStore()
-const canCancel = computed(() => auth.role === 'OWNER' || auth.role === 'ADMIN')
+const canCancel = computed(() => auth.hasAdminRights)
 
 const rows = ref<THEShipment[]>([])
 const loaded = ref(false)

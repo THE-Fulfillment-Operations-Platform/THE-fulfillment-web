@@ -24,7 +24,7 @@ const auth = useAuthStore()
 // Xem danh sách key = "Thao tác" Master Data. Tạo / thu hồi quyết định ai được
 // đẩy đơn dưới tên seller, nên cần thêm vai trò Admin/Owner — khớp với API.
 const canIssue = computed(
-  () => (auth.role === 'OWNER' || auth.role === 'ADMIN') && auth.can('master_data.manage'),
+  () => auth.hasAdminRights && auth.can('master_data.manage'),
 )
 
 const open = computed({

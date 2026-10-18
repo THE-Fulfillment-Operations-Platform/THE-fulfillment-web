@@ -25,6 +25,7 @@ const ALL_INTERNAL: Role[] = [
   'QC',
   'PACKING',
   'SHIPPING',
+  'TECHNICIAN',
 ]
 
 // Sidebar for internal staff. Order follows the operational flow.
@@ -32,20 +33,20 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Tổng quan', to: '/dashboard', feature: 'dashboard', icon: 'dashboard', roles: ALL_INTERNAL },
   // Tra cứu CS: ô tìm kiếm một dòng để CS tìm đơn theo mã đơn/tên khách rồi gắn
   // mã vận đơn. Ops/Admin cũng dùng được — cùng một việc, cùng một màn.
-  { label: 'Tra cứu CS', to: '/cs', feature: 'cs', icon: 'search', roles: ['OWNER', 'ADMIN', 'OPS', 'CS'] },
-  { label: 'Master Data', to: '/master-data', feature: 'master_data', icon: 'layers', roles: ['OWNER', 'ADMIN', 'OPS'] },
-  { label: 'Import đơn', to: '/import', feature: 'import', icon: 'upload', roles: ['OWNER', 'ADMIN', 'OPS'] },
-  { label: 'Chờ duyệt', to: '/review', feature: 'review', icon: 'inbox', roles: ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'] },
+  { label: 'Tra cứu CS', to: '/cs', feature: 'cs', icon: 'search', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'CS'] },
+  { label: 'Master Data', to: '/master-data', feature: 'master_data', icon: 'layers', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS'] },
+  { label: 'Import đơn', to: '/import', feature: 'import', icon: 'upload', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS'] },
+  { label: 'Chờ duyệt', to: '/review', feature: 'review', icon: 'inbox', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'DESIGNER'] },
   { label: 'Đơn hàng / Sản phẩm', to: '/orders', feature: 'orders', icon: 'orders', roles: ALL_INTERNAL },
-  { label: 'Yêu cầu huỷ', to: '/cancellations', feature: 'cancellations', icon: 'alert', roles: ['OWNER', 'ADMIN', 'OPS'] },
-  { label: 'Chờ thiết kế', to: '/design', feature: 'design', icon: 'design', roles: ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'] },
+  { label: 'Yêu cầu huỷ', to: '/cancellations', feature: 'cancellations', icon: 'alert', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS'] },
+  { label: 'Chờ thiết kế', to: '/design', feature: 'design', icon: 'design', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'DESIGNER'] },
   // Công cụ tạo file in + file cắt từ ảnh sản phẩm. Chạy hẳn trong trình duyệt,
   // không đụng dữ liệu đơn, nên đi chung quyền với màn Chờ thiết kế — ai làm
   // design thì dùng được, không phải khai thêm quyền mới.
-  { label: 'Thiết kế', to: '/design-tool', feature: 'design', icon: 'scissors', roles: ['OWNER', 'ADMIN', 'OPS', 'DESIGNER'] },
+  { label: 'Thiết kế', to: '/design-tool', feature: 'design', icon: 'scissors', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'DESIGNER'] },
   { label: 'Batch sản xuất', to: '/batches', feature: 'batches', icon: 'batches', roles: ALL_INTERNAL },
-  { label: 'Bảng sản xuất', to: '/production', feature: 'production', icon: 'board', roles: ['OWNER', 'ADMIN', 'OPS', 'PRODUCTION', 'DESIGNER'] },
-  { label: 'Quét QC', to: '/qc', feature: 'qc', icon: 'qc', roles: ['OWNER', 'ADMIN', 'OPS', 'QC'] },
+  { label: 'Bảng sản xuất', to: '/production', feature: 'production', icon: 'board', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'PRODUCTION', 'DESIGNER'] },
+  { label: 'Quét QC', to: '/qc', feature: 'qc', icon: 'qc', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'QC'] },
   // Kết quả QC là màn ĐỌC: đóng gói và OPS cần biết đơn nào đã QC đủ để lấy hàng,
   // không riêng tổ QC — nên mở cho mọi vai trò nội bộ.
   { label: 'Kết quả QC', to: '/qc-results', feature: 'qc_results', icon: 'check', roles: ALL_INTERNAL },
@@ -53,13 +54,13 @@ export const INTERNAL_NAV: NavItem[] = [
   // cho THE, rồi theo dõi kiện hàng. Hai màn này thay cho luồng Đóng gói →
   // Tạo handoff → Bàn giao cũ (route /packing và /shipping vẫn còn, chỉ không
   // nằm trên menu nữa).
-  { label: 'Chờ gửi hàng', to: '/ship-queue', feature: 'ship_queue', icon: 'packing', roles: ['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING'] },
-  { label: 'Hành trình đơn hàng', to: '/journeys', feature: 'journeys', icon: 'shipping', roles: ['OWNER', 'ADMIN', 'OPS', 'PACKING', 'SHIPPING', 'CS'] },
+  { label: 'Chờ gửi hàng', to: '/ship-queue', feature: 'ship_queue', icon: 'packing', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'PACKING', 'SHIPPING'] },
+  { label: 'Hành trình đơn hàng', to: '/journeys', feature: 'journeys', icon: 'shipping', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'PACKING', 'SHIPPING', 'CS'] },
   // CS logs what a customer reported against the order, so notes are part of
   // their surface too.
   { label: 'Ghi chú / Cần xử lý', to: '/notes', feature: 'notes', icon: 'notes', roles: [...ALL_INTERNAL, 'CS'] },
-  { label: 'Người dùng', to: '/users', icon: 'users', roles: ['OWNER', 'ADMIN'] },
-  { label: 'Nhật ký hoạt động', to: '/audit', feature: 'audit', icon: 'audit', roles: ['OWNER', 'ADMIN'] },
+  { label: 'Người dùng', to: '/users', icon: 'users', roles: ['OWNER', 'ADMIN', 'TECHNICIAN'] },
+  { label: 'Nhật ký hoạt động', to: '/audit', feature: 'audit', icon: 'audit', roles: ['OWNER', 'ADMIN', 'TECHNICIAN'] },
   { label: 'Cài đặt', to: '/settings', icon: 'alert', roles: ['OWNER'] },
 ]
 

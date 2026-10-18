@@ -10,6 +10,8 @@ import { useAuthStore } from '~/stores/auth'
 
 // Tải đơn lên = "Thao tác" màn Import đơn.
 const canImport = computed(() => useAuthStore().can('import.manage'))
+// "Tạo đơn" (đơn lẻ để test) chỉ dành cho Kỹ thuật viên — xem pages/orders/new.vue.
+const isTechnician = computed(() => useAuthStore().isTechnician)
 
 const toast = useToastStore()
 
@@ -282,6 +284,7 @@ function masterDataLink(code?: string) {
   <div>
     <PageHeader title="Import đơn hàng" subtitle="Upload CSV/XLSX, kiểm tra lỗi theo dòng, commit các dòng hợp lệ">
       <template #actions>
+        <NuxtLink v-if="isTechnician" to="/orders/new" class="btn-primary">+ Tạo đơn</NuxtLink>
         <button class="btn-secondary" :disabled="downloadingTemplate" @click="downloadTemplate">
           <UiSpinner v-if="downloadingTemplate" :size="16" />
           <UiIcon v-else name="upload" :size="16" />
