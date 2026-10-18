@@ -489,8 +489,19 @@ async function printLabels() {
       ? formatDate(created_at)
       : new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const QRCode = (await import('qrcode')).default
+    // Cỡ SKU theo số ký tự, cùng lý do với batchCodeSize bên dưới: cột chữ cạnh QR
+    // chỉ rộng ~45mm. SKU thật dài 5–13 ký tự ("D1835", "BR-HC-2.5-KEP") vừa một
+    // dòng ở cỡ to; mã dài hơn thì hạ cỡ chứ không để xuống dòng đội chiều cao tem.
+    const skuSize = (len: number): string => {
+      if (len <= 10) return '4.6mm'
+      if (len <= 13) return '4mm'
+      if (len <= 16) return '3.4mm'
+      return '2.9mm'
+    }
     const labels = await Promise.all(
       rows.map(async (r) => {
+        const sku = r.sku_code || '—'
+        const qty = Number(r.quantity) || 0
         const payload = r.internal_code || code
         let qr = ''
         try {
@@ -503,8 +514,11 @@ async function printLabels() {
               ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
               <div class="meta">
                 <div class="code">${esc(r.internal_code || '—')}</div>
-                <div class="sub">${esc(code)} · ${esc(r.sku_code || '—')}</div>
-                <div class="sub">SL: ${esc(r.quantity || '—')} · ${esc(labelDate)}</div>
+                <div class="sku" style="font-size:${skuSize(sku.length)}">${esc(sku)}</div>
+                <div class="qrow">
+                  <span class="qty${qty > 1 ? ' multi' : ''}"><span class="qk">SL</span>${esc(qty || '—')}</span>
+                  <span class="sub">${esc(code)} · ${esc(labelDate)}</span>
+                </div>
               </div>
             </div>
             <div class="info">
@@ -604,8 +618,21 @@ async function printLabels() {
            đặt 500 hay 800 là trình duyệt tự kéo béo chữ, in nhiệt ra nhoè. */
         .code { font-size: 5.25mm; font-weight: 700; letter-spacing: -0.02em;
           line-height: 1.05; word-break: break-all; }
-        .sub { font-size: 2.6mm; font-weight: 400; line-height: 1.25;
-          margin-top: 0.8mm; overflow-wrap: anywhere; }
+        .sub { font-size: 2.4mm; font-weight: 400; line-height: 1.2;
+          overflow-wrap: anywhere; }
+        /* SKU + SL to đậm ngay dưới mã nội bộ (anh Kiên, 18/10/2026): xưởng đối
+           chiếu hai thứ này với hàng thật. Cả cột vẫn phải lọt trong 18mm chiều cao
+           của QR — cao hơn là đẩy phần Seller/Order xuống, tràn khỏi tem 50mm. */
+        .sku { font-weight: 700; letter-spacing: -0.01em; line-height: 1.05;
+          margin-top: 0.6mm; overflow-wrap: anywhere; }
+        .qrow { display: flex; align-items: center; gap: 1.5mm; flex-wrap: wrap;
+          margin-top: 0.8mm; }
+        .qty { font-size: 4.6mm; font-weight: 700; line-height: 1; white-space: nowrap; }
+        .qty .qk { font-size: 2.4mm; font-weight: 400; letter-spacing: 0.06em;
+          margin-right: 0.8mm; }
+        /* SL > 1 đóng khung: QC hay soi 1 cái trong khi đơn có 2. Viền chứ không tô
+           nền đen — trình duyệt mặc định không in màu nền, viền thì luôn ra. */
+        .qty.multi { border: 0.5mm solid #000; border-radius: 0.6mm; padding: 0.3mm 1mm; }
         /* Các trường chạy hết chiều ngang tem nên giá trị dài vẫn đọc được;
            xuống dòng thay vì cắt cụt. Nhãn thành cột trái nhỏ, giá trị to đậm —
            mắt nhảy thẳng vào tên/mã mà không phải đọc lại chữ "Seller:".

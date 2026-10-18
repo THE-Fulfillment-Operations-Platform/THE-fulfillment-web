@@ -389,9 +389,11 @@ onMounted(focusScan)
           <!-- Thông tin cấu trúc để QC đối chiếu với hàng thực tế.
                Các trường quan trọng luôn hiển thị ngay, bỏ qua trường trống. -->
           <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <!-- SKU to đậm ngang ô Số lượng: QC đối chiếu SKU với hàng thật nên phải
+                 đọc được từ xa. Không dùng font-mono vì số 0 có gạch chéo dễ đọc nhầm. -->
             <div v-if="result.sku_code">
               <dt class="label">SKU</dt>
-              <dd class="font-mono font-medium text-foreground">{{ result.sku_code }}</dd>
+              <dd class="break-all text-2xl font-bold leading-tight tracking-tight text-foreground">{{ result.sku_code }}</dd>
             </div>
             <!-- Số lượng là ô hay đọc nhầm nhất (2 cái mà QC chỉ soi 1), nên để số
                  to hẳn; khác 1 thì đổi màu cảnh báo cho đập vào mắt. -->
