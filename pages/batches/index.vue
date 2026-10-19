@@ -96,13 +96,18 @@ onMounted(async () => {
   }
 })
 
-function skuSummary(b: Batch): string {
-  // List endpoint lồng SKU trong order_item (không có field phẳng trên batch item).
-  const codes = Array.from(
-    new Set((b.items ?? []).map((i) => i.sku_code ?? i.order_item?.sku_code).filter(Boolean)),
+// Mọi SKU của batch (đã bỏ trùng). List endpoint lồng SKU trong order_item
+// (không có field phẳng trên batch item).
+function skuCodes(b: Batch): string[] {
+  return Array.from(
+    new Set((b.items ?? []).map((i) => i.sku_code ?? i.order_item?.sku_code).filter((c): c is string => !!c)),
   )
-  if (!codes.length) return '—'
-  return codes.slice(0, 3).join(', ') + (codes.length > 3 ? '…' : '')
+}
+// Chữ hiện trong ô: cột SKU bị giới hạn bề rộng (xem <td> bên dưới) nên chỉ cần
+// danh sách đầy đủ — phần dài bị cắt bằng dấu …, rê chuột vào xem đủ (title).
+function skuSummary(b: Batch): string {
+  const codes = skuCodes(b)
+  return codes.length ? codes.join(', ') : '—'
 }
 
 const rows = computed(() => {
@@ -344,7 +349,7 @@ async function autoCreateBatches() {
                   >{{ batchMaterialUnits(b) }} tấm</span>
                   <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Master Data — chưa tính được số tấm">—</span>
                 </td>
-                <td class="table-td hidden text-muted-foreground lg:table-cell">{{ skuSummary(b) }}</td>
+                <td class="table-td hidden max-w-[9rem] truncate text-muted-foreground lg:table-cell" :title="skuSummary(b)">{{ skuSummary(b) }}</td>
                 <td class="table-td">
                   <span class="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium" :class="batchStatusBadge(b).classes">
                     {{ batchStatusBadge(b).label }}
