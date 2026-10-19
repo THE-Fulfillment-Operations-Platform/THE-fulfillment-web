@@ -7,6 +7,7 @@ import { formatDateTime } from '~/utils/format'
 import { exportCsv } from '~/utils/csv'
 import { auditActionLabel, auditActionClasses, auditEntityLabel, auditSummary } from '~/utils/audit'
 import { useToastStore } from '~/stores/toast'
+import { useAuthStore } from '~/stores/auth'
 
 // Audit log viewer (Wireframe: Users/Audit). Read-only trail of mutating actions
 // across the system. The trail grows with every action, so it is paged
@@ -61,6 +62,8 @@ const logs = computed(() => {
 })
 
 const toast = useToastStore()
+// Xuất file = "Thao tác" của màn Nhật ký (tick riêng từ 19/10).
+const canExport = computed(() => useAuthStore().can('audit.manage'))
 function exportLogs() {
   const rows = logs.value
   if (!rows.length) {
@@ -84,7 +87,7 @@ function exportLogs() {
   <div>
     <PageHeader title="Nhật ký hoạt động" subtitle="Ai đã làm gì, lúc nào — ghi lại mọi thay đổi trong hệ thống">
       <template #actions>
-        <button class="btn-secondary" :disabled="!logs.length" @click="exportLogs">
+        <button v-if="canExport" class="btn-secondary" :disabled="!logs.length" @click="exportLogs">
           <UiIcon name="upload" :size="16" /> Xuất CSV
         </button>
         <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /> Làm mới</button>

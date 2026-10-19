@@ -6,6 +6,7 @@ import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
 import { exportCsv } from '~/utils/csv'
 import { reasonCodeLabel, INTERNAL_STATUS } from '~/utils/enums'
+import { useAuthStore } from '~/stores/auth'
 
 // Kết quả QC — màn ĐỌC, trả lời đúng câu hỏi của xưởng sau khi quét QC:
 // "đơn nào đã QC đủ để đóng gói, đơn nào còn kẹt, kẹt ở sản phẩm nào".
@@ -111,6 +112,10 @@ function progressPct(o: QcResultOrder) {
   return o.total_items > 0 ? Math.round((o.passed_items / o.total_items) * 100) : 0
 }
 
+// Xuất file = "Thao tác" của màn Kết quả QC (tick riêng từ 19/10; trước đó ai xem
+// được là xuất được).
+const canExport = computed(() => useAuthStore().can('qc_results.manage'))
+
 // Xuất đúng những gì đang xem, cấp SẢN PHẨM — để đối chiếu ngoài Excel.
 function exportRows() {
   const rows = orders.value.flatMap((o) =>
@@ -146,7 +151,7 @@ function exportRows() {
       subtitle="Đơn nào đã QC đủ để đóng gói, đơn nào còn kẹt và kẹt ở sản phẩm nào"
     >
       <template #actions>
-        <button class="btn-secondary" :disabled="!orders.length" @click="exportRows">
+        <button v-if="canExport" class="btn-secondary" :disabled="!orders.length" @click="exportRows">
           <UiIcon name="download" :size="16" /> Xuất CSV
         </button>
       </template>

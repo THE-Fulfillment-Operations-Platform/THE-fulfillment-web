@@ -44,29 +44,43 @@ function setTick(feature: string, level: 'view' | 'manage', on: boolean) {
           <p class="text-foreground">{{ f.label }}</p>
           <p v-if="f.manage_hint" class="text-[11px] text-muted-foreground">Thao tác: {{ f.manage_hint }}</p>
         </td>
-        <td class="px-2 py-1.5 text-center">
-          <input
-            v-if="f.levels.includes('view')"
-            type="checkbox"
-            class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-            :checked="modelValue.has(`${f.key}.view`)"
-            :disabled="disabled"
-            :aria-label="`Xem ${f.label}`"
-            @change="setTick(f.key, 'view', ($event.target as HTMLInputElement).checked)"
-          />
-          <span v-else class="text-muted-foreground">—</span>
-        </td>
-        <td class="px-2 py-1.5 text-center">
-          <input
-            v-if="f.levels.includes('manage')"
-            type="checkbox"
-            class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-            :checked="modelValue.has(`${f.key}.manage`)"
-            :disabled="disabled"
-            :aria-label="`Thao tác ${f.label}`"
-            @change="setTick(f.key, 'manage', ($event.target as HTMLInputElement).checked)"
-          />
-          <span v-else class="text-muted-foreground">—</span>
+        <!-- Màn có đủ hai mức: một ô Xem, một ô Thao tác. -->
+        <template v-if="f.levels.length > 1">
+          <td class="px-2 py-1.5 text-center">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              :checked="modelValue.has(`${f.key}.view`)"
+              :disabled="disabled"
+              :aria-label="`Xem ${f.label}`"
+              @change="setTick(f.key, 'view', ($event.target as HTMLInputElement).checked)"
+            />
+          </td>
+          <td class="px-2 py-1.5 text-center">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              :checked="modelValue.has(`${f.key}.manage`)"
+              :disabled="disabled"
+              :aria-label="`Thao tác ${f.label}`"
+              @change="setTick(f.key, 'manage', ($event.target as HTMLInputElement).checked)"
+            />
+          </td>
+        </template>
+        <!-- Màn chỉ có một mức (Tổng quan chỉ để xem; Huỷ batch là một hành động,
+             không có màn riêng để xem): một ô tick trải hai cột, không để ô trống. -->
+        <td v-else colspan="2" class="px-2 py-1.5 text-center">
+          <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              :checked="modelValue.has(`${f.key}.${f.levels[0]}`)"
+              :disabled="disabled"
+              :aria-label="`${f.levels[0] === 'view' ? 'Xem' : 'Được phép'} ${f.label}`"
+              @change="setTick(f.key, f.levels[0], ($event.target as HTMLInputElement).checked)"
+            />
+            {{ f.levels[0] === 'view' ? 'Xem' : 'Được phép' }}
+          </label>
         </td>
       </tr>
     </tbody>
