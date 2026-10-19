@@ -50,8 +50,8 @@ async function submit() {
 
     <form class="space-y-4" @submit.prevent="submit">
       <div>
-        <label class="label" for="email">Email</label>
-        <input id="email" v-model="email" type="email" class="input" autocomplete="username" required />
+        <label class="label" for="email">Email / tên đăng nhập</label>
+        <input id="email" v-model="email" type="text" class="input" autocomplete="username" required />
       </div>
       <div>
         <label class="label" for="password">Mật khẩu</label>

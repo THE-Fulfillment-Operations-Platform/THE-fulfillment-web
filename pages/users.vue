@@ -201,8 +201,7 @@ const canSubmit = computed(() => {
 // Fast client-side checks so obvious mistakes get an instant, clear Vietnamese
 // message instead of a round-trip to the backend.
 function validate(): string | null {
-  if (!form.email.trim()) return 'Vui lòng nhập email.'
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return 'Email không đúng định dạng (ví dụ: ten@congty.com).'
+  if (!form.email.trim()) return 'Vui lòng nhập tên đăng nhập (email).'
   if (!form.full_name.trim()) return 'Vui lòng nhập họ tên.'
   if (!editing.value && !form.password) return 'Vui lòng nhập mật khẩu.'
   if (isSellerRole.value && !form.seller_id)
@@ -455,7 +454,7 @@ const ROLE_BADGE: Record<Role, string> = {
       <div class="space-y-4">
         <div>
           <label class="label">Email *</label>
-          <input v-model="form.email" type="email" class="input" :disabled="!!editing" placeholder="user@the.local" />
+          <input v-model="form.email" type="text" class="input" :disabled="!!editing" autocomplete="off" placeholder="Tên đăng nhập hoặc email, vd: ktv" />
         </div>
         <div>
           <label class="label">Họ tên *</label>
