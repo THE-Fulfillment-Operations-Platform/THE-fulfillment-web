@@ -254,9 +254,9 @@ async function remove(m: Material) {
       :empty="!loading && filtered.length === 0"
       empty-text="Chưa có nguyên vật liệu nào."
     >
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">
         <table class="min-w-full divide-y divide-border">
-          <thead class="bg-muted">
+          <thead class="sticky top-0 z-10 bg-muted">
             <tr>
               <th v-if="canDelete" class="table-th w-10">
                 <input
