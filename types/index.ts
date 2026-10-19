@@ -167,6 +167,21 @@ export interface PermissionCatalog {
   role_defaults: Record<Role, string[]>
 }
 
+// Một dòng màn "Quyền theo vai trò": bộ tick của vai trò và ai được sửa nó.
+export interface RolePermission {
+  role: Role
+  /** Bộ tick người theo vai trò đang nhận: bộ đã cấu hình, không có thì bộ gốc. */
+  permissions: string[]
+  /** Bộ tick gốc có sẵn — đích của "Về mặc định gốc". */
+  builtin: string[]
+  /** Vai trò đã được cấu hình riêng (khác bộ gốc). */
+  customized: boolean
+  editable: boolean
+  read_only_reason?: string
+  /** Số tài khoản theo vai trò (chưa tick riêng) — người sẽ đổi theo khi lưu. */
+  following: number
+}
+
 export interface LoginResponse {
   token: string
   expires_at: string

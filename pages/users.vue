@@ -25,6 +25,19 @@ const { data, meta, loading, error, reload } = useApiResource<User[]>(() =>
 )
 const users = computed(() => data.value ?? [])
 
+// Hai tab: Tài khoản (tick riêng từng người) và Quyền theo vai trò (tick cả vai
+// trò — ai chưa tick riêng sẽ đổi theo). Tab nằm trên URL để tải lại không mất.
+const route = useRoute()
+const router = useRouter()
+const tab = ref<'accounts' | 'roles'>(route.query.tab === 'roles' ? 'roles' : 'accounts')
+watch(tab, (t) => router.replace({ query: { ...route.query, tab: t === 'roles' ? 'roles' : undefined } }))
+// Lưu quyền vai trò xong: mặc định của vai trò đổi → nạp lại danh mục (form tài
+// khoản tick theo nó) và danh sách tài khoản.
+function onRolesSaved() {
+  void loadCatalog()
+  reload()
+}
+
 function changePage(p: number) {
   pager.page = p
   reload()
@@ -106,21 +119,6 @@ function resetTicksToRole() {
 function initTicks() {
   const u = editing.value
   ticks.value = new Set(u ? (u.permissions ?? roleDefaults(u.role)) : roleDefaults(form.role))
-}
-function setTick(feature: string, level: 'view' | 'manage', on: boolean) {
-  const next = new Set(ticks.value)
-  const key = `${feature}.${level}`
-  if (on) {
-    next.add(key)
-    if (level === 'manage' && hasLevel(feature, 'view')) next.add(`${feature}.view`)
-  } else {
-    next.delete(key)
-    if (level === 'view') next.delete(`${feature}.manage`)
-  }
-  ticks.value = next
-}
-function hasLevel(feature: string, level: 'view' | 'manage'): boolean {
-  return !!catalog.value?.features.find((f) => f.key === feature)?.levels.includes(level)
 }
 function tickAll(on: boolean) {
   const next = new Set<string>()
@@ -346,11 +344,35 @@ const ROLE_BADGE: Record<Role, string> = {
     <PageHeader title="Người dùng" subtitle="Quản lý tài khoản nhân sự nội bộ và seller, phân quyền theo vai trò">
       <template #actions>
         <NuxtLink to="/audit" class="btn-secondary"><UiIcon name="audit" :size="16" /> Audit Logs</NuxtLink>
-        <button class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm người dùng</button>
+        <button v-if="tab === 'accounts'" class="btn-primary" @click="openCreate"><UiIcon name="plus" :size="16" /> Thêm người dùng</button>
       </template>
     </PageHeader>
 
-    <div class="card overflow-hidden">
+    <div class="mb-4 flex max-w-md gap-1 rounded-xl bg-muted p-1 text-sm">
+      <button
+        type="button"
+        class="flex-1 rounded-lg px-3 py-1.5 font-medium transition-colors"
+        :class="tab === 'accounts' ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'"
+        @click="tab = 'accounts'"
+      >
+        Tài khoản
+      </button>
+      <button
+        type="button"
+        class="flex-1 rounded-lg px-3 py-1.5 font-medium transition-colors"
+        :class="tab === 'roles' ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'"
+        @click="tab = 'roles'"
+      >
+        Quyền theo vai trò
+      </button>
+    </div>
+
+    <template v-if="tab === 'roles'">
+      <UsersRolePermissionsPanel v-if="catalog" :features="catalog.features" @saved="onRolesSaved" />
+      <p v-else class="text-sm text-muted-foreground">Đang tải danh sách quyền…</p>
+    </template>
+
+    <div v-else class="card overflow-hidden">
       <UiStateBlock
         :loading="loading"
         :error="error"
@@ -498,50 +520,11 @@ const ROLE_BADGE: Record<Role, string> = {
           </p>
           <p v-if="!catalog" class="px-3 py-3 text-xs text-muted-foreground">Đang tải danh sách quyền…</p>
           <div v-else class="max-h-72 overflow-y-auto">
-            <table class="min-w-full text-sm">
-              <thead class="sticky top-0 bg-card">
-                <tr class="text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                  <th class="px-3 py-1.5 font-semibold">Màn hình</th>
-                  <th class="w-14 px-2 py-1.5 text-center font-semibold">Xem</th>
-                  <th class="w-20 px-2 py-1.5 text-center font-semibold">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border">
-                <tr v-for="f in catalog.features" :key="f.key">
-                  <td class="px-3 py-1.5">
-                    <p class="text-foreground">{{ f.label }}</p>
-                    <p v-if="f.manage_hint" class="text-[11px] text-muted-foreground">Thao tác: {{ f.manage_hint }}</p>
-                  </td>
-                  <td class="px-2 py-1.5 text-center">
-                    <input
-                      v-if="f.levels.includes('view')"
-                      type="checkbox"
-                      class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                      :checked="ticks.has(`${f.key}.view`)"
-                      :disabled="editingSelfLocked"
-                      :aria-label="`Xem ${f.label}`"
-                      @change="setTick(f.key, 'view', ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span v-else class="text-muted-foreground">—</span>
-                  </td>
-                  <td class="px-2 py-1.5 text-center">
-                    <input
-                      v-if="f.levels.includes('manage')"
-                      type="checkbox"
-                      class="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-                      :checked="ticks.has(`${f.key}.manage`)"
-                      :disabled="editingSelfLocked"
-                      :aria-label="`Thao tác ${f.label}`"
-                      @change="setTick(f.key, 'manage', ($event.target as HTMLInputElement).checked)"
-                    />
-                    <span v-else class="text-muted-foreground">—</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <UsersPermissionTicks v-model="ticks" :features="catalog.features" :disabled="editingSelfLocked" />
           </div>
           <p class="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
-            Màn Người dùng và Cài đặt đi theo vai trò (Quản trị viên / Chủ sở hữu). Các thao tác xoá hoặc ghi đè
+            Muốn đổi cho cả một vai trò thì sửa ở tab <b class="text-foreground">Quyền theo vai trò</b> — tài khoản để
+            "Mặc định" sẽ đổi theo. Màn Người dùng và Cài đặt đi theo vai trò (Quản trị viên / Chủ sở hữu). Các thao tác xoá hoặc ghi đè
             (xoá đơn, xoá NVL/SKU, hạ QC…) vẫn cần thêm vai trò Quản trị viên / Chủ sở hữu.
           </p>
         </div>

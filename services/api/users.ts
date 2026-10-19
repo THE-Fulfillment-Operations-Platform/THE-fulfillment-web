@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../http'
-import type { User, Role, AuditLog, PermissionCatalog } from '~/types'
+import type { User, Role, AuditLog, PermissionCatalog, RolePermission } from '~/types'
 
 export interface UserInput {
   email: string
@@ -29,6 +29,11 @@ export const usersApi = {
   remove: (id: number | string) => apiDelete<unknown>(`/api/users/${id}`),
   // Các màn tick được + bộ tick mặc định của từng vai trò, cho form người dùng.
   permissionCatalog: () => apiGet<PermissionCatalog>('/api/permission-catalog'),
+  // Quyền theo vai trò: đọc / lưu bộ tick của từng vai trò. permissions = null là
+  // về bộ gốc có sẵn.
+  rolePermissions: () => apiGet<RolePermission[]>('/api/role-permissions'),
+  updateRolePermissions: (role: Role, permissions: string[] | null) =>
+    apiPut<RolePermission>(`/api/role-permissions/${role}`, { permissions }),
 }
 
 export const auditApi = {
