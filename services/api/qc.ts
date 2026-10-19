@@ -1,6 +1,7 @@
 import { apiGet, apiPost } from '../http'
 import type {
   QcScanResult,
+  QcOrderScan,
   OrderItem,
   QcFailResult,
   QcResultsPayload,
@@ -11,6 +12,12 @@ import type {
 export interface QcScanInput {
   code?: string
   item_id?: number
+}
+
+// Quét mã đơn: code = mã đơn nội bộ (hoặc store order id), hoặc order_id.
+export interface QcScanOrderInput {
+  code?: string
+  order_id?: number
 }
 
 // QC là cổng cấp sản phẩm: PASS/FAIL áp cho cả item (mọi NVL), không QC lẻ theo
@@ -51,6 +58,9 @@ export interface QcResultsParams extends ListParams {
 
 export const qcApi = {
   scan: (input: QcScanInput) => apiPost<QcScanResult>('/api/qc/scan', input),
+  // Quét cả đơn: ra các sản phẩm trong đơn + trạng thái QC từng cái. Chỉ đọc —
+  // PASS/FAIL vẫn làm trên từng sản phẩm (scan → pass/fail).
+  scanOrder: (input: QcScanOrderInput) => apiPost<QcOrderScan>('/api/qc/scan-order', input),
   pass: (input: QcPassInput) => apiPost<OrderItem>('/api/qc/pass', input),
   fail: (input: QcFailInput) => apiPost<QcFailResult>('/api/qc/fail', input),
   // Gỡ một lần QC pass bấm nhầm — mọi phần còn sống về "Đã cắt", ghi lịch sử

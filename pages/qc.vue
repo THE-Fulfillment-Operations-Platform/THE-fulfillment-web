@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { qcApi } from '~/services/api'
-import type { QcScanResult } from '~/types'
+import type { QcScanResult, QcOrderScan, QcResultItem } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
-import { DEFECT_CODE_OPTIONS } from '~/utils/enums'
+import { DEFECT_CODE_OPTIONS, INTERNAL_STATUS } from '~/utils/enums'
 
 // Scan-driven QC station (Wireframe: Scan QC). The operator scans an item code,
 // the screen pulls the canonical mockup + engrave text, and PASS advances the
@@ -14,6 +14,12 @@ import { DEFECT_CODE_OPTIONS } from '~/utils/enums'
 // QC is a product-level gate: one check per finished product (a product may span
 // several per-material batches). PASS marks the whole product QC-passed at once,
 // and is only allowed once every material part has been produced.
+//
+// Hai cách vào trạm:
+//   - quét MÃ ĐƠN (vd 102431) → màn "đơn": đơn có bao nhiêu sản phẩm, cái nào đã
+//     QC / đang chờ / làm lại. Bấm vào từng sản phẩm để đối chiếu mockup và PASS/FAIL;
+//     xong thì quay về đơn để làm sản phẩm tiếp theo.
+//   - quét MÃ ITEM (có dấu _ hoặc /, vd 102431_1/2) → mở thẳng sản phẩm đó như trước.
 const toast = useToastStore()
 const auth = useAuthStore()
 
@@ -21,6 +27,9 @@ const code = ref('')
 const scanInput = ref<HTMLInputElement | null>(null)
 const scanning = ref(false)
 const result = ref<QcScanResult | null>(null)
+// Đơn đang QC (quét mã đơn). Có giá trị khi đang xem đơn HOẶC đang mở một sản phẩm
+// của đơn đó (result != null) — sản phẩm xong thì quay về đây.
+const order = ref<QcOrderScan | null>(null)
 const scanError = ref<string | null>(null)
 
 // Item đã QC PASS rồi → chặn quét/PASS lại để không ghi trùng bản ghi QC.
@@ -96,6 +105,11 @@ const defect = reactive({
 })
 
 
+// Mã tem sản phẩm có dạng <mã đơn>_<dòng>/<tổng> (102431_1/2); mã đơn chỉ là số.
+function looksLikeItemCode(v: string) {
+  return /[_/]/.test(v)
+}
+
 function focusScan() {
   nextTick(() => scanInput.value?.focus())
 }
@@ -106,10 +120,19 @@ async function scan() {
   scanning.value = true
   scanError.value = null
   try {
-    const { data } = await qcApi.scan({ code: value })
-    result.value = data
+    if (looksLikeItemCode(value)) {
+      // Mã item: mở thẳng sản phẩm, như trước đây.
+      const { data } = await qcApi.scan({ code: value })
+      order.value = null
+      result.value = data
+    } else {
+      const { data } = await qcApi.scanOrder({ code: value })
+      result.value = null
+      order.value = data
+    }
   } catch (e) {
     result.value = null
+    order.value = null
     scanError.value = errorMessage(e)
   } finally {
     scanning.value = false
@@ -118,11 +141,65 @@ async function scan() {
   }
 }
 
+// Thôi QC sản phẩm đang mở. Đang làm trong một đơn thì quay về đơn (tải lại để
+// trạng thái mới nhất hiện ra); không thì trạm trống, sẵn sàng quét mã khác.
 function clearStation() {
   result.value = null
   scanError.value = null
+  if (order.value) void refreshOrder()
   focusScan()
 }
+
+// Thôi luôn cả đơn, quét đơn / sản phẩm khác.
+function clearOrder() {
+  result.value = null
+  order.value = null
+  scanError.value = null
+  focusScan()
+}
+
+async function refreshOrder() {
+  if (!order.value) return
+  try {
+    const { data } = await qcApi.scanOrder({ order_id: order.value.order_id })
+    // Người dùng có thể đã quét đơn khác trong lúc chờ — đừng ghi đè.
+    if (order.value?.order_id === data.order_id) order.value = data
+  } catch (e) {
+    toast.error(errorMessage(e))
+  }
+}
+
+// Bấm một sản phẩm trong đơn → mở màn QC của sản phẩm đó.
+const openingItemId = ref<number | null>(null)
+async function openItem(it: QcResultItem) {
+  if (openingItemId.value) return
+  openingItemId.value = it.item_id
+  scanError.value = null
+  try {
+    const { data } = await qcApi.scan({ item_id: it.item_id })
+    result.value = data
+    window.scrollTo?.({ top: 0 })
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    openingItemId.value = null
+  }
+}
+
+const ITEM_QC: Record<string, { label: string; chip: string }> = {
+  PASSED: { label: 'Đã QC', chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  REWORK: { label: 'Đang làm lại', chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
+  WAITING: { label: 'Chờ QC', chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+}
+const itemQc = (it: QcResultItem) => ITEM_QC[it.qc_status] ?? ITEM_QC.WAITING
+const stageLabel = (it: QcResultItem) => INTERNAL_STATUS[it.internal_status]?.label ?? it.internal_status
+
+// Tổng số lượng cái hàng trong đơn (cộng SL từng dòng) — số "sản phẩm" là số dòng.
+const orderQty = computed(() => (order.value?.items ?? []).reduce((n, it) => n + (it.quantity || 0), 0))
+const orderPct = computed(() => {
+  const o = order.value
+  return o && o.total_items ? Math.round((o.passed_items / o.total_items) * 100) : 0
+})
 
 // Trạm QC là một vòng lặp tay: quét → soi mockup → PASS → quét cái tiếp theo. Bắt
 // người QC đứng đợi server ghi xong mới cho quét mã sau là buộc cả xưởng chạy theo
@@ -134,10 +211,27 @@ function clearStation() {
 // quét lại — không nuốt lỗi.
 const pending = ref<string[]>([])
 
+function markPassedLocally(itemId: number) {
+  const o = order.value
+  const line = o?.items.find((i) => i.item_id === itemId)
+  if (!o || !line || line.qc_status === 'PASSED') return
+  if (line.qc_status === 'REWORK') o.rework_items--
+  o.waiting_items--
+  o.passed_items++
+  line.qc_status = 'PASSED'
+  line.internal_status = 'QC_PASSED'
+  o.status = o.passed_items === o.total_items ? 'DONE' : 'PARTIAL'
+}
+
 function pass() {
   const item = result.value
   if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || mustAckNote.value) return
-  clearStation() // nhả trạm trước, quét mã tiếp theo được luôn
+  // Đang làm trong một đơn: đánh dấu ngay sản phẩm này là "Đã QC" trên màn đơn để
+  // người QC thấy tiến độ và làm sản phẩm kế tiếp mà không phải đợi server.
+  markPassedLocally(item.item_id)
+  result.value = null // nhả trạm trước, quét mã tiếp theo / bấm sản phẩm khác được luôn
+  scanError.value = null
+  focusScan()
 
   pending.value.push(item.item_code)
   qcApi
@@ -149,6 +243,8 @@ function pass() {
     .finally(() => {
       const i = pending.value.indexOf(item.item_code)
       if (i !== -1) pending.value.splice(i, 1)
+      // Đồng bộ lại với server (ghi hỏng thì trạng thái thật hiện ra, không treo "Đã QC" ảo).
+      void refreshOrder()
     })
 }
 
@@ -266,14 +362,14 @@ onMounted(focusScan)
   <div>
     <PageHeader
       title="Quét QC"
-      subtitle="Quét mã item → đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành."
+      subtitle="Quét mã đơn → xem các sản phẩm trong đơn → bấm từng sản phẩm, đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành."
     />
 
     <!-- Scan bar -->
     <div class="card mb-5 p-4">
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="scan">
         <div class="flex-1">
-          <label class="label" for="qc-scan">Mã item / batch item</label>
+          <label class="label" for="qc-scan">Mã đơn / mã item</label>
           <input
             id="qc-scan"
             ref="scanInput"
@@ -299,16 +395,121 @@ onMounted(focusScan)
       </p>
     </div>
 
+    <!-- Màn ĐƠN: quét mã đơn → thấy cả đơn có bao nhiêu sản phẩm, bấm từng cái để QC -->
+    <div v-if="order && !result" class="space-y-4">
+      <div class="card p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Đơn đang QC</p>
+            <p class="font-mono text-3xl font-bold leading-tight text-foreground">{{ order.internal_code }}</p>
+            <p class="mt-0.5 text-sm text-muted-foreground">
+              {{ order.store_order_id }}<template v-if="order.seller_name"> · {{ order.seller_name }}</template>
+            </p>
+          </div>
+          <button class="btn-secondary" @click="clearOrder">Quét đơn khác</button>
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-end gap-x-8 gap-y-3">
+          <div>
+            <p class="label">Sản phẩm trong đơn</p>
+            <p class="text-3xl font-bold leading-none tabular-nums text-foreground">
+              {{ order.total_items }}
+              <span v-if="orderQty !== order.total_items" class="text-sm font-semibold text-muted-foreground">({{ orderQty }} cái)</span>
+            </p>
+          </div>
+          <div>
+            <p class="label">Đã QC</p>
+            <p class="text-3xl font-bold leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
+              {{ order.passed_items }}<span class="text-base font-semibold text-muted-foreground"> / {{ order.total_items }}</span>
+            </p>
+          </div>
+          <div>
+            <p class="label">Chờ QC</p>
+            <p class="text-3xl font-bold leading-none tabular-nums text-amber-600 dark:text-amber-400">{{ order.waiting_items - order.rework_items }}</p>
+          </div>
+          <div v-if="order.rework_items">
+            <p class="label">Đang làm lại</p>
+            <p class="text-3xl font-bold leading-none tabular-nums text-rose-600 dark:text-rose-400">{{ order.rework_items }}</p>
+          </div>
+        </div>
+        <div class="mt-4 h-2 overflow-hidden rounded-full bg-muted" role="progressbar" :aria-valuenow="orderPct" aria-valuemin="0" aria-valuemax="100">
+          <div class="h-full rounded-full bg-emerald-500 transition-all" :style="{ width: orderPct + '%' }" />
+        </div>
+        <p
+          v-if="order.status === 'DONE'"
+          class="mt-3 flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+        >
+          <UiIcon name="check" :size="16" /> Đơn đã QC đủ — sẵn sàng gửi / đóng gói.
+        </p>
+      </div>
+
+      <div
+        v-if="order.order_note"
+        class="rounded-lg border-2 border-amber-400 bg-amber-50 p-4 dark:border-amber-500/60 dark:bg-amber-500/10"
+        role="alert"
+      >
+        <p class="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+          <UiIcon name="alert" :size="18" /> Đơn có ghi chú
+        </p>
+        <p class="mt-2 whitespace-pre-line break-words text-xl font-semibold leading-snug text-amber-900 dark:text-amber-100">{{ order.order_note }}</p>
+        <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">Mở từng sản phẩm để QC sẽ phải bấm “Đã đọc ghi chú” trước khi PASS.</p>
+      </div>
+
+      <div v-if="!order.items.length" class="card py-10 text-center text-sm text-muted-foreground">
+        Đơn này không còn sản phẩm nào cần QC (đã huỷ hết).
+      </div>
+      <ul v-else class="space-y-2">
+        <li v-for="it in order.items" :key="it.item_id">
+          <button
+            type="button"
+            class="card flex w-full flex-wrap items-center gap-x-4 gap-y-2 p-4 text-left transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary/40"
+            :class="[
+              it.qc_status === 'PASSED' ? 'border-emerald-300 dark:border-emerald-500/40' : '',
+              it.qc_status === 'REWORK' ? 'border-rose-300 bg-rose-50/40 dark:border-rose-500/40 dark:bg-rose-500/5' : '',
+            ]"
+            :disabled="openingItemId !== null"
+            @click="openItem(it)"
+          >
+            <div class="min-w-0 flex-1 basis-56">
+              <p class="font-mono text-sm text-muted-foreground">{{ it.internal_code }}</p>
+              <p class="break-all text-xl font-bold leading-tight text-foreground">{{ it.sku_code }}</p>
+              <p v-if="it.product_name" class="break-words text-sm text-muted-foreground">{{ it.product_name }}</p>
+            </div>
+            <div class="text-center">
+              <p class="label">SL</p>
+              <p class="text-2xl font-bold leading-none tabular-nums" :class="it.quantity > 1 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'">{{ it.quantity }}</p>
+            </div>
+            <div class="flex flex-col items-end gap-1">
+              <span class="inline-flex items-center whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold" :class="itemQc(it).chip">
+                <UiIcon v-if="it.qc_status === 'PASSED'" name="check" :size="13" class="mr-1" />{{ itemQc(it).label }}
+              </span>
+              <span class="text-[11px] text-muted-foreground">Sản xuất: {{ stageLabel(it) }}</span>
+            </div>
+            <UiSpinner v-if="openingItemId === it.item_id" :size="16" />
+            <span v-else class="text-lg text-muted-foreground" aria-hidden="true">›</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+
     <!-- Idle state -->
-    <div v-if="!result" class="card flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
+    <div v-else-if="!result" class="card flex flex-col items-center justify-center gap-2 py-16 text-center text-muted-foreground">
       <div class="rounded-full bg-muted p-4">
         <UiIcon name="qc" :size="32" />
       </div>
-      <p class="text-sm">Quét một mã item để bắt đầu kiểm tra QC.</p>
+      <p class="text-sm">Quét một mã đơn (hoặc mã item) để bắt đầu kiểm tra QC.</p>
     </div>
 
     <!-- QC comparison -->
-    <div v-else class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <template v-else>
+    <!-- Đang QC một sản phẩm của đơn: một nút quay về đơn, luôn thấy ngay trên đầu. -->
+    <div v-if="order" class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-4 py-2.5">
+      <button class="text-sm font-semibold text-primary hover:underline" @click="clearStation">← Về đơn {{ order.internal_code }}</button>
+      <span class="text-sm text-muted-foreground">
+        Đã QC <b class="text-foreground">{{ order.passed_items }}/{{ order.total_items }}</b> sản phẩm
+      </span>
+    </div>
+    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <!-- Mockup -->
       <div class="card overflow-hidden">
         <div class="flex items-center justify-between border-b border-border bg-muted px-4 py-2.5">
@@ -484,7 +685,7 @@ onMounted(focusScan)
             <div>
               <p class="font-semibold">Item này đã QC rồi</p>
               <p class="mt-0.5 text-xs text-emerald-700/90 dark:text-emerald-300/90">
-                Không cần quét lại. Bấm “Bỏ qua / Quét mã khác” để tiếp tục item khác.
+                Không cần quét lại. Quay về đơn hoặc quét mã khác để tiếp tục.
               </p>
             </div>
           </div>
@@ -532,10 +733,13 @@ onMounted(focusScan)
             <UiSpinner v-if="undoing" :size="16" />
             <UiIcon v-else name="refresh" :size="16" /> Hạ QC (bấm nhầm — hàng vẫn tốt)
           </button>
-          <button class="btn-secondary mt-2 w-full" @click="clearStation">Bỏ qua / Quét mã khác</button>
+          <button class="btn-secondary mt-2 w-full" @click="clearStation">
+            {{ order ? `← Về đơn ${order.internal_code} (bỏ qua sản phẩm này)` : 'Bỏ qua / Quét mã khác' }}
+          </button>
         </div>
       </div>
     </div>
+    </template>
 
     <!-- Fail modal -->
     <UiModal v-model="failOpen" title="Ghi nhận lỗi QC">

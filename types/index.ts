@@ -939,6 +939,12 @@ export interface QcResultOrder {
   tracking_status?: TrackingStatus
 }
 
+// Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn
+// tổng thể rồi mở từng sản phẩm mà QC. order_note = ghi chú của đơn (nếu có).
+export interface QcOrderScan extends QcResultOrder {
+  order_note?: string
+}
+
 export interface QcResultSummary {
   orders: number
   orders_done: number
