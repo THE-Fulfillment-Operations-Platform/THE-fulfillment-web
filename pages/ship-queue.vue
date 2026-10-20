@@ -266,6 +266,13 @@ const SKIP_HINT: Record<string, string> = {
 // Máy quét là bàn phím: bắn chuỗi mã + Enter vào ô input. Vào chế độ quét thì ô
 // này giữ focus liên tục — quét phát nào ăn phát đó, không cần chạm chuột.
 const scanMode = ref(false)
+// Hai kiểu quét (khách chốt 20/10/2026):
+//   - 'export' = QUÉT XUẤT KHO (XK): chỉ đếm và ghi nhận đơn đã ra khỏi kho. KHÔNG tạo
+//     đơn THE nên không vướng cân nặng / hộp (việc đó ở chỗ dán label), và nhận cả đơn
+//     hệ thống còn ghi đang sản xuất — quét xong có cảnh báo, không chặn.
+//   - 'the'    = quét là tạo + chốt đơn THE (như trước), cần đơn QC đủ và SKU đủ cân nặng / hộp.
+// Mặc định XK: đó là việc thợ làm hằng ngày ở cửa kho.
+const scanKind = ref<'export' | 'the'>('export')
 const code = ref('')
 const scanInput = ref<HTMLInputElement | null>(null)
 
@@ -291,6 +298,9 @@ interface ScanLogEntry {
   internal_code?: string
   store_order_id?: string
   handoff_code?: string
+  exported?: boolean
+  unfinished?: number
+  total?: number
   order_id?: number
   the_tracking?: string
   has_label?: boolean
@@ -298,6 +308,7 @@ interface ScanLogEntry {
 }
 const scanLog = ref<ScanLogEntry[]>([])
 const shippedCount = computed(() => scanLog.value.filter((e) => e.ok).length)
+const exportMode = computed(() => scanKind.value === 'export')
 let logKey = 0
 
 function timeNow() {
@@ -317,16 +328,25 @@ function submitScan() {
   if (!value || pending.value.includes(value)) return
 
   pending.value.push(value)
+  const exporting = scanKind.value === 'export'
   handoffsApi
-    .shipScan(value)
+    .shipScan(value, exporting ? { export_only: true } : {})
     .then(({ data: res }) => {
       scanLog.value.unshift({
         key: ++logKey, code: value, ok: true, time: timeNow(),
         internal_code: res?.internal_code, store_order_id: res?.store_order_id,
         handoff_code: res?.handoff_code, order_id: res?.order_id,
+        exported: res?.exported, unfinished: res?.unfinished_items, total: res?.total_items,
         the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
       })
-      toast.success(`Đã gửi đơn ${res?.internal_code ?? value} cho THE`)
+      if (res?.exported) {
+        const left = res.unfinished_items ?? 0
+        const msg = `Đã xuất kho đơn ${res.internal_code ?? value}`
+        if (left > 0) toast.info(`${msg} — lưu ý: hệ thống còn ${left}/${res.total_items} sản phẩm chưa QC đạt`)
+        else toast.success(msg)
+      } else {
+        toast.success(`Đã gửi đơn ${res?.internal_code ?? value} cho THE`)
+      }
       void reload()
     })
     .catch((e) => {
@@ -348,14 +368,14 @@ function submitScan() {
   <div>
     <PageHeader
       title="Chờ gửi hàng"
-      subtitle="Đơn đã QC đủ và chưa gửi — tick chọn rồi gửi hàng loạt, hoặc bấm Quét gửi hàng để quét QR từng đơn"
+      subtitle="Đơn đã QC đủ và chưa gửi — tick chọn rồi gửi hàng loạt, hoặc bấm Quét xuất kho để quét QR từng đơn ra khỏi kho"
     >
       <template #actions>
         <button class="btn-secondary" @click="reload">
           <UiIcon name="refresh" :size="16" /> Làm mới
         </button>
         <button v-if="!scanMode && canShip" class="btn-primary" @click="startScan">
-          <UiIcon name="qc" :size="16" /> Quét gửi hàng
+          <UiIcon name="qc" :size="16" /> Quét xuất kho
         </button>
         <button v-else class="btn-secondary" @click="stopScan">
           <UiIcon name="close" :size="16" /> Dừng quét
@@ -365,6 +385,34 @@ function submitScan() {
 
     <!-- Trạm quét -->
     <div v-if="scanMode" class="card mb-4 border-primary/40 p-4 ring-1 ring-primary/30">
+      <!-- Kiểu quét: XK (chỉ đếm hàng ra khỏi kho) hoặc gửi THE (tạo đơn THE). -->
+      <div class="mb-3 inline-flex rounded-lg border border-border p-0.5 text-sm" role="tablist" aria-label="Kiểu quét">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="exportMode"
+          class="rounded-md px-3 py-1.5 font-medium transition-colors"
+          :class="exportMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'"
+          @click="scanKind = 'export'; focusScan()"
+        >Xuất kho</button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="!exportMode"
+          class="rounded-md px-3 py-1.5 font-medium transition-colors"
+          :class="!exportMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'"
+          @click="scanKind = 'the'; focusScan()"
+        >Gửi cho THE</button>
+      </div>
+      <p class="mb-3 text-xs text-muted-foreground">
+        <template v-if="exportMode">
+          <b class="text-foreground">Xuất kho:</b> chỉ đếm và ghi nhận đơn đã ra khỏi kho. Không tạo đơn THE, không cần cân nặng / kích thước hộp
+          (việc đó ở chỗ dán label). Quét được cả đơn hệ thống còn ghi đang sản xuất — có cảnh báo, không chặn.
+        </template>
+        <template v-else>
+          <b class="text-foreground">Gửi cho THE:</b> quét là tạo + chốt đơn THE (trừ ví). Cần đơn đã QC đủ và mọi SKU đã khai cân nặng + hộp.
+        </template>
+      </p>
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="submitScan">
         <div class="flex-1">
           <label class="label" for="ship-scan">Quét QR trên đơn (mã nội bộ)</label>
@@ -373,26 +421,26 @@ function submitScan() {
             ref="scanInput"
             v-model="code"
             class="input font-mono text-base"
-            placeholder="Quét hoặc nhập mã rồi Enter — đơn sẽ gửi đi ngay…"
+            :placeholder="exportMode ? 'Quét hoặc nhập mã rồi Enter — đơn được ghi nhận xuất kho…' : 'Quét hoặc nhập mã rồi Enter — đơn sẽ gửi đi ngay…'"
             autocomplete="off"
             spellcheck="false"
           />
         </div>
         <button type="submit" class="btn-primary sm:w-44" :disabled="!code.trim()">
-          <UiIcon name="shipping" :size="16" /> Gửi cho THE
+          <UiIcon name="shipping" :size="16" /> {{ exportMode ? 'Xuất kho' : 'Gửi cho THE' }}
         </button>
       </form>
 
       <!-- Request chạy nền nên trạm trống ngay; dòng này để việc đang chạy không vô hình. -->
       <p v-if="pending.length" class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <UiSpinner :size="14" />
-        Đang gửi: <span class="font-mono">{{ pending.join(', ') }}</span>
+        Đang {{ exportMode ? 'ghi nhận' : 'gửi' }}: <span class="font-mono">{{ pending.join(', ') }}</span>
       </p>
 
       <!-- Nhật ký phiên quét -->
       <div v-if="scanLog.length" class="mt-4 border-t border-border pt-3">
         <p class="mb-2 text-xs font-medium text-muted-foreground">
-          Phiên quét này: <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ shippedCount }}</span> đơn đã gửi
+          Phiên quét này: <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ shippedCount }}</span> đơn {{ exportMode ? 'đã xuất kho' : 'đã gửi' }}
           <template v-if="scanLog.length - shippedCount > 0">
             · <span class="font-semibold text-red-700 dark:text-rose-300">{{ scanLog.length - shippedCount }}</span> lượt quét lỗi
           </template>
@@ -409,8 +457,18 @@ function submitScan() {
               <span class="font-mono font-semibold">{{ entry.internal_code || entry.code }}</span>
               <template v-if="entry.ok">
                 <span v-if="entry.store_order_id"> · {{ entry.store_order_id }}</span>
-                — đã gửi cho THE<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
-                <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
+                <template v-if="entry.exported">
+                  — đã xuất kho
+                  <span
+                    v-if="entry.unfinished"
+                    class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                    title="Hệ thống còn ghi các sản phẩm này chưa QC đạt lúc đơn ra khỏi kho"
+                  >còn {{ entry.unfinished }}/{{ entry.total }} SP chưa QC</span>
+                </template>
+                <template v-else>
+                  — đã gửi cho THE<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
+                  <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
+                </template>
                 <button
                   v-if="entry.has_label && entry.order_id"
                   class="ml-2 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium text-emerald-800 hover:bg-white dark:bg-white/10 dark:text-emerald-200"

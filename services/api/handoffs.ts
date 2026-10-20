@@ -42,6 +42,11 @@ export interface ShipScanResult {
   seller_name?: string
   handoff_code: string
   the?: THEOutcome
+  /** Quét xuất kho (export_only): chỉ ghi nhận hàng ra khỏi kho, không tạo gì trên THE. */
+  exported?: boolean
+  /** Số sản phẩm hệ thống còn ghi chưa QC đạt lúc đơn xuất kho (0 = không có gì để cảnh báo). */
+  unfinished_items?: number
+  total_items?: number
 }
 
 /** Lựa chọn khi gửi. */
@@ -50,6 +55,11 @@ export interface ShipOptions {
   skip_address_check?: boolean
   /** Chỉ ghi nhận bàn giao, KHÔNG tạo đơn THE (đơn THE không nhận qua API). */
   manual_handoff?: boolean
+  /**
+   * Quét xuất kho (XK): chỉ đếm + ghi nhận đơn đã ra khỏi kho. Không gọi THE nên không
+   * cần cân nặng / hộp, và nhận cả đơn hệ thống còn ghi đang sản xuất.
+   */
+  export_only?: boolean
 }
 
 export const handoffsApi = {
