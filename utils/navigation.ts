@@ -53,7 +53,7 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Bảng sản xuất', to: '/production', feature: 'production', icon: 'board', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'PRODUCTION', 'DESIGNER'] },
   { label: 'Quét QC', to: '/qc', feature: 'qc', icon: 'qc', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'QC'] },
   // Giỏ chờ: đơn nhiều sản phẩm gom ở giỏ đánh số tới khi đủ, bó lại rồi quét xác
-  // nhận mới thả giỏ. QC tạo giỏ, người nhặt (tổ gửi hàng) thả giỏ.
+  // nhận mới xoá giỏ. QC tạo giỏ, người nhặt (tổ gửi hàng) xoá giỏ.
   {
     label: 'Giỏ chờ',
     to: '/baskets',

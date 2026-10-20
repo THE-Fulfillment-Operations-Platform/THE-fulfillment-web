@@ -42,7 +42,7 @@ function print() {
       </p>
       <p v-if="mode === 'full'" class="rounded-lg bg-muted px-4 py-3 text-left text-base font-medium leading-relaxed text-foreground">
         Cầm sản phẩm này ra <b>giỏ #{{ basket.number }}</b>, đếm đủ <b>{{ basket.total_items }} sản phẩm{{ qtyNote }}</b>
-        của đơn, bó lại thành một bó — rồi vào màn <b>Giỏ chờ</b> quét tem giỏ để xác nhận thả giỏ.
+        của đơn, bó lại thành một bó — rồi vào màn <b>Giỏ chờ</b> quét lại tem giỏ để xác nhận <b>xoá giỏ</b> (giỏ trống ra cho đơn khác).
       </p>
       <p v-else class="rounded-lg bg-muted px-4 py-3 text-left text-base font-medium leading-relaxed text-foreground">
         Bỏ sản phẩm vừa QC vào <b>giỏ #{{ basket.number }}</b> và in tem giỏ để ghép cùng hàng. Các sản phẩm sau của đơn

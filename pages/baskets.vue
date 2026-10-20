@@ -12,9 +12,9 @@ import { formatDateTime } from '~/utils/format'
 //   - Quét bất cứ mã nào đang cầm (tem giỏ, mã đơn, tem sản phẩm) → biết ngay hàng
 //     của đơn đang ở giỏ số mấy (bước 3), hoặc tạo giỏ nếu đơn cần mà chưa có.
 //   - Giỏ ĐỦ (mọi sản phẩm đã QC đạt) → người nhặt ra giỏ đếm đủ, bó lại, rồi QUÉT
-//     LẠI một lượt nữa để xác nhận → giỏ được thả, số giỏ trống ra cho đơn khác.
+//     LẠI một lượt nữa để xác nhận → giỏ được xoá, số giỏ trống ra cho đơn khác.
 //     Quét lần đầu chỉ để xem; lượt quét thứ hai (cùng giỏ) mới là xác nhận — để
-//     người ta không thả nhầm giỏ khi chỉ định tra cứu.
+//     người ta không xoá nhầm giỏ khi chỉ định tra cứu.
 //   - Đơn còn nằm giỏ thì không gửi được cho THE: sang đóng hàng là chắc chắn đủ.
 const auth = useAuthStore()
 const toast = useToastStore()
@@ -137,7 +137,7 @@ function select(b: Basket) {
   focusScan()
 }
 
-// ---- Tạo giỏ / thả giỏ ---------------------------------------------------
+// ---- Tạo giỏ / xoá giỏ ---------------------------------------------------
 const createdOpen = ref(false)
 const createdBasket = ref<Basket | null>(null)
 const creating = ref(false)
@@ -159,7 +159,7 @@ async function createFor(orderId: number) {
 }
 
 const releasing = ref(false)
-// Vừa thả xong: giữ lại để hiện thông báo lớn "đã thả giỏ X, đẩy sang đóng hàng".
+// Vừa xoá xong: giữ lại để hiện thông báo lớn "đã xoá giỏ X, đẩy sang đóng hàng".
 const released = ref<Basket | null>(null)
 async function release(b: Basket) {
   if (releasing.value) return
@@ -169,7 +169,7 @@ async function release(b: Basket) {
     released.value = data
     current.value = null
     armedBasketId.value = null
-    toast.success(`Đã thả giỏ #${data.number} — đơn ${data.order_code} đủ ${data.total_items} sản phẩm, đẩy sang đóng hàng`)
+    toast.success(`Đã xoá giỏ #${data.number} — đơn ${data.order_code} đủ ${data.total_items} sản phẩm, đẩy sang đóng hàng`)
     void loadList()
   } catch (e) {
     toast.error(errorMessage(e))
@@ -179,7 +179,7 @@ async function release(b: Basket) {
   }
 }
 
-// Admin thả giỏ khi đơn CHƯA đủ (hàng phải lấy ra vì lý do khác) — bắt ghi lý do.
+// Admin xoá giỏ khi đơn CHƯA đủ (hàng phải lấy ra vì lý do khác) — bắt ghi lý do.
 const forceOpen = ref(false)
 const forceReason = ref('')
 const forcing = ref(false)
@@ -195,7 +195,7 @@ async function submitForce() {
     const { data } = await basketsApi.release(b.id, { force: true, reason: forceReason.value.trim() })
     forceOpen.value = false
     current.value = null
-    toast.success(`Đã thả giỏ #${data.number}`)
+    toast.success(`Đã xoá giỏ #${data.number} — giỏ trống`)
     void loadList()
   } catch (e) {
     toast.error(errorMessage(e))
@@ -232,7 +232,7 @@ onBeforeUnmount(() => clearInterval(timer))
   <div>
     <PageHeader
       title="Giỏ chờ"
-      subtitle="Đơn nhiều sản phẩm gom ở giỏ tới khi đủ. Quét tem giỏ / mã đơn / tem sản phẩm để biết giỏ số mấy; giỏ đủ thì bó lại rồi quét lại tem giỏ để xác nhận thả giỏ."
+      subtitle="Đơn nhiều sản phẩm gom ở giỏ tới khi đủ. Quét tem giỏ / mã đơn / tem sản phẩm để biết giỏ số mấy; giỏ đủ thì bó lại rồi quét lại tem giỏ để xác nhận xoá giỏ (giỏ trống ra cho đơn khác)."
     >
       <template #actions>
         <button class="btn-secondary whitespace-nowrap" :disabled="listLoading" @click="loadList">
@@ -265,14 +265,14 @@ onBeforeUnmount(() => clearInterval(timer))
       </p>
     </div>
 
-    <!-- Vừa thả giỏ -->
+    <!-- Vừa xoá giỏ -->
     <div
       v-if="released && !current"
       class="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-5 dark:border-emerald-500/60 dark:bg-emerald-500/10"
     >
       <UiIcon name="check" :size="32" class="text-emerald-600 dark:text-emerald-400" />
       <div class="min-w-0 flex-1">
-        <p class="text-lg font-bold text-emerald-900 dark:text-emerald-100">Đã thả giỏ #{{ released.number }}</p>
+        <p class="text-lg font-bold text-emerald-900 dark:text-emerald-100">Đã xoá giỏ #{{ released.number }} — giỏ trống</p>
         <p class="text-sm text-emerald-800 dark:text-emerald-200">
           Đơn <span class="font-mono font-semibold">{{ released.order_code }}</span> đủ {{ released.total_items }} sản phẩm — bó hàng đẩy sang
           đóng hàng. Giỏ #{{ released.number }} đã trống.
@@ -307,10 +307,10 @@ onBeforeUnmount(() => clearInterval(timer))
             <span class="text-sm font-medium text-muted-foreground">sản phẩm đã QC đạt<template v-if="current.basket.total_qty !== current.basket.total_items"> · {{ current.basket.total_qty }} cái</template></span>
           </p>
           <p v-if="current.basket.status === 'FULL'" class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-            Đủ hàng: đếm đủ {{ current.basket.total_items }} sản phẩm trong giỏ, bó lại — rồi quét lại tem giỏ này (hoặc bấm nút) để xác nhận thả giỏ.
+            Đủ hàng: đếm đủ {{ current.basket.total_items }} sản phẩm trong giỏ, bó lại — rồi quét lại tem giỏ này (hoặc bấm nút) để xác nhận xoá giỏ.
           </p>
           <p v-else-if="current.basket.status === 'CANCELLED'" class="text-sm font-semibold text-rose-700 dark:text-rose-300">
-            Đơn đã huỷ: lấy hàng ra khỏi giỏ rồi thả giỏ.
+            Đơn đã huỷ: lấy hàng ra khỏi giỏ rồi xoá giỏ.
           </p>
           <p v-else class="text-sm font-semibold text-amber-700 dark:text-amber-300">
             Còn thiếu {{ missing.length }} sản phẩm — sản phẩm nào QC đạt thì bỏ vào giỏ #{{ current.basket.number }}.
@@ -324,7 +324,7 @@ onBeforeUnmount(() => clearInterval(timer))
             @click="release(current.basket)"
           >
             <UiSpinner v-if="releasing" :size="16" /><UiIcon v-else name="check" :size="18" />
-            {{ current.basket.status === 'FULL' ? 'Đã bó đủ — thả giỏ' : 'Đã lấy hàng ra — thả giỏ' }}
+            {{ current.basket.status === 'FULL' ? `Đã bó đủ — xoá giỏ #${current.basket.number}` : `Đã lấy hàng ra — xoá giỏ #${current.basket.number}` }}
           </button>
           <button class="btn-secondary" @click="print(current.basket)"><UiIcon name="print" :size="16" /> In lại tem giỏ</button>
           <button
@@ -332,7 +332,7 @@ onBeforeUnmount(() => clearInterval(timer))
             class="btn-secondary text-rose-600 dark:text-rose-400"
             @click="openForce"
           >
-            Thả giỏ khi chưa đủ…
+            Xoá giỏ khi đơn chưa đủ…
           </button>
         </div>
       </div>
@@ -427,11 +427,13 @@ onBeforeUnmount(() => clearInterval(timer))
 
     <BasketDialog v-model="createdOpen" :basket="createdBasket" mode="created" />
 
-    <UiModal v-model="forceOpen" title="Thả giỏ khi đơn chưa đủ">
+    <UiModal v-model="forceOpen" title="Xoá giỏ khi đơn chưa đủ">
       <div class="space-y-3">
         <p class="text-sm text-foreground">
           Giỏ <b>#{{ current?.basket?.number }}</b> mới QC đạt {{ current?.basket?.passed_items }}/{{ current?.basket?.total_items }} sản phẩm.
-          Thả giỏ là hàng phải được lấy ra khỏi giỏ; khi các sản phẩm còn lại QC xong sẽ cần tạo giỏ mới.
+          Chỉ dùng khi phải lấy hàng ra khỏi giỏ dù đơn chưa đủ (tạo giỏ nhầm đơn, đơn bị huỷ bớt sản phẩm…).
+          Xoá xong giỏ <b>#{{ current?.basket?.number }}</b> trống cho đơn khác; khi QC tiếp các sản phẩm còn lại của
+          đơn, hệ thống sẽ mời tạo giỏ mới.
         </p>
         <div>
           <label class="label" for="force-reason">Lý do (bắt buộc)</label>
@@ -441,7 +443,7 @@ onBeforeUnmount(() => clearInterval(timer))
       <template #footer>
         <button class="btn-secondary" @click="forceOpen = false">Huỷ</button>
         <button class="btn-danger" :disabled="forcing || !forceReason.trim()" @click="submitForce">
-          <UiSpinner v-if="forcing" :size="16" /> Thả giỏ
+          <UiSpinner v-if="forcing" :size="16" /> Xoá giỏ
         </button>
       </template>
     </UiModal>
