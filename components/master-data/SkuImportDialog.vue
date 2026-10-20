@@ -84,7 +84,8 @@ async function commit() {
     toast.success(
       a
         ? `Đã tạo ${a.materials_created} material, ${a.skus_created} SKU, ${a.mappings_created} mapping` +
-            (a.skus_updated ? `, cập nhật ${a.skus_updated} SKU` : '')
+            (a.skus_updated ? `, cập nhật ${a.skus_updated} SKU` : '') +
+            (a.shipping_set ? `, khai vận chuyển cho ${a.shipping_set} SKU` : '')
         : 'Đã commit',
     )
     emit('imported')
@@ -112,11 +113,11 @@ const STATUS_LABEL: Record<MasterSkuStatus, string> = {
 }
 
 const SAMPLE_CSV = [
-  'SKU cha,SKU,Tên sản phẩm,Loại VL,D (mm),R (mm),Định mức,Mô tả',
-  'HOP-NHUA,HOP-NHUA-BE,Hộp nhựa bé,Mica trong 3 ly,80,60,90,Hộp nắp trượt',
-  'HOP-NHUA,HOP-NHUA-LON,Hộp nhựa lớn,Mica trong 3 ly,160,120,20,',
-  ',3LWD 12in,Thớt gỗ khắc tên,Gỗ 5 ly 3 layer,"304,8","203,2",12,',
-  ',BR A 2 Gai,Đèn gỗ combo,Mica trong 3 ly + Mica Hologram,,,,',
+  'SKU cha,SKU,Tên sản phẩm,Loại VL,D (mm),R (mm),Định mức,Mô tả,Cân nặng (g),Dài hộp (cm),Rộng hộp (cm),Cao hộp (cm),Giá trị khai báo (USD),Mã HS',
+  'HOP-NHUA,HOP-NHUA-BE,Hộp nhựa bé,Mica trong 3 ly,80,60,90,Hộp nắp trượt,120,20,15,5,,',
+  'HOP-NHUA,HOP-NHUA-LON,Hộp nhựa lớn,Mica trong 3 ly,160,120,20,,,,,,,',
+  ',3LWD 12in,Thớt gỗ khắc tên,Gỗ 5 ly 3 layer,"304,8","203,2",12,,450,35,25,3,,',
+  ',BR A 2 Gai,Đèn gỗ combo,Mica trong 3 ly + Mica Hologram,,,,,,,,,,',
 ].join('\n')
 
 function loadSample() {
@@ -162,8 +163,15 @@ async function downloadTemplate() {
         <span class="font-medium text-foreground">Loại VL</span>,
         <span class="font-medium text-foreground">D (mm)</span>,
         <span class="font-medium text-foreground">R (mm)</span>,
-        <span class="font-medium text-foreground">Định mức</span> và
-        <span class="font-medium text-foreground">Mô tả</span>. Các cột khác được bỏ qua.
+        <span class="font-medium text-foreground">Định mức</span>,
+        <span class="font-medium text-foreground">Mô tả</span> và 6 cột vận chuyển
+        (<span class="font-medium text-foreground">Cân nặng (g)</span>,
+        <span class="font-medium text-foreground">Dài / Rộng / Cao hộp (cm)</span>,
+        <span class="font-medium text-foreground">Giá trị khai báo (USD)</span>,
+        <span class="font-medium text-foreground">Mã HS</span>). Các cột khác được bỏ qua.
+        Cột vận chuyển là của MỘT sản phẩm đã đóng gói — để trống thì giữ số đã khai;
+        <span class="font-medium text-foreground">Giá trị khai báo</span> và
+        <span class="font-medium text-foreground">Mã HS</span> thường bỏ trống (THE có mặc định ở Cài đặt).
         <span class="font-medium text-foreground">Định mức</span> là số sản phẩm một tấm Loại VL trên cùng dòng
         làm ra (từ file layout của xưởng); để trống thì giữ số đã khai, chưa khai thì hệ thống ước tính theo
         kích thước (hiện dấu ~).
@@ -302,6 +310,13 @@ async function downloadTemplate() {
           <span class="font-medium text-foreground">{{ s.child_skus }}</span> SKU con sẽ được xếp vào
           <span class="font-medium text-foreground">{{ s.parent_groups }}</span> SKU cha.
         </p>
+        <p
+          v-if="s?.shipping_skus"
+          class="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span class="font-medium text-foreground">{{ s.shipping_skus }}</span> SKU được khai cân nặng / kích thước hộp
+          (để gửi THE) — ô trống không xoá số đã có.
+        </p>
 
         <!-- Thiếu NVL -->
         <div v-if="missingMaterial.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
@@ -360,6 +375,7 @@ async function downloadTemplate() {
                   <th class="table-th">Tên sản phẩm</th>
                   <th class="table-th">D x R</th>
                   <th class="table-th">SP/tấm</th>
+                  <th class="table-th" title="Cân nặng (g) · hộp D×R×C (cm) file khai cho SKU">Vận chuyển</th>
                   <th class="table-th">Trạng thái</th>
                   <th class="table-th">Loại VL (từ file)</th>
                   <th class="table-th">Dòng</th>
@@ -410,6 +426,18 @@ async function downloadTemplate() {
                         class="mr-1 inline-block"
                         :title="`${name}: ${q} sản phẩm / tấm — ${k.quota_sources?.[name] === 'estimated' ? 'ước tính theo kích thước' : 'định mức khai'}`"
                       >{{ k.quota_sources?.[name] === 'estimated' ? '~' : '' }}{{ q }} <span class="opacity-70">({{ name }})</span></span>
+                    </template>
+                    <span v-else>—</span>
+                  </td>
+                  <td class="table-td whitespace-normal text-xs tabular-nums text-muted-foreground">
+                    <template v-if="k.ship">
+                      <span v-if="k.ship.ship_weight_g" class="mr-1 inline-block">{{ k.ship.ship_weight_g }} g</span>
+                      <span
+                        v-if="k.ship.ship_length_cm || k.ship.ship_width_cm || k.ship.ship_height_cm"
+                        class="mr-1 inline-block"
+                      >{{ k.ship.ship_length_cm ?? '–' }}×{{ k.ship.ship_width_cm ?? '–' }}×{{ k.ship.ship_height_cm ?? '–' }} cm</span>
+                      <span v-if="k.ship.declared_value" class="mr-1 inline-block">${{ k.ship.declared_value }}</span>
+                      <span v-if="k.ship.hs_code" class="inline-block font-mono">HS {{ k.ship.hs_code }}</span>
                     </template>
                     <span v-else>—</span>
                   </td>

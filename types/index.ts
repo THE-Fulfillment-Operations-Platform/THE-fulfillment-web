@@ -556,6 +556,16 @@ export interface MasterImportSkuPlan {
   // thước. quota_sources nói rõ từng NVL là 'declared' hay 'estimated'.
   quota_by_material?: Record<string, number>
   quota_sources?: Record<string, string>
+  // Cân nặng / hộp / giá trị / mã HS file khai cho SKU (không có = file không nói
+  // gì về vận chuyển của SKU này, giữ nguyên).
+  ship?: {
+    ship_weight_g?: number | null
+    ship_length_cm?: number | null
+    ship_width_cm?: number | null
+    ship_height_cm?: number | null
+    declared_value?: number | null
+    hs_code?: string | null
+  }
 }
 
 export interface MasterImportMappingPlan {
@@ -584,6 +594,7 @@ export interface MasterImportSummary {
   error_rows: number
   child_skus?: number // số SKU file xếp vào dưới một SKU cha
   parent_groups?: number // … thuộc bao nhiêu SKU cha khác nhau
+  shipping_skus?: number // số SKU file khai cân nặng / hộp / giá trị / mã HS
 }
 
 export interface MasterImportApplied {
@@ -591,6 +602,7 @@ export interface MasterImportApplied {
   skus_created: number
   mappings_created: number
   skus_updated?: number // SKU có sẵn được đổi SKU cha / D x R / mô tả
+  shipping_set?: number // SKU được ghi cân nặng / hộp / giá trị / mã HS
 }
 
 export interface MasterImportPreview {
