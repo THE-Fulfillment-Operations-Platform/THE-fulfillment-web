@@ -937,6 +937,8 @@ export interface QcResultOrder {
   handed_over?: boolean
   tracking_number?: string
   tracking_status?: TrackingStatus
+  // Giỏ chờ đang giữ hàng của đơn (đơn nhiều sản phẩm chưa đủ). Không có = không nằm giỏ.
+  basket_number?: number
 }
 
 // Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn
@@ -963,6 +965,7 @@ export interface QcResultsPayload {
 export interface QcScanResult {
   item_id: number
   item_code: string
+  order_id: number
   order_code: string
   store_order_id: string
   order_note?: string
@@ -1186,4 +1189,42 @@ export interface ListParams {
 export interface ListResult<T> {
   data: T[]
   meta?: ApiMeta
+}
+
+// ---- Giỏ chờ ----------------------------------------------------------------
+// OPEN = đang gom (còn SP chưa QC đạt) · FULL = đủ, chờ bó + quét xác nhận ·
+// CANCELLED = đơn / mọi SP đã huỷ, bỏ hàng ra rồi thả giỏ.
+export type BasketStatus = 'OPEN' | 'FULL' | 'CANCELLED'
+
+export interface Basket {
+  id: number
+  number: number
+  code: string // mã trên tem giỏ, vd "GIO-37"
+  status: BasketStatus
+  order_id: number
+  order_code: string
+  store_order_id: string
+  seller_name?: string
+  total_items: number
+  passed_items: number
+  total_qty: number
+  created_at: string
+  released_at?: string
+  release_note?: string
+  items: QcResultItem[]
+}
+
+export interface BasketForOrder {
+  order_id: number
+  total_items: number
+  passed_items: number
+  basket: Basket | null
+  needs_basket: boolean
+}
+
+export interface BasketLookup {
+  basket: Basket | null
+  order?: QcResultOrder
+  needs_basket: boolean
+  message?: string
 }

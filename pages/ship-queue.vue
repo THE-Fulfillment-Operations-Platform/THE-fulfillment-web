@@ -521,7 +521,17 @@ function submitScan() {
                   />
                 </td>
                 <td class="table-td font-medium text-foreground">{{ o.store_order_id }}</td>
-                <td class="table-td font-mono text-xs text-muted-foreground">{{ o.internal_code }}</td>
+                <td class="table-td font-mono text-xs text-muted-foreground">
+                  {{ o.internal_code }}
+                  <!-- Còn nằm giỏ chờ = người nhặt chưa quét xác nhận bó đủ: API chặn gửi. -->
+                  <NuxtLink
+                    v-if="o.basket_number"
+                    :to="`/baskets?code=GIO-${o.basket_number}`"
+                    class="ml-1 inline-flex items-center rounded-md bg-amber-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-amber-800 hover:underline dark:bg-amber-500/20 dark:text-amber-200"
+                    title="Đơn còn ở giỏ chờ — ra giỏ bó đủ rồi quét xác nhận ở màn Giỏ chờ mới gửi được"
+                    @click.stop
+                  >Giỏ #{{ o.basket_number }} · chưa bó</NuxtLink>
+                </td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>
                 <td class="table-td">
                   <span class="text-emerald-700 dark:text-emerald-300">{{ o.passed_items }}</span>

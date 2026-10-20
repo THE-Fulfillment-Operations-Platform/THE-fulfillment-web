@@ -250,6 +250,11 @@ function exportRows() {
                 <span class="font-semibold text-foreground">{{ o.internal_code }}</span>
                 <span class="truncate text-sm text-muted-foreground">{{ o.store_order_id }}</span>
                 <span
+                  v-if="o.basket_number"
+                  class="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                  title="Hàng đã QC của đơn đang ở giỏ chờ này"
+                >Giỏ #{{ o.basket_number }}</span>
+                <span
                   class="inline-flex rounded-md px-2 py-0.5 text-xs font-medium"
                   :class="ORDER_STATUS[o.status].chip"
                 >

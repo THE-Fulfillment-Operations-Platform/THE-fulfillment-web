@@ -10,6 +10,11 @@ export interface NavItem {
    */
   feature?: string
   /**
+   * Thấy mục này khi có "<f>.view" của BẤT KỲ màn nào trong danh sách — cho màn
+   * dùng chung của hai tổ (Giỏ chờ: QC tạo giỏ, tổ gửi hàng nhặt giỏ).
+   */
+  anyFeature?: string[]
+  /**
    * Vai trò được thấy mục này. Với mục có feature, đây chỉ là dự phòng khi phiên
    * đăng nhập cũ chưa có danh sách quyền (trước khi /me làm mới xong).
    */
@@ -47,6 +52,15 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Batch sản xuất', to: '/batches', feature: 'batches', icon: 'batches', roles: ALL_INTERNAL },
   { label: 'Bảng sản xuất', to: '/production', feature: 'production', icon: 'board', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'PRODUCTION', 'DESIGNER'] },
   { label: 'Quét QC', to: '/qc', feature: 'qc', icon: 'qc', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'QC'] },
+  // Giỏ chờ: đơn nhiều sản phẩm gom ở giỏ đánh số tới khi đủ, bó lại rồi quét xác
+  // nhận mới thả giỏ. QC tạo giỏ, người nhặt (tổ gửi hàng) thả giỏ.
+  {
+    label: 'Giỏ chờ',
+    to: '/baskets',
+    anyFeature: ['qc', 'ship_queue'],
+    icon: 'box',
+    roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'QC', 'PACKING', 'SHIPPING'],
+  },
   // Kết quả QC là màn ĐỌC: đóng gói và OPS cần biết đơn nào đã QC đủ để lấy hàng,
   // không riêng tổ QC — nên mở cho mọi vai trò nội bộ.
   { label: 'Kết quả QC', to: '/qc-results', feature: 'qc_results', icon: 'check', roles: ALL_INTERNAL },
@@ -94,6 +108,12 @@ export function userCan(user: User | null | undefined, perm: string): boolean {
 
 function canSee(user: User | null | undefined, item: NavItem): boolean {
   if (!user) return false
+  if (item.anyFeature) {
+    const checks = item.anyFeature.map((f) => permCheck(user, `${f}.view`))
+    if (checks.some((c) => c === true)) return true
+    if (checks.every((c) => c === false)) return false
+    return item.roles.includes(user.role)
+  }
   if (!item.feature) return item.roles.includes(user.role)
   const ok = permCheck(user, `${item.feature}.view`)
   return ok ?? item.roles.includes(user.role)

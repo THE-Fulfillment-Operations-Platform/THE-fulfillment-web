@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { qcApi } from '~/services/api'
-import type { QcScanResult, QcOrderScan, QcResultItem } from '~/types'
+import { basketsApi, qcApi } from '~/services/api'
+import type { Basket, BasketForOrder, QcScanResult, QcOrderScan, QcResultItem } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 import { DEFECT_CODE_OPTIONS, INTERNAL_STATUS } from '~/utils/enums'
+import { printBasketLabel } from '~/utils/basketLabel'
 
 // Scan-driven QC station (Wireframe: Scan QC). The operator scans an item code,
 // the screen pulls the canonical mockup + engrave text, and PASS advances the
@@ -88,11 +89,88 @@ function onMockupError() {
 
 // Reset per scan, keyed on the result object rather than the URL: scanning two
 // items that happen to share a mockup must still clear a previous failure.
-watch(result, () => {
+watch(result, (r) => {
   noteAcked.value = false
   mockupError.value = false
   thumbFailed.value = false
+  void loadBasketInfo(r)
 })
+
+// ---- Giỏ chờ ------------------------------------------------------------------
+// Đơn nhiều sản phẩm làm xong lệch nhau: sản phẩm QC đạt trước nằm ở giỏ chờ đánh
+// số, đợi các sản phẩm sau. Mở một sản phẩm là hỏi luôn đơn của nó đang ở giỏ nào
+// (hoặc có cần giỏ không) — hỏi song song với lúc ảnh mockup đang tải, không chặn quét.
+const basketInfo = ref<BasketForOrder | null>(null)
+let basketReq = 0
+async function loadBasketInfo(r: QcScanResult | null) {
+  const req = ++basketReq
+  basketInfo.value = null
+  if (!r?.order_id) return
+  try {
+    const { data } = await basketsApi.forOrder(r.order_id)
+    if (req === basketReq) basketInfo.value = data
+  } catch {
+    // Không tra được giỏ thì trạm QC vẫn chạy như trước — chỉ thiếu dòng báo giỏ.
+  }
+}
+const itemBasket = computed(() => basketInfo.value?.basket ?? null)
+// Sau khi PASS sản phẩm đang mở, đơn còn bao nhiêu sản phẩm chưa QC đạt.
+const remainingAfterPass = computed(() => {
+  const b = basketInfo.value
+  if (!b) return 0
+  return Math.max(0, b.total_items - b.passed_items - (alreadyQC.value ? 0 : 1))
+})
+// Sản phẩm CUỐI của đơn nhiều sản phẩm: PASS xong là giỏ đủ, đi nhặt giỏ.
+const isLastOfOrder = computed(() => !!basketInfo.value && basketInfo.value.total_items > 1 && !alreadyQC.value && remainingAfterPass.value === 0)
+// Đơn cần giỏ ngay bây giờ: nhiều sản phẩm, chưa có giỏ, PASS xong vẫn còn thiếu.
+const needsBasket = computed(() => !!basketInfo.value?.needs_basket && remainingAfterPass.value > 0)
+
+const basketDialog = ref(false)
+const basketDialogMode = ref<'created' | 'existing' | 'full'>('created')
+const dialogBasket = ref<Basket | null>(null)
+function showBasket(b: Basket, mode: 'created' | 'existing' | 'full') {
+  dialogBasket.value = b
+  basketDialogMode.value = mode
+  basketDialog.value = true
+}
+
+const creatingBasket = ref(false)
+async function createBasket(orderId: number) {
+  if (creatingBasket.value) return
+  creatingBasket.value = true
+  try {
+    const { data } = await basketsApi.create(orderId)
+    showBasket(data.basket, data.created ? 'created' : 'existing')
+    if (basketInfo.value?.order_id === orderId) {
+      basketInfo.value = { ...basketInfo.value, basket: data.basket, needs_basket: false }
+    }
+    if (order.value?.order_id === orderId) order.value.basket_number = data.basket.number
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    creatingBasket.value = false
+  }
+}
+
+function reprintBasket(b: Basket | null) {
+  if (b && !printBasketLabel(b)) toast.error('Trình duyệt chặn cửa sổ in — cho phép popup cho trang này rồi bấm lại.')
+}
+
+// Màn đơn: có cần tạo giỏ không (nhiều sản phẩm, chưa đủ, chưa có giỏ).
+const orderNeedsBasket = computed(() => {
+  const o = order.value
+  return !!o && !o.basket_number && o.total_items > 1 && o.passed_items < o.total_items
+})
+async function openOrderBasket() {
+  const o = order.value
+  if (!o?.basket_number) return
+  try {
+    const { data } = await basketsApi.forOrder(o.order_id)
+    if (data.basket) showBasket(data.basket, 'existing')
+  } catch (e) {
+    toast.error(errorMessage(e))
+  }
+}
 
 const failOpen = ref(false)
 const failing = ref(false)
@@ -108,6 +186,10 @@ const defect = reactive({
 // Mã tem sản phẩm có dạng <mã đơn>_<dòng>/<tổng> (102431_1/2); mã đơn chỉ là số.
 function looksLikeItemCode(v: string) {
   return /[_/]/.test(v)
+}
+// Tem giỏ chờ: "GIO-37" (QR) hoặc gõ tay số giỏ 1–3 chữ số (mã đơn có 6 chữ số).
+function looksLikeBasketCode(v: string) {
+  return /^(gi[oỏ]|g)?[\s\-#]*\d{1,3}$/i.test(v)
 }
 
 function focusScan() {
@@ -125,6 +207,13 @@ async function scan() {
       const { data } = await qcApi.scan({ code: value })
       order.value = null
       result.value = data
+    } else if (looksLikeBasketCode(value)) {
+      // Quét tem giỏ: mở đơn đang nằm trong giỏ đó.
+      const { data: found } = await basketsApi.lookup(value)
+      if (!found.basket) throw new Error(found.message || 'Giỏ này đang trống')
+      const { data } = await qcApi.scanOrder({ order_id: found.basket.order_id })
+      result.value = null
+      order.value = data
     } else {
       const { data } = await qcApi.scanOrder({ code: value })
       result.value = null
@@ -226,6 +315,14 @@ function markPassedLocally(itemId: number) {
 function pass() {
   const item = result.value
   if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || mustAckNote.value) return
+  // Giỏ chờ, chốt TRƯỚC khi nhả trạm (sau đó basketInfo bị xoá theo result):
+  //   - đơn cần giỏ (sản phẩm đầu của đơn nhiều SP) → PASS kiêm tạo giỏ;
+  //   - đơn đã có giỏ → PASS xong báo bỏ vào giỏ nào, hoặc báo ĐỦ nếu là SP cuối.
+  const basket = itemBasket.value
+  const last = isLastOfOrder.value
+  const orderIdForBasket = needsBasket.value ? basketInfo.value?.order_id : undefined
+  if (orderIdForBasket) void createBasket(orderIdForBasket)
+
   // Đang làm trong một đơn: đánh dấu ngay sản phẩm này là "Đã QC" trên màn đơn để
   // người QC thấy tiến độ và làm sản phẩm kế tiếp mà không phải đợi server.
   markPassedLocally(item.item_id)
@@ -236,7 +333,16 @@ function pass() {
   pending.value.push(item.item_code)
   qcApi
     .pass({ item_id: item.item_id })
-    .then(() => toast.success(`${item.item_code} đã QC PASS → Đã QC`))
+    .then(() => {
+      if (basket && last) {
+        // SP cuối: giỏ đủ — hiện số giỏ to, hướng dẫn đi nhặt + quét xác nhận.
+        showBasket({ ...basket, passed_items: basket.total_items, status: 'FULL' }, 'full')
+      } else if (basket) {
+        toast.success(`${item.item_code} đã QC PASS → bỏ vào GIỎ #${basket.number}`)
+      } else {
+        toast.success(`${item.item_code} đã QC PASS → Đã QC`)
+      }
+    })
     .catch((e) =>
       toast.error(`${item.item_code}: CHƯA lưu được QC PASS — ${errorMessage(e)}. Quét lại mã này.`),
     )
@@ -406,7 +512,29 @@ onMounted(focusScan)
               {{ order.store_order_id }}<template v-if="order.seller_name"> · {{ order.seller_name }}</template>
             </p>
           </div>
-          <button class="btn-secondary" @click="clearOrder">Quét đơn khác</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Góc phải: giỏ chờ của đơn — số giỏ to, hoặc nút tạo giỏ khi cần. -->
+            <button
+              v-if="order.basket_number"
+              type="button"
+              class="inline-flex items-center gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-1.5 text-amber-900 hover:bg-amber-100 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-100"
+              title="Xem / in lại tem giỏ"
+              @click="openOrderBasket"
+            >
+              <span class="text-xs font-bold uppercase tracking-wider">Giỏ chờ</span>
+              <span class="text-2xl font-extrabold tabular-nums">#{{ order.basket_number }}</span>
+            </button>
+            <button
+              v-else-if="orderNeedsBasket && canJudge"
+              type="button"
+              class="btn-secondary border-amber-400 text-amber-800 dark:text-amber-200"
+              :disabled="creatingBasket"
+              @click="createBasket(order.order_id)"
+            >
+              <UiSpinner v-if="creatingBasket" :size="14" /><UiIcon v-else name="box" :size="16" /> Tạo giỏ chờ
+            </button>
+            <button class="btn-secondary" @click="clearOrder">Quét đơn khác</button>
+          </div>
         </div>
 
         <div class="mt-4 flex flex-wrap items-end gap-x-8 gap-y-3">
@@ -539,6 +667,41 @@ onMounted(focusScan)
 
       <!-- Detail + checklist + actions -->
       <div class="space-y-5">
+        <!-- Giỏ chờ (góc trên bên phải): đơn nhiều sản phẩm gom ở giỏ tới khi đủ. -->
+        <div
+          v-if="itemBasket"
+          class="flex items-center gap-4 rounded-xl border-2 p-4"
+          :class="isLastOfOrder ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10' : 'border-amber-400 bg-amber-50 dark:border-amber-500/60 dark:bg-amber-500/10'"
+          role="status"
+        >
+          <div class="flex shrink-0 flex-col items-center">
+            <span class="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Giỏ chờ</span>
+            <span class="text-5xl font-extrabold leading-none tabular-nums text-foreground">#{{ itemBasket.number }}</span>
+          </div>
+          <div class="min-w-0 flex-1 text-sm text-foreground">
+            <p v-if="alreadyQC" class="font-semibold">Sản phẩm này đã QC — hàng của đơn ở giỏ #{{ itemBasket.number }}.</p>
+            <p v-else-if="isLastOfOrder" class="text-base font-bold">
+              Sản phẩm CUỐI của đơn — PASS xong cầm ra giỏ #{{ itemBasket.number }}, bó đủ {{ itemBasket.total_items }} sản phẩm.
+            </p>
+            <p v-else class="text-base font-bold">Hàng của đơn đang ở giỏ #{{ itemBasket.number }} — PASS xong bỏ vào giỏ này.</p>
+            <p class="mt-1 text-xs text-muted-foreground">
+              Đơn {{ basketInfo?.passed_items }}/{{ basketInfo?.total_items }} sản phẩm đã QC đạt ·
+              <button type="button" class="font-medium text-primary hover:underline" @click="reprintBasket(itemBasket)">In lại tem giỏ</button>
+            </p>
+          </div>
+        </div>
+        <div
+          v-else-if="needsBasket"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50/60 p-4 dark:border-amber-500/60 dark:bg-amber-500/10"
+        >
+          <div class="min-w-0 text-sm text-foreground">
+            <p class="font-bold">Đơn có {{ basketInfo?.total_items }} sản phẩm — mới QC đạt {{ basketInfo?.passed_items }}</p>
+            <p class="text-xs text-muted-foreground">Cần giỏ chờ để gom hàng. Bấm PASS là tự tạo giỏ (số trống thấp nhất) và hiện tem giỏ để in.</p>
+          </div>
+          <button v-if="canJudge && basketInfo" class="btn-secondary" :disabled="creatingBasket" @click="createBasket(basketInfo.order_id)">
+            <UiSpinner v-if="creatingBasket" :size="14" /><UiIcon v-else name="box" :size="16" /> Tạo giỏ chờ
+          </button>
+        </div>
         <!-- Ghi chú đơn: để trên cùng, to, đổi màu — đơn có ghi chú là đơn khác thường. -->
         <div
           v-if="orderNote"
@@ -717,7 +880,7 @@ onMounted(focusScan)
               :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : ''))"
               @click="pass"
             >
-              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
+              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : needsBasket ? 'PASS + vào giỏ chờ' : 'PASS — Đã QC' }}
             </button>
             <button
               class="btn-danger"
@@ -740,6 +903,8 @@ onMounted(focusScan)
       </div>
     </div>
     </template>
+
+    <BasketDialog v-model="basketDialog" :basket="dialogBasket" :mode="basketDialogMode" />
 
     <!-- Fail modal -->
     <UiModal v-model="failOpen" title="Ghi nhận lỗi QC">
