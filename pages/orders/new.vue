@@ -40,6 +40,8 @@ function newTestOrderId(): string {
 
 const sellers = ref<Seller[]>([])
 const skus = ref<Sku[]>([])
+// Gợi ý SKU: mã + tên sản phẩm (tên cũng được tìm khi gõ).
+const skuOptions = computed(() => skus.value.map((s) => ({ value: s.code, sublabel: s.product_name || s.name || undefined })))
 const sellerOptions = computed(() => sellers.value.map((s) => ({ value: s.id, label: `${s.code} — ${s.name}` })))
 
 onMounted(async () => {
@@ -265,10 +267,6 @@ function another() {
 
       <!-- Sản phẩm -->
       <div class="space-y-4 lg:col-span-2">
-        <datalist id="sku-list">
-          <option v-for="s in skus" :key="s.id" :value="s.code">{{ s.product_name || s.name }}</option>
-        </datalist>
-
         <div v-for="(it, i) in items" :key="i" class="card p-5">
           <div class="mb-3 flex items-center justify-between">
             <p class="text-sm font-semibold text-foreground">Sản phẩm {{ i + 1 }}</p>
@@ -280,7 +278,14 @@ function another() {
             <div class="col-span-2">
               <label class="label" :for="`i-sku-${i}`">Mã SKU</label>
               <!-- Ô gõ tự do có gợi ý: gõ được cả SKU sai / chưa map NVL để test lỗi. -->
-              <input :id="`i-sku-${i}`" v-model="it.sku" list="sku-list" class="input font-mono" autocomplete="off" placeholder="Gõ để gợi ý…" />
+              <UiCombobox
+                :id="`i-sku-${i}`"
+                v-model="it.sku"
+                :options="skuOptions"
+                mono
+                placeholder="Gõ mã hoặc tên SP…"
+                free-text-hint="không có trong Master data — vẫn tạo được để test lỗi SKU"
+              />
             </div>
             <div>
               <label class="label" :for="`i-qty-${i}`">Số lượng</label>
