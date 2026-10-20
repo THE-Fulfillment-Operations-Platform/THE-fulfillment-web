@@ -11,11 +11,10 @@ import { formatDateTime } from '~/utils/format'
 //
 //   - Quét bất cứ mã nào đang cầm (tem giỏ, mã đơn, tem sản phẩm) → biết ngay hàng
 //     của đơn đang ở giỏ số mấy (bước 3), hoặc tạo giỏ nếu đơn cần mà chưa có.
-//   - Giỏ ĐỦ (mọi sản phẩm đã QC đạt) → người nhặt ra giỏ đếm đủ, bó lại, rồi QUÉT
-//     LẠI một lượt nữa để xác nhận → giỏ được xoá, số giỏ trống ra cho đơn khác.
-//     Quét lần đầu chỉ để xem; lượt quét thứ hai (cùng giỏ) mới là xác nhận — để
-//     người ta không xoá nhầm giỏ khi chỉ định tra cứu.
-//   - Đơn còn nằm giỏ thì không gửi được cho THE: sang đóng hàng là chắc chắn đủ.
+//   - Giỏ ĐỦ (sản phẩm cuối QC đạt) thì TỰ XOÁ ngay lúc PASS — không ai phải bấm gì
+//     (20/10/2026). Số giỏ trống ra, giỏ mới lấy số trống thấp nhất. Màn này chỉ còn
+//     hai nút xoá tay: giỏ của đơn đã HUỶ (lấy hàng ra) và admin xoá giỏ chưa đủ.
+//   - Đơn chưa đủ sản phẩm thì không gửi được cho THE: sang đóng hàng là chắc chắn đủ.
 const auth = useAuthStore()
 const toast = useToastStore()
 const route = useRoute()
@@ -55,7 +54,6 @@ const counts = computed(() => ({
 const shown = computed(() => (filter.value === 'all' ? baskets.value : baskets.value.filter((b) => b.status === filter.value)))
 const FILTERS: { key: 'all' | BasketStatus; label: string }[] = [
   { key: 'all', label: 'Tất cả' },
-  { key: 'FULL', label: 'Đủ — chờ bó' },
   { key: 'OPEN', label: 'Đang gom' },
   { key: 'CANCELLED', label: 'Đơn huỷ' },
 ]
@@ -67,7 +65,7 @@ const STATUS: Record<BasketStatus, { label: string; chip: string; card: string }
     card: 'border-amber-300 dark:border-amber-500/40',
   },
   FULL: {
-    label: 'Đủ — chờ bó',
+    label: 'Đủ hàng',
     chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
     card: 'border-emerald-400 ring-2 ring-emerald-400/30 dark:border-emerald-500/60',
   },
@@ -99,8 +97,6 @@ const scanInput = ref<HTMLInputElement | null>(null)
 const scanning = ref(false)
 const scanError = ref<string | null>(null)
 const current = ref<BasketLookup | null>(null)
-// Giỏ ĐỦ vừa quét lần đầu: quét lại đúng giỏ này lần nữa = xác nhận đã bó đủ.
-const armedBasketId = ref<number | null>(null)
 
 function focusScan() {
   nextTick(() => scanInput.value?.focus())
@@ -112,16 +108,9 @@ async function scan(value = code.value.trim()) {
   scanError.value = null
   try {
     const { data } = await basketsApi.lookup(value)
-    const b = data.basket
-    if (b && armedBasketId.value === b.id && (b.status === 'FULL' || b.status === 'CANCELLED') && canManage.value) {
-      await release(b) // lượt quét thứ hai của cùng giỏ đủ = xác nhận
-      return
-    }
     current.value = data
-    armedBasketId.value = b && (b.status === 'FULL' || b.status === 'CANCELLED') ? b.id : null
   } catch (e) {
     current.value = null
-    armedBasketId.value = null
     scanError.value = errorMessage(e)
   } finally {
     scanning.value = false
@@ -132,7 +121,6 @@ async function scan(value = code.value.trim()) {
 
 function select(b: Basket) {
   current.value = { basket: b, needs_basket: false }
-  armedBasketId.value = b.status === 'FULL' || b.status === 'CANCELLED' ? b.id : null
   window.scrollTo?.({ top: 0, behavior: 'smooth' })
   focusScan()
 }
@@ -147,7 +135,6 @@ async function createFor(orderId: number) {
   try {
     const { data } = await basketsApi.create(orderId)
     current.value = { basket: data.basket, needs_basket: false }
-    armedBasketId.value = null
     createdBasket.value = data.basket
     createdOpen.value = true
     void loadList()
@@ -159,7 +146,7 @@ async function createFor(orderId: number) {
 }
 
 const releasing = ref(false)
-// Vừa xoá xong: giữ lại để hiện thông báo lớn "đã xoá giỏ X, đẩy sang đóng hàng".
+// Vừa xoá tay xong (giỏ của đơn huỷ): giữ lại để hiện thông báo "giỏ X đã trống".
 const released = ref<Basket | null>(null)
 async function release(b: Basket) {
   if (releasing.value) return
@@ -168,8 +155,7 @@ async function release(b: Basket) {
     const { data } = await basketsApi.release(b.id)
     released.value = data
     current.value = null
-    armedBasketId.value = null
-    toast.success(`Đã xoá giỏ #${data.number} — đơn ${data.order_code} đủ ${data.total_items} sản phẩm, đẩy sang đóng hàng`)
+    toast.success(`Đã xoá giỏ #${data.number} — giỏ trống`)
     void loadList()
   } catch (e) {
     toast.error(errorMessage(e))
@@ -232,7 +218,7 @@ onBeforeUnmount(() => clearInterval(timer))
   <div>
     <PageHeader
       title="Giỏ chờ"
-      subtitle="Đơn nhiều sản phẩm gom ở giỏ tới khi đủ. Quét tem giỏ / mã đơn / tem sản phẩm để biết giỏ số mấy; giỏ đủ thì bó lại rồi quét lại tem giỏ để xác nhận xoá giỏ (giỏ trống ra cho đơn khác)."
+      subtitle="Đơn nhiều sản phẩm gom ở giỏ tới khi đủ. Quét tem giỏ / mã đơn / tem sản phẩm để biết giỏ số mấy. Sản phẩm cuối QC đạt là giỏ tự xoá, số giỏ trống ra cho đơn khác."
     >
       <template #actions>
         <button class="btn-secondary whitespace-nowrap" :disabled="listLoading" @click="loadList">
@@ -274,8 +260,8 @@ onBeforeUnmount(() => clearInterval(timer))
       <div class="min-w-0 flex-1">
         <p class="text-lg font-bold text-emerald-900 dark:text-emerald-100">Đã xoá giỏ #{{ released.number }} — giỏ trống</p>
         <p class="text-sm text-emerald-800 dark:text-emerald-200">
-          Đơn <span class="font-mono font-semibold">{{ released.order_code }}</span> đủ {{ released.total_items }} sản phẩm — bó hàng đẩy sang
-          đóng hàng. Giỏ #{{ released.number }} đã trống.
+          Đơn <span class="font-mono font-semibold">{{ released.order_code }}</span> đã được lấy hàng ra. Giỏ #{{ released.number }} đã trống,
+          giỏ mới sẽ dùng lại số này.
         </p>
       </div>
       <button class="btn-secondary" @click="released = null">Đóng</button>
@@ -306,10 +292,7 @@ onBeforeUnmount(() => clearInterval(timer))
             {{ current.basket.passed_items }}/{{ current.basket.total_items }}
             <span class="text-sm font-medium text-muted-foreground">sản phẩm đã QC đạt<template v-if="current.basket.total_qty !== current.basket.total_items"> · {{ current.basket.total_qty }} cái</template></span>
           </p>
-          <p v-if="current.basket.status === 'FULL'" class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-            Đủ hàng: đếm đủ {{ current.basket.total_items }} sản phẩm trong giỏ, bó lại — rồi quét lại tem giỏ này (hoặc bấm nút) để xác nhận xoá giỏ.
-          </p>
-          <p v-else-if="current.basket.status === 'CANCELLED'" class="text-sm font-semibold text-rose-700 dark:text-rose-300">
+          <p v-if="current.basket.status === 'CANCELLED'" class="text-sm font-semibold text-rose-700 dark:text-rose-300">
             Đơn đã huỷ: lấy hàng ra khỏi giỏ rồi xoá giỏ.
           </p>
           <p v-else class="text-sm font-semibold text-amber-700 dark:text-amber-300">
@@ -318,13 +301,13 @@ onBeforeUnmount(() => clearInterval(timer))
         </div>
         <div class="flex w-full flex-col gap-2 sm:w-auto">
           <button
-            v-if="canManage && (current.basket.status === 'FULL' || current.basket.status === 'CANCELLED')"
+            v-if="canManage && current.basket.status === 'CANCELLED'"
             class="btn-success px-5 py-3 text-base"
             :disabled="releasing"
             @click="release(current.basket)"
           >
             <UiSpinner v-if="releasing" :size="16" /><UiIcon v-else name="check" :size="18" />
-            {{ current.basket.status === 'FULL' ? `Đã bó đủ — xoá giỏ #${current.basket.number}` : `Đã lấy hàng ra — xoá giỏ #${current.basket.number}` }}
+            Đã lấy hàng ra — xoá giỏ #{{ current.basket.number }}
           </button>
           <button class="btn-secondary" @click="print(current.basket)"><UiIcon name="print" :size="16" /> In lại tem giỏ</button>
           <button
@@ -379,7 +362,6 @@ onBeforeUnmount(() => clearInterval(timer))
     <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted-foreground">
         Đang dùng <b class="text-foreground">{{ counts.all }}</b>/100 giỏ ·
-        <b class="text-emerald-600 dark:text-emerald-400">{{ counts.FULL }}</b> giỏ đủ chờ bó ·
         <b class="text-amber-600 dark:text-amber-400">{{ counts.OPEN }}</b> đang gom
       </p>
       <div class="flex flex-wrap gap-1.5">

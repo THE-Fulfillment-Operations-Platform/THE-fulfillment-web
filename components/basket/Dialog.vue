@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Hộp thoại giỏ chờ dùng chung cho trạm QC và màn Giỏ chờ:
 //   - created: vừa tạo giỏ → số giỏ to + nút in tem giỏ để ghép cùng hàng;
-//   - full:    vừa QC đạt sản phẩm CUỐI của đơn → giỏ đã đủ, hướng dẫn đi nhặt.
+//   - full:    vừa QC đạt sản phẩm CUỐI của đơn → giỏ ĐÃ TỰ XOÁ, hướng dẫn đem hàng ra bó.
 import type { Basket } from '~/types'
 import { printBasketLabel } from '~/utils/basketLabel'
 import { useToastStore } from '~/stores/toast'
@@ -12,7 +12,7 @@ const toast = useToastStore()
 
 const open = computed({ get: () => props.modelValue, set: (v) => emit('update:modelValue', v) })
 const title = computed(() =>
-  props.mode === 'full' ? 'Đơn đã đủ hàng — đi nhặt giỏ' : props.mode === 'existing' ? 'Đơn đã có giỏ chờ' : 'Đã tạo giỏ chờ',
+  props.mode === 'full' ? 'Đơn đã đủ hàng — giỏ đã tự xoá' : props.mode === 'existing' ? 'Đơn đã có giỏ chờ' : 'Đã tạo giỏ chờ',
 )
 const qtyNote = computed(() => {
   const b = props.basket
@@ -41,8 +41,8 @@ function print() {
         · {{ basket.total_items }} sản phẩm{{ qtyNote }}
       </p>
       <p v-if="mode === 'full'" class="rounded-lg bg-muted px-4 py-3 text-left text-base font-medium leading-relaxed text-foreground">
-        Cầm sản phẩm này ra <b>giỏ #{{ basket.number }}</b>, đếm đủ <b>{{ basket.total_items }} sản phẩm{{ qtyNote }}</b>
-        của đơn, bó lại thành một bó — rồi vào màn <b>Giỏ chờ</b> quét lại tem giỏ để xác nhận <b>xoá giỏ</b> (giỏ trống ra cho đơn khác).
+        Giỏ <b>#{{ basket.number }}</b> đã tự xoá (không cần bấm gì). Cầm sản phẩm này ra giỏ #{{ basket.number }}, lấy đủ
+        <b>{{ basket.total_items }} sản phẩm{{ qtyNote }}</b> của đơn, bó thành một bó rồi đẩy sang đóng hàng — đơn gửi được ngay.
       </p>
       <p v-else class="rounded-lg bg-muted px-4 py-3 text-left text-base font-medium leading-relaxed text-foreground">
         Bỏ sản phẩm vừa QC vào <b>giỏ #{{ basket.number }}</b> và in tem giỏ để ghép cùng hàng. Các sản phẩm sau của đơn
@@ -50,16 +50,13 @@ function print() {
       </p>
     </div>
     <template #footer>
-      <NuxtLink v-if="mode === 'full'" :to="`/baskets?code=${basket?.code ?? ''}`" class="btn-secondary" @click="open = false">
-        Mở màn Giỏ chờ
-      </NuxtLink>
       <!-- Vừa tạo giỏ: in tem là việc chính (tem đi cùng hàng vào giỏ). -->
       <template v-if="mode === 'created'">
         <button class="btn-secondary" @click="open = false">Xong</button>
         <button class="btn-primary" @click="print"><UiIcon name="print" :size="16" /> In tem giỏ</button>
       </template>
       <template v-else>
-        <button class="btn-secondary" @click="print"><UiIcon name="print" :size="16" /> In lại tem giỏ</button>
+        <button v-if="mode !== 'full'" class="btn-secondary" @click="print"><UiIcon name="print" :size="16" /> In lại tem giỏ</button>
         <button class="btn-primary" @click="open = false">{{ mode === 'full' ? 'Đã hiểu' : 'Xong' }}</button>
       </template>
     </template>

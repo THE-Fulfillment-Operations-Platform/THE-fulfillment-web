@@ -681,7 +681,7 @@ onMounted(focusScan)
           <div class="min-w-0 flex-1 text-sm text-foreground">
             <p v-if="alreadyQC" class="font-semibold">Sản phẩm này đã QC — hàng của đơn ở giỏ #{{ itemBasket.number }}.</p>
             <p v-else-if="isLastOfOrder" class="text-base font-bold">
-              Sản phẩm CUỐI của đơn — PASS xong cầm ra giỏ #{{ itemBasket.number }}, bó đủ {{ itemBasket.total_items }} sản phẩm.
+              Sản phẩm CUỐI của đơn — PASS xong giỏ #{{ itemBasket.number }} tự xoá; cầm sản phẩm ra giỏ, lấy đủ {{ itemBasket.total_items }} sản phẩm bó lại.
             </p>
             <p v-else class="text-base font-bold">Hàng của đơn đang ở giỏ #{{ itemBasket.number }} — PASS xong bỏ vào giỏ này.</p>
             <p class="mt-1 text-xs text-muted-foreground">

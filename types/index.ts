@@ -1192,7 +1192,7 @@ export interface ListResult<T> {
 }
 
 // ---- Giỏ chờ ----------------------------------------------------------------
-// OPEN = đang gom (còn SP chưa QC đạt) · FULL = đủ, chờ bó + quét xác nhận ·
+// OPEN = đang gom (còn SP chưa QC đạt) · FULL = đủ (chỉ thoáng qua: sản phẩm cuối QC đạt là giỏ tự xoá) ·
 // CANCELLED = đơn / mọi SP đã huỷ, bỏ hàng ra rồi xoá giỏ.
 export type BasketStatus = 'OPEN' | 'FULL' | 'CANCELLED'
 
