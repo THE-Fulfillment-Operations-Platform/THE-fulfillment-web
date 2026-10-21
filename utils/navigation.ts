@@ -91,7 +91,7 @@ export const SELLER_NAV: NavItem[] = [
  */
 function permCheck(user: User | null | undefined, perm: string): boolean | null {
   if (!user) return false
-  if (user.role === 'OWNER') return true
+  if (user.role === 'OWNER' || user.role === 'TECHNICIAN') return true
   if (!user.effective_permissions) return null
   return user.effective_permissions.includes(perm)
 }

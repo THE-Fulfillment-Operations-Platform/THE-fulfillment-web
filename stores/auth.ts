@@ -30,6 +30,8 @@ export const useAuthStore = defineStore('auth', {
      */
     hasAdminRights: (s): boolean => ['OWNER', 'ADMIN', 'TECHNICIAN'].includes(s.user?.role ?? ''),
     /** Kỹ thuật viên — chỉ role này thấy công cụ test (tạo đơn lẻ). */
+    /** OWNER hoặc Kỹ thuật viên: không bị chặn bởi tick hay luật "chỉ OWNER" (khớp Role.IsSuper ở backend). */
+    isSuper: (s): boolean => ['OWNER', 'TECHNICIAN'].includes(s.user?.role ?? ''),
     isTechnician: (s): boolean => s.user?.role === 'TECHNICIAN',
     fullName: (s): string => s.user?.full_name || s.user?.email || '',
     /**

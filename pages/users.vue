@@ -100,9 +100,9 @@ async function loadCatalog() {
 onMounted(loadCatalog)
 
 const ticks = ref<Set<string>>(new Set())
-const hasTickableRole = computed(() => form.role !== 'OWNER' && form.role !== 'SELLER')
+const hasTickableRole = computed(() => form.role !== 'OWNER' && form.role !== 'TECHNICIAN' && form.role !== 'SELLER')
 // Người không phải OWNER không tự đổi quyền của chính mình (backend chặn).
-const editingSelfLocked = computed(() => !!editing.value && isSelf(editing.value) && auth.role !== 'OWNER')
+const editingSelfLocked = computed(() => !!editing.value && isSelf(editing.value) && !auth.isSuper)
 
 function roleDefaults(role: Role): string[] {
   return catalog.value?.role_defaults[role] ?? []
@@ -139,7 +139,7 @@ function permissionsPayload(): string[] | null | undefined {
 }
 
 function permSummary(u: User): string {
-  if (u.role === 'OWNER') return 'Toàn quyền'
+  if (u.role === 'OWNER' || u.role === 'TECHNICIAN') return 'Toàn quyền'
   if (u.role === 'SELLER') return '—'
   if (u.permissions == null) return 'Theo vai trò'
   const screens = new Set((u.permissions ?? []).map((p) => p.split('.')[0]))
@@ -496,8 +496,8 @@ const ROLE_BADGE: Record<Role, string> = {
         </label>
 
         <!-- Quyền theo màn -->
-        <div v-if="form.role === 'OWNER'" class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Chủ sở hữu luôn có toàn quyền, không cần tick.
+        <div v-if="form.role === 'OWNER' || form.role === 'TECHNICIAN'" class="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          {{ form.role === 'OWNER' ? 'Chủ sở hữu' : 'Kỹ thuật viên' }} luôn có toàn quyền, không cần tick.
         </div>
         <div v-else-if="hasTickableRole" class="rounded-lg border border-border">
           <div class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">

@@ -48,9 +48,9 @@ function isPastStep(s: InternalStatus): boolean {
   return PRODUCTION_STATUS_ORDER.indexOf(s) < PRODUCTION_STATUS_ORDER.indexOf(batch.value.status)
 }
 
-// Chỉ OWNER được hạ trạng thái (sửa khi bấm nhầm) — khớp guard BE. Các role khác
+// Chỉ OWNER / Kỹ thuật viên được hạ trạng thái (sửa khi bấm nhầm) — khớp guard BE. Các role khác
 // chỉ tiến. Item đã QC trong batch không bị đụng tới dù có hạ (BE bảo vệ).
-const isOwner = computed(() => auth.role === 'OWNER')
+const isOwner = computed(() => auth.isSuper)
 
 // Production rows for the batch table — mirrors the legacy production template.
 // Reads from the preloaded order item (real API); falls back to the flat fields
