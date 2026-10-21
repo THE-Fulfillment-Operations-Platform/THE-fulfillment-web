@@ -19,6 +19,11 @@ const { confirm, state: confirmState } = useConfirm()
 const pager = reactive({ page: 1, page_size: 50 })
 usePersistedFilters('design-pager', pager)
 const filters = reactive({
+  // Ô tìm kiếm chung: mã nội bộ item / mã đơn nội bộ / mã đơn shop / SKU. Áp khi bấm
+  // Lọc hoặc Enter (như ô batch) — gõ từng chữ mà gọi server liên tục thì mỗi lần
+  // quét tem lại tải lại cả bảng.
+  q: '',
+  appliedQ: '',
   batch: '',
   appliedBatch: '',
   material: '' as '' | number,
@@ -29,6 +34,7 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   designApi.queue({
     page: pager.page,
     page_size: pager.page_size,
+    q: filters.appliedQ || undefined,
     batch: filters.appliedBatch || undefined,
     material_id: filters.material === '' ? undefined : filters.material,
     sku: filters.sku || undefined,
@@ -51,6 +57,7 @@ const materialsFailed = ref(false)
 async function loadQueueMaterials() {
   try {
     const { data } = await designApi.queueMaterials({
+      q: filters.appliedQ || undefined,
       batch: filters.appliedBatch || undefined,
       sku: filters.sku || undefined,
     })
@@ -103,6 +110,7 @@ const skusFailed = ref(false)
 async function loadQueueSkus() {
   try {
     const { data } = await designApi.queueSkus({
+      q: filters.appliedQ || undefined,
       batch: filters.appliedBatch || undefined,
       material_id: filters.material === '' ? undefined : filters.material,
     })
@@ -147,7 +155,7 @@ const skuValue = computed({
 })
 
 const hasActiveFilters = computed(
-  () => Boolean(filters.appliedBatch) || filters.material !== '' || Boolean(filters.sku),
+  () => Boolean(filters.appliedQ) || Boolean(filters.appliedBatch) || filters.material !== '' || Boolean(filters.sku),
 )
 
 // Any change to what the list shows drops both selections: the tick marks refer
@@ -166,11 +174,14 @@ function resetView() {
 }
 
 function applyFilters() {
+  filters.appliedQ = filters.q.trim()
   filters.appliedBatch = filters.batch.trim()
   resetView()
 }
 
 function resetFilters() {
+  filters.q = ''
+  filters.appliedQ = ''
   filters.batch = ''
   filters.appliedBatch = ''
   filters.material = ''
@@ -571,6 +582,17 @@ async function setReady() {
 
     <div class="card mb-3 p-3">
       <div class="flex flex-col gap-2.5 sm:flex-row sm:items-end">
+        <div class="min-w-0 flex-[1.4]">
+          <label class="label" for="design-q">Tìm kiếm</label>
+          <input
+            id="design-q"
+            v-model="filters.q"
+            class="input font-mono"
+            placeholder="Mã nội bộ (102853_2/4), mã đơn (102853), mã đơn shop, SKU…"
+            autocomplete="off"
+            @keyup.enter="applyFilters"
+          />
+        </div>
         <div class="min-w-0 flex-1">
           <label class="label">Lọc theo batch</label>
           <input
@@ -605,6 +627,11 @@ async function setReady() {
           <button v-if="hasActiveFilters" class="btn-secondary" @click="resetFilters">Xóa</button>
         </div>
       </div>
+      <p v-if="filters.appliedQ" class="mt-2 text-xs text-muted-foreground">
+        Đang tìm
+        <span class="font-medium text-foreground">{{ filters.appliedQ }}</span>
+        trong mã nội bộ, mã đơn, mã đơn shop và SKU.
+      </p>
       <p v-if="filters.appliedBatch || filters.sku" class="mt-2 text-xs text-muted-foreground">
         <template v-if="filters.appliedBatch">
           Đang hiển thị các item thuộc batch có mã chứa

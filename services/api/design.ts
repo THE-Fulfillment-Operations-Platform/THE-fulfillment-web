@@ -3,6 +3,8 @@ import type { OrderItem, MaterialBucket, SKUBucket, ListParams } from '~/types'
 
 export interface DesignQueueParams extends ListParams {
   batch?: string
+  // Một ô tìm kiếm: mã nội bộ item (102853_2/4), mã đơn nội bộ (102853), mã đơn shop, SKU.
+  q?: string
   material_id?: number
   // Exact SKU code — the queue's SKU filter picks one of the codes the server
   // reported via queueSkus, so it never needs a partial match.
@@ -25,12 +27,12 @@ export const designApi = {
   // Materials that actually have items in the queue (with counts) — this backs the
   // NVL filter, so it never offers a material that would return an empty table.
   // Pass the queue's other filters (e.g. batch) to keep the two in step.
-  queueMaterials: (params?: { batch?: string; sku?: string }) =>
+  queueMaterials: (params?: { batch?: string; sku?: string; q?: string }) =>
     apiGet<MaterialBucket[]>('/api/design-queue/materials', params),
   // Same idea for the SKU filter: only the SKU codes that actually have items in
   // the queue, with counts. Pass the other filters (batch, NVL) so the two
   // dropdowns stay in step.
-  queueSkus: (params?: { batch?: string; material_id?: number }) =>
+  queueSkus: (params?: { batch?: string; material_id?: number; q?: string }) =>
     apiGet<SKUBucket[]>('/api/design-queue/skus', params),
   // Every design-queue item that already has a design file, matching the filters —
   // unpaginated, so the "Tải ZIP" dialog can filter (mã nội bộ/SKU via q, NVL via
