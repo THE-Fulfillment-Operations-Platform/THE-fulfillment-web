@@ -75,7 +75,7 @@ export const INTERNAL_NAV: NavItem[] = [
   { label: 'Ghi chú / Cần xử lý', to: '/notes', feature: 'notes', icon: 'notes', roles: [...ALL_INTERNAL, 'CS'] },
   { label: 'Người dùng', to: '/users', icon: 'users', roles: ['OWNER', 'ADMIN', 'TECHNICIAN'] },
   { label: 'Nhật ký hoạt động', to: '/audit', feature: 'audit', icon: 'audit', roles: ['OWNER', 'ADMIN', 'TECHNICIAN'] },
-  { label: 'Cài đặt', to: '/settings', icon: 'alert', roles: ['OWNER'] },
+  { label: 'Cài đặt', to: '/settings', icon: 'alert', roles: ['OWNER', 'TECHNICIAN'] },
 ]
 
 // Seller sidebar — intentionally minimal, no internal operations.

@@ -11,7 +11,7 @@ import TheConnectionCard from '~/components/settings/TheConnectionCard.vue'
 // (OWNER role — bất kỳ ai giữ quyền chủ sở hữu đều chạy được).
 const auth = useAuthStore()
 const toast = useToastStore()
-const isOwner = computed(() => auth.role === 'OWNER')
+const isOwner = computed(() => auth.isSuper)
 
 // What the transactional reset touches — shown to the user before they confirm.
 const WILL_DELETE = [

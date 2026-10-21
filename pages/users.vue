@@ -70,13 +70,13 @@ const isSellerRole = computed(() => form.role === 'SELLER')
 // từ chối.
 const canManageTechnician = computed(() => auth.role === 'OWNER' || auth.role === 'TECHNICIAN')
 function canManageAccount(u: User): boolean {
-  if (u.role === 'OWNER') return auth.role === 'OWNER'
+  if (u.role === 'OWNER') return auth.isSuper
   if (u.role === 'TECHNICIAN') return canManageTechnician.value
   return true
 }
 const roleOptions = computed(() =>
   (Object.entries(ROLE_LABEL) as [Role, string][])
-    .filter(([value]) => value !== 'OWNER' || auth.role === 'OWNER')
+    .filter(([value]) => value !== 'OWNER' || auth.isSuper)
     .filter(([value]) => value !== 'TECHNICIAN' || canManageTechnician.value)
     .map(([value, label]) => ({ value, label })),
 )
