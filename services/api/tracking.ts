@@ -90,6 +90,8 @@ export const trackingApi = {
   /** Pull one order straight from the provider (resolves its number first if needed). */
   syncOrder: (orderId: number | string) =>
     apiPost<Order>(`/api/orders/${orderId}/tracking/sync`, {}),
+  /** Pull the last-mile numbers (USPS…) THE has assigned since the label. */
+  syncLastMile: () => apiPost<{ synced: number }>('/api/tracking/last-mile/sync', {}),
   /** Run one full pass by hand instead of waiting for the scheduler. */
   syncAll: (limit?: number) =>
     apiPost<TrackingSyncStats>(`/api/tracking/sync${limit ? `?limit=${limit}` : ''}`, {}),

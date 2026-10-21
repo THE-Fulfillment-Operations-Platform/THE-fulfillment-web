@@ -209,6 +209,43 @@ async function saveTracking() {
   }
 }
 
+// Mã vận đơn chặng cuối (USPS…) do THE cấp SAU khi tạo label, vài phút sau mới có.
+// Backend hỏi THE mỗi phút; màn này còn kéo ngay khi mở / bấm Làm mới và tự kéo
+// lại mỗi 30 giây, nên CS không phải chờ hay tự dán mã.
+const pulling = ref(false)
+async function pullFromTHE(manual = false) {
+  if (pulling.value) return
+  pulling.value = true
+  try {
+    const { data: r } = await trackingApi.syncLastMile()
+    if (r.synced > 0) {
+      await reload()
+      toast.success(`Đã kéo ${r.synced} mã vận đơn từ THE về`)
+    } else if (manual) {
+      await reload()
+      toast.info('THE chưa cấp thêm mã vận đơn nào')
+    }
+  } catch (e) {
+    if (manual) toast.error(errorMessage(e))
+  } finally {
+    pulling.value = false
+  }
+}
+async function refreshAll() {
+  await reload()
+  await pullFromTHE(true)
+}
+let pullTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  if (canEditTracking.value) void pullFromTHE()
+  pullTimer = setInterval(() => {
+    if (!document.hidden && canEditTracking.value) void pullFromTHE()
+  }, 30_000)
+})
+onBeforeUnmount(() => {
+  if (pullTimer) clearInterval(pullTimer)
+})
+
 async function syncTracking() {
   const o = selected.value
   if (!o || syncing.value) return
@@ -287,8 +324,9 @@ async function copyAddress() {
       subtitle="Đơn đã gửi cho THE — gắn mã vận đơn và theo dõi hành trình"
     >
       <template #actions>
-        <button class="btn-secondary" @click="reload">
-          <UiIcon name="refresh" :size="16" /> Làm mới
+        <button class="btn-secondary" :disabled="pulling" @click="refreshAll">
+          <UiIcon name="refresh" :size="16" :class="pulling ? 'animate-spin' : ''" />
+          {{ pulling ? 'Đang kéo mã từ THE…' : 'Làm mới' }}
         </button>
         <template v-if="canEditTracking">
           <button
