@@ -498,10 +498,19 @@ async function printLabels() {
       if (len <= 16) return '3.4mm'
       return '2.9mm'
     }
+    // MỖI CÁI MỘT TEM (khách 21/10/2026): dòng SL 2 in 2 tem, mỗi tem ghi "CÁI 1/2",
+    // "CÁI 2/2" — tem nào cũng có tên riêng nên thợ không sót một cái. QR vẫn là mã
+    // item (QC quét cái nào cũng ra đúng sản phẩm đó). Chặn trên 100 tem / dòng để một
+    // số lượng gõ nhầm không in ra cả ream giấy.
+    const MAX_PIECES = 100
+    const units = rows.flatMap((r) => {
+      const n = Math.min(MAX_PIECES, Math.max(1, Math.floor(Number(r.quantity) || 1)))
+      return Array.from({ length: n }, (_, i) => ({ r, piece: i + 1, of: n }))
+    })
     const labels = await Promise.all(
-      rows.map(async (r) => {
+      units.map(async ({ r, piece, of }) => {
         const sku = r.sku_code || '—'
-        const qty = Number(r.quantity) || 0
+        const qty = of > 1 ? 1 : Number(r.quantity) || 0
         const payload = r.internal_code || code
         let qr = ''
         try {
@@ -516,7 +525,9 @@ async function printLabels() {
                 <div class="code">${esc(r.internal_code || '—')}</div>
                 <div class="sku" style="font-size:${skuSize(sku.length)}">${esc(sku)}</div>
                 <div class="qrow">
-                  <span class="qty${qty > 1 ? ' multi' : ''}"><span class="qk">SL</span>${esc(qty || '—')}</span>
+                  ${of > 1
+                    ? `<span class="qty multi"><span class="qk">CÁI</span>${piece}/${of}</span>`
+                    : `<span class="qty${qty > 1 ? ' multi' : ''}"><span class="qk">SL</span>${esc(qty || '—')}</span>`}
                   <span class="sub">${esc(code)} · ${esc(labelDate)}</span>
                 </div>
               </div>
@@ -551,7 +562,7 @@ async function printLabels() {
     }
     const materialName = batch.value.material_name || batch.value.material?.name || batch.value.material_code || ''
     const productCount = labelProductCount.value
-    const sheetNote = productCount !== rows.length ? `${rows.length} tem sản phẩm` : ''
+    const sheetNote = productCount !== units.length ? `${units.length} tem sản phẩm` : ''
     const batchLabel = `
       <div class="label batch-label">
         <div class="frame">
