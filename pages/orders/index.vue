@@ -237,7 +237,7 @@ async function bulkDeleteOrders() {
     message:
       `Xoá ${ids.length} đơn (mọi sản phẩm trong các đơn này, kể cả dòng không tick)? ` +
       (auth.user?.role === 'TECHNICIAN'
-        ? 'Đơn đã vào sản xuất / đã bàn giao cũng bị xoá (đơn test). Đơn đã chốt trên THE thì phải huỷ đơn THE trước.'
+        ? 'Xoá HẲN khỏi hệ thống (đơn test): đơn, sản phẩm, QC, batch part, bàn giao… đều mất, không khôi phục được — kể cả đơn đã vào sản xuất / đã bàn giao. Đơn đã chốt trên THE thì phải huỷ đơn THE trước.'
         : 'Đơn đã vào sản xuất (đã vào batch hoặc đã in/cắt) sẽ được bỏ qua — huỷ đơn, hoặc Owner xoá lẻ trong chi tiết đơn.'),
     tone: 'danger',
     confirmText: `Xoá ${ids.length} đơn`,

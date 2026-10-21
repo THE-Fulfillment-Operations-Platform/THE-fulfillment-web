@@ -247,7 +247,9 @@ async function onDelete() {
   if (!o || deleting.value) return
   const ok = await useConfirm().confirm({
     title: 'Xoá đơn',
-    message: `Xoá vĩnh viễn đơn ${o.internal_code}? Hành động này không thể hoàn tác.`,
+    message: auth.user?.role === 'TECHNICIAN'
+      ? `Xoá HẲN đơn test ${o.internal_code} cùng toàn bộ sản phẩm, QC, batch part, bàn giao… khỏi hệ thống? Không thể khôi phục.`
+      : `Xoá vĩnh viễn đơn ${o.internal_code}? Hành động này không thể hoàn tác.`,
     tone: 'danger',
     confirmText: 'Xoá',
   })
