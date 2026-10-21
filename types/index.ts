@@ -951,6 +951,9 @@ export interface QcResultOrder {
   tracking_status?: TrackingStatus
   // Giỏ chờ đang giữ hàng của đơn (đơn nhiều sản phẩm chưa đủ). Không có = không nằm giỏ.
   basket_number?: number
+  // Label đã tạo trên THE (rỗng = chưa có). Tạo label và Xuất kho là hai bước riêng.
+  the_tracking?: string
+  the_last_mile?: string
 }
 
 // Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn

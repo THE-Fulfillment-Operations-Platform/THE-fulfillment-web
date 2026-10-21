@@ -173,6 +173,21 @@ async function shipSelected() {
   await send(ids, {}, SHIP_CHUNK)
 }
 
+/** Xuất kho hàng loạt: hàng đã ra khỏi kho, không đụng THE. Tách riêng khỏi bước tạo label. */
+async function exportSelected() {
+  const ids = selectedIds.value
+  if (!ids.length || shipping.value) return
+  const ok = await useConfirm().confirm({
+    title: 'Xuất kho',
+    message:
+      `Ghi nhận ${ids.length} đơn đã ra khỏi kho? Bước này KHÔNG tạo hay đổi gì trên THE ` +
+      '(label tạo ở nút "Tạo label THE"). Sau khi xuất kho đơn sang màn Hành trình đơn hàng.',
+    confirmText: `Xuất kho ${ids.length} đơn`,
+  })
+  if (!ok) return
+  await send(ids, { export_only: true }, SHIP_CHUNK)
+}
+
 /** Xác nhận trong hộp THE: tạo đơn THE cho các đơn sẵn sàng. */
 async function confirmTHE() {
   confirmOpen.value = false
@@ -223,7 +238,12 @@ async function send(ids: number[], opts: ShipOptions, chunk: number) {
     toast.error(errorMessage(e))
   } finally {
     lastResult.value = merged
-    if (merged.shipped.length) toast.success(`Đã gửi ${merged.shipped.length} đơn cho THE.`)
+    if (merged.shipped.length) {
+      const labelOnly = !opts.export_only && merged.shipped.some((s) => s.the && !s.handoff_code)
+      if (opts.export_only) toast.success(`Đã xuất kho ${merged.shipped.length} đơn.`)
+      else if (labelOnly) toast.success(`Đã tạo label THE cho ${merged.shipped.length} đơn — đơn chưa ra khỏi kho, bấm Xuất kho khi hàng đi.`)
+      else toast.success(`Đã gửi ${merged.shipped.length} đơn.`)
+    }
     if (merged.skipped.length) {
       toast.error(`${merged.skipped.length} đơn không gửi được — xem lý do bên dưới bảng.`)
     }
@@ -299,6 +319,7 @@ interface ScanLogEntry {
   store_order_id?: string
   handoff_code?: string
   exported?: boolean
+  label_only?: boolean
   unfinished?: number
   total?: number
   order_id?: number
@@ -338,14 +359,17 @@ function submitScan() {
         handoff_code: res?.handoff_code, order_id: res?.order_id,
         exported: res?.exported, unfinished: res?.unfinished_items, total: res?.total_items,
         the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
+        label_only: res?.label_only,
       })
       if (res?.exported) {
         const left = res.unfinished_items ?? 0
         const msg = `Đã xuất kho đơn ${res.internal_code ?? value}`
         if (left > 0) toast.info(`${msg} — lưu ý: hệ thống còn ${left}/${res.total_items} sản phẩm chưa QC đạt`)
         else toast.success(msg)
+      } else if (res?.label_only) {
+        toast.success(`Đã tạo label THE cho đơn ${res.internal_code ?? value} — chưa xuất kho, quét ở chế độ Xuất kho khi hàng ra khỏi kho`)
       } else {
-        toast.success(`Đã gửi đơn ${res?.internal_code ?? value} cho THE`)
+        toast.success(`Đã gửi đơn ${res?.internal_code ?? value}`)
       }
       void reload()
     })
@@ -410,7 +434,8 @@ function submitScan() {
           (việc đó ở chỗ dán label). Quét được cả đơn hệ thống còn ghi đang sản xuất — có cảnh báo, không chặn.
         </template>
         <template v-else>
-          <b class="text-foreground">Gửi cho THE:</b> quét là tạo + chốt đơn THE (trừ ví). Cần đơn đã QC đủ và mọi SKU đã khai cân nặng + hộp.
+          <b class="text-foreground">Gửi cho THE:</b> quét là tạo + chốt đơn THE (trừ ví) và có label — chỉ vậy thôi, đơn CHƯA ra khỏi kho.
+          Hàng đi thì quét lại ở chế độ <b class="text-foreground">Xuất kho</b>. Cần đơn đã QC đủ và mọi SKU đã khai cân nặng + hộp.
         </template>
       </p>
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="submitScan">
@@ -466,7 +491,7 @@ function submitScan() {
                   >còn {{ entry.unfinished }}/{{ entry.total }} SP chưa QC</span>
                 </template>
                 <template v-else>
-                  — đã gửi cho THE<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
+                  — {{ entry.label_only ? 'đã tạo label THE (chưa xuất kho)' : 'đã gửi' }}<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
                   <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
                 </template>
                 <button
@@ -525,11 +550,15 @@ function submitScan() {
             Chọn tất cả {{ totalMatching }} đơn khớp bộ lọc
           </button>
         </template>
-        <button class="btn-primary px-3 py-1.5 text-xs" :disabled="shipping" @click="shipSelected">
+        <button class="btn-secondary px-3 py-1.5 text-xs" :disabled="shipping" @click="shipSelected">
           <UiSpinner v-if="shipping" :size="14" />
-          <UiIcon v-else name="shipping" :size="14" />
-          <template v-if="progress">Đang gửi {{ progress.done }}/{{ progress.total }}…</template>
-          <template v-else>Gửi {{ count }} đơn cho THE</template>
+          <UiIcon v-else name="print" :size="14" />
+          <template v-if="progress">Đang xử lý {{ progress.done }}/{{ progress.total }}…</template>
+          <template v-else>1. Tạo label THE ({{ count }})</template>
+        </button>
+        <button class="btn-primary px-3 py-1.5 text-xs" :disabled="shipping" @click="exportSelected">
+          <UiIcon name="shipping" :size="14" />
+          2. Xuất kho ({{ count }})
         </button>
       </UiBulkBar>
 
@@ -589,6 +618,12 @@ function submitScan() {
                     title="Đơn còn ở giỏ chờ (giỏ tự xoá khi đủ sản phẩm)"
                     @click.stop
                   >Giỏ #{{ o.basket_number }}</NuxtLink>
+                  <!-- Label THE đã tạo (bước 1) — đơn chỉ còn chờ Xuất kho (bước 2). -->
+                  <span
+                    v-if="o.the_tracking"
+                    class="ml-1 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
+                    :title="`Đã tạo label THE ${o.the_tracking}${o.the_last_mile ? ' · mã chặng cuối ' + o.the_last_mile : ''} — chờ Xuất kho`"
+                  >Đã có label THE</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>
                 <td class="table-td">
@@ -621,7 +656,7 @@ function submitScan() {
       <div class="flex flex-wrap items-center gap-2">
         <p class="text-sm text-muted-foreground">
           <span class="font-semibold text-emerald-700 dark:text-emerald-300">{{ lastResult.shipped.length }}</span>
-          đơn đã gửi cho THE<template v-if="lastResult.skipped.length">
+          đơn đã xử lý<template v-if="lastResult.skipped.length">
             · <span class="font-semibold text-red-700 dark:text-rose-300">{{ lastResult.skipped.length }}</span>
             đơn bị bỏ qua</template>
         </p>

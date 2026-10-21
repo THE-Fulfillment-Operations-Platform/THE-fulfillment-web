@@ -44,6 +44,8 @@ export interface ShipScanResult {
   the?: THEOutcome
   /** Quét xuất kho (export_only): chỉ ghi nhận hàng ra khỏi kho, không tạo gì trên THE. */
   exported?: boolean
+  /** Chỉ tạo/tìm label THE — đơn CHƯA ra khỏi kho, còn phải bấm Xuất kho. */
+  label_only?: boolean
   /** Số sản phẩm hệ thống còn ghi chưa QC đạt lúc đơn xuất kho (0 = không có gì để cảnh báo). */
   unfinished_items?: number
   total_items?: number
