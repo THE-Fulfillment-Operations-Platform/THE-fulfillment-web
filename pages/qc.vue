@@ -124,6 +124,8 @@ const remainingAfterPass = computed(() => {
 const isLastOfOrder = computed(() => !!basketInfo.value && basketInfo.value.total_items > 1 && !alreadyQC.value && remainingAfterPass.value === 0)
 // Đơn cần giỏ ngay bây giờ: nhiều sản phẩm, chưa có giỏ, PASS xong vẫn còn thiếu.
 const needsBasket = computed(() => !!basketInfo.value?.needs_basket && remainingAfterPass.value > 0)
+// Có thẻ giỏ dưới mockup không — ảnh mockup chừa chỗ cho nó để cả trạm vừa một màn.
+const basketCardShown = computed(() => !!itemBasket.value || needsBasket.value)
 
 const basketDialog = ref(false)
 const basketDialogMode = ref<'created' | 'existing' | 'full'>('created')
@@ -461,14 +463,16 @@ onMounted(focusScan)
   <div>
     <PageHeader
       title="Quét QC"
-      subtitle="Quét mã đơn → xem các sản phẩm trong đơn → bấm từng sản phẩm, đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành."
+      :subtitle="result ? undefined : 'Quét mã đơn → xem các sản phẩm trong đơn → bấm từng sản phẩm, đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành.'"
     />
 
     <!-- Scan bar -->
-    <div class="card mb-5 p-4">
+    <!-- Đang QC một sản phẩm: thanh quét gọn lại để cả trạm (ảnh + thông tin + nút)
+         nằm trọn một màn hình, không phải cuộn (khách chốt 24/10/2026). -->
+    <div class="card" :class="result ? 'mb-3 p-3' : 'mb-5 p-4'">
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="scan">
         <div class="flex-1">
-          <label class="label" for="qc-scan">Mã đơn / mã item</label>
+          <label class="label" :class="result ? 'sr-only' : ''" for="qc-scan">Mã đơn / mã item</label>
           <input
             id="qc-scan"
             ref="scanInput"
@@ -624,25 +628,27 @@ onMounted(focusScan)
     <!-- QC comparison -->
     <template v-else>
     <!-- Đang QC một sản phẩm của đơn: một nút quay về đơn, luôn thấy ngay trên đầu. -->
-    <div v-if="order" class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-4 py-2.5">
+    <div v-if="order" class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted px-4 py-1.5">
       <button class="text-sm font-semibold text-primary hover:underline" @click="clearStation">← Về đơn {{ order.internal_code }}</button>
       <span class="text-sm text-muted-foreground">
         Đã QC <b class="text-foreground">{{ order.passed_items }}/{{ order.total_items }}</b> sản phẩm
       </span>
     </div>
-    <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-      <!-- Mockup -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <!-- CỘT TRÁI: mockup + giỏ chờ. Ảnh co theo chiều cao màn hình (lg) để giỏ chờ
+           nằm ngay dưới mà không đẩy gì ra khỏi màn. -->
+      <div class="space-y-3">
       <div class="card overflow-hidden">
         <div class="flex items-center justify-between border-b border-border bg-muted px-4 py-2.5">
           <h3 class="text-sm font-semibold text-foreground">Mockup chuẩn (seller)</h3>
           <UiMockupLink :url="result.mockup_url" small label="Mở tab mới" />
         </div>
-        <div class="flex min-h-[14rem] items-center justify-center bg-slate-900 p-4 sm:min-h-[18rem] lg:min-h-[22rem]">
+        <div class="flex min-h-[14rem] items-center justify-center bg-slate-900 p-3 sm:min-h-[18rem]" :class="basketCardShown ? 'lg:h-[calc(100dvh-29.5rem)]' : 'lg:h-[calc(100dvh-21.5rem)]'">
           <img
             v-if="isValidUrl(result.mockup_url) && !mockupError"
             :src="mockupSrc"
             :alt="`Mockup ${result.item_code}`"
-            class="max-h-[14rem] max-w-full rounded object-contain sm:max-h-[20rem] lg:max-h-[28rem]"
+            class="max-h-[14rem] max-w-full rounded object-contain sm:max-h-[20rem] lg:max-h-full"
             decoding="async"
             fetchpriority="high"
             @error="onMockupError"
@@ -658,12 +664,10 @@ onMounted(focusScan)
         </div>
       </div>
 
-      <!-- Detail + checklist + actions -->
-      <div class="space-y-5">
-        <!-- Giỏ chờ (góc trên bên phải): đơn nhiều sản phẩm gom ở giỏ tới khi đủ. -->
+        <!-- Giỏ chờ (dưới mockup, cột trái): đơn nhiều sản phẩm gom ở giỏ tới khi đủ. -->
         <div
           v-if="itemBasket"
-          class="flex items-center gap-4 rounded-xl border-2 p-4"
+          class="flex items-center gap-4 rounded-xl border-2 p-3"
           :class="isLastOfOrder ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10' : 'border-amber-400 bg-amber-50 dark:border-amber-500/60 dark:bg-amber-500/10'"
           role="status"
         >
@@ -685,7 +689,7 @@ onMounted(focusScan)
         </div>
         <div
           v-else-if="needsBasket"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50/60 p-4 dark:border-amber-500/60 dark:bg-amber-500/10"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50/60 p-3 dark:border-amber-500/60 dark:bg-amber-500/10"
         >
           <div class="min-w-0 text-sm text-foreground">
             <p class="font-bold">Đơn có {{ basketInfo?.total_items }} sản phẩm — mới QC đạt {{ basketInfo?.passed_items }}</p>
@@ -695,6 +699,10 @@ onMounted(focusScan)
             <UiSpinner v-if="creatingBasket" :size="14" /><UiIcon v-else name="box" :size="16" /> Tạo giỏ chờ
           </button>
         </div>
+      </div>
+
+      <!-- CỘT PHẢI: thông tin sản phẩm + nút PASS/FAIL trong MỘT thẻ. -->
+      <div class="space-y-3">
         <!-- Ghi chú đơn: để trên cùng, to, đổi màu — đơn có ghi chú là đơn khác thường. -->
         <div
           v-if="orderNote"
@@ -711,7 +719,7 @@ onMounted(focusScan)
           <p v-else class="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">Đã đọc ghi chú</p>
         </div>
 
-        <div class="card p-5">
+        <div class="card p-4">
           <div class="flex items-start justify-between gap-3">
             <div>
               <p class="font-mono text-lg font-semibold text-foreground">{{ result.item_code }}</p>
@@ -725,7 +733,7 @@ onMounted(focusScan)
           <!-- Tên sản phẩm (lấy từ SKU master data) và mô tả NVL của SKU
                (spec vật liệu/kích thước) tách 2 dòng, chữ to để QC đứng xa
                vẫn đọc được khi đối chiếu hàng thật. -->
-          <div v-if="productName || result.material_description" class="mt-4 space-y-1">
+          <div v-if="productName || result.material_description" class="mt-2 space-y-0.5">
             <p v-if="productName" class="break-words text-2xl font-bold leading-tight text-foreground">
               {{ productName }}
             </p>
@@ -745,7 +753,7 @@ onMounted(focusScan)
 
           <!-- Thông tin cấu trúc để QC đối chiếu với hàng thực tế.
                Các trường quan trọng luôn hiển thị ngay, bỏ qua trường trống. -->
-          <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <!-- SKU to đậm ngang ô Số lượng: QC đối chiếu SKU với hàng thật nên phải
                  đọc được từ xa. Không dùng font-mono vì số 0 có gạch chéo dễ đọc nhầm. -->
             <div v-if="result.sku_code">
@@ -802,7 +810,7 @@ onMounted(focusScan)
           </p>
 
           <!-- File in/cắt & link design — hiển thị link nào có, bỏ qua link trống -->
-          <div class="mt-4 border-t border-border pt-3">
+          <div class="mt-3 border-t border-border pt-2">
             <p class="label">File &amp; Design</p>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
               <a v-if="result.design_url" :href="result.design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Design (mặt trước)</a>
@@ -813,8 +821,8 @@ onMounted(focusScan)
             </div>
           </div>
 
-          <div v-if="parts.length" class="mt-4 border-t border-border pt-3">
-            <p class="mb-2 text-xs font-medium text-muted-foreground">
+          <div v-if="parts.length" class="mt-3 border-t border-border pt-2">
+            <p class="mb-1.5 text-xs font-medium text-muted-foreground">
               Các phần NVL của sản phẩm ({{ parts.length }}) — QC 1 lần cho cả sản phẩm
             </p>
             <div class="flex flex-wrap gap-2">
@@ -829,13 +837,12 @@ onMounted(focusScan)
               </NuxtLink>
             </div>
           </div>
-        </div>
 
-        <!-- Checklist -->
-        <div class="card p-5">
+          <!-- Thao tác ngay trong thẻ thông tin: không phải cuộn xuống mới thấy nút. -->
+          <div class="mt-3 border-t border-border pt-3">
           <div
             v-if="alreadyQC"
-            class="mb-4 flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+            class="mb-3 flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
           >
             <UiIcon name="check" :size="18" class="mt-0.5 shrink-0" />
             <div>
@@ -845,14 +852,10 @@ onMounted(focusScan)
               </p>
             </div>
           </div>
-          <p class="mb-3 text-sm text-muted-foreground">
-            Đối chiếu thành phẩm với mockup chuẩn bằng mắt, rồi bấm PASS hoặc ghi lỗi.
-            QC làm <span class="font-medium text-foreground">1 lần cho cả sản phẩm</span> (mọi NVL), không QC lẻ từng NVL.
-          </p>
 
           <div
             v-if="notProducedYet && !alreadyQC"
-            class="mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+            class="mb-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
           >
             <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
             <div>
@@ -889,9 +892,12 @@ onMounted(focusScan)
             <UiSpinner v-if="undoing" :size="16" />
             <UiIcon v-else name="refresh" :size="16" /> Hạ QC (bấm nhầm — hàng vẫn tốt)
           </button>
-          <button class="btn-secondary mt-2 w-full" @click="clearStation">
-            {{ order ? `← Về đơn ${order.internal_code} (bỏ qua sản phẩm này)` : 'Bỏ qua / Quét mã khác' }}
+          <!-- Đang trong đơn thì nút "Về đơn" đã nằm ở thanh trên cùng; không trong
+               đơn thì một dòng gọn để nhả trạm. -->
+          <button v-if="!order" class="mt-2 w-full text-center text-sm font-medium text-primary hover:underline" @click="clearStation">
+            Bỏ qua / Quét mã khác
           </button>
+          </div>
         </div>
       </div>
     </div>
