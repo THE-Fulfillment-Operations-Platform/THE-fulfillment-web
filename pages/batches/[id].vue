@@ -112,6 +112,28 @@ const prodRows = computed<ProdRow[]>(() =>
   }),
 )
 
+// MỖI CÁI MỘT DÒNG (khách 23/10/2026): dòng SL 5 hiện thành 5 dòng "103062_1/4-1/5" …
+// "103062_1/4-5/5" để thợ đếm và đối chiếu từng cái. Chỉ để hiển thị — tem, tổng số
+// sản phẩm và các thao tác khác vẫn dựa trên prodRows (một dòng = một item).
+const MAX_PIECES = 100
+function pieceCount(r: ProdRow): number {
+  return Math.min(MAX_PIECES, Math.max(1, Math.floor(Number(r.quantity) || 1)))
+}
+function pieceCode(r: ProdRow, piece: number, of: number): string {
+  return of > 1 ? `${r.internal_code}-${piece}/${of}` : r.internal_code
+}
+const tableRows = computed(() =>
+  prodRows.value.flatMap((r) => {
+    const n = pieceCount(r)
+    return Array.from({ length: n }, (_, i) => ({
+      ...r,
+      display_code: pieceCode(r, i + 1, n),
+      // Dòng tách ra là 1 cái; dòng nguyên giữ SL gốc.
+      quantity: n > 1 ? 1 : r.quantity,
+    }))
+  }),
+)
+
 // Chặng đang chờ server xác nhận (null = rảnh). Giữ chính status thay vì cờ
 // boolean để nút vừa bấm hiện spinner đúng chỗ và màn hình chờ gọi tên chặng.
 const pendingStatus = ref<InternalStatus | null>(null)
@@ -502,16 +524,25 @@ async function printLabels() {
     // "CÁI 2/2" — tem nào cũng có tên riêng nên thợ không sót một cái. QR vẫn là mã
     // item (QC quét cái nào cũng ra đúng sản phẩm đó). Chặn trên 100 tem / dòng để một
     // số lượng gõ nhầm không in ra cả ream giấy.
-    const MAX_PIECES = 100
     const units = rows.flatMap((r) => {
       const n = Math.min(MAX_PIECES, Math.max(1, Math.floor(Number(r.quantity) || 1)))
       return Array.from({ length: n }, (_, i) => ({ r, piece: i + 1, of: n }))
     })
+    // Mã in trên tem dài thêm hậu tố "-1/5" nên hạ cỡ chữ theo độ dài, để vẫn nằm
+    // gọn một/hai dòng trong cột chữ cạnh QR.
+    const codeSize = (len: number): string => {
+      if (len <= 11) return '5.25mm'
+      if (len <= 14) return '4.3mm'
+      if (len <= 17) return '3.6mm'
+      return '3.1mm'
+    }
     const labels = await Promise.all(
       units.map(async ({ r, piece, of }) => {
         const sku = r.sku_code || '—'
         const qty = of > 1 ? 1 : Number(r.quantity) || 0
         const payload = r.internal_code || code
+        // Tem từng cái ghi thẳng "103062_1/4-1/5" thay vì ô "CÁI 1/5" riêng.
+        const shownCode = of > 1 ? `${r.internal_code || '—'}-${piece}/${of}` : r.internal_code || '—'
         let qr = ''
         try {
           // 25mm ở 300dpi ≈ 300px — render 512px cho nét khi in nhiệt.
@@ -522,11 +553,11 @@ async function printLabels() {
             <div class="top">
               ${qr ? `<img class="qr" src="${esc(qr)}" alt="QR ${esc(payload)}" />` : ''}
               <div class="meta">
-                <div class="code">${esc(r.internal_code || '—')}</div>
+                <div class="code" style="font-size:${codeSize(shownCode.length)}">${esc(shownCode)}</div>
                 <div class="sku" style="font-size:${skuSize(sku.length)}">${esc(sku)}</div>
                 <div class="qrow">
                   ${of > 1
-                    ? `<span class="qty multi"><span class="qk">CÁI</span>${piece}/${of}</span>`
+                    ? ''
                     : `<span class="qty${qty > 1 ? ' multi' : ''}"><span class="qk">SL</span>${esc(qty || '—')}</span>`}
                   <span class="sub">${esc(code)} · ${esc(labelDate)}</span>
                 </div>
@@ -960,8 +991,8 @@ async function printLabels() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
-                <tr v-for="(r, idx) in prodRows" :key="idx" class="group hover:bg-muted">
-                  <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.internal_code }}</td>
+                <tr v-for="(r, idx) in tableRows" :key="idx" class="group hover:bg-muted">
+                  <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.display_code }}</td>
                   <td class="table-td whitespace-nowrap">{{ r.seller_name || '—' }}</td>
                   <td class="table-td whitespace-nowrap">
                     <!-- OrderID theo đơn từ import tới hành trình — bấm là sang
