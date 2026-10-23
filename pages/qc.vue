@@ -321,13 +321,12 @@ function markPassedLocally(itemId: number) {
 function pass() {
   const item = result.value
   if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || mustAckNote.value) return
-  // Giỏ chờ, chốt TRƯỚC khi nhả trạm (sau đó basketInfo bị xoá theo result):
-  //   - đơn cần giỏ (sản phẩm đầu của đơn nhiều SP) → PASS kiêm tạo giỏ;
-  //   - đơn đã có giỏ → PASS xong báo bỏ vào giỏ nào, hoặc báo ĐỦ nếu là SP cuối.
+  // Giỏ chờ, chốt TRƯỚC khi nhả trạm (sau đó basketInfo bị xoá theo result): đơn
+  // đã có giỏ → PASS xong báo bỏ vào giỏ nào, hoặc báo ĐỦ nếu là SP cuối.
+  // PASS KHÔNG tự tạo giỏ nữa (khách chốt 24/10/2026): tạo giỏ hoàn toàn do người
+  // bấm "Tạo giỏ chờ" (ở đây, ở màn đơn của trạm QC, hoặc màn Giỏ chờ).
   const basket = itemBasket.value
   const last = isLastOfOrder.value
-  const orderIdForBasket = needsBasket.value ? basketInfo.value?.order_id : undefined
-  if (orderIdForBasket) void createBasket(orderIdForBasket)
 
   // Đang làm trong một đơn: đánh dấu ngay sản phẩm này là "Đã QC" trên màn đơn để
   // người QC thấy tiến độ và làm sản phẩm kế tiếp mà không phải đợi server.
@@ -690,7 +689,7 @@ onMounted(focusScan)
         >
           <div class="min-w-0 text-sm text-foreground">
             <p class="font-bold">Đơn có {{ basketInfo?.total_items }} sản phẩm — mới QC đạt {{ basketInfo?.passed_items }}</p>
-            <p class="text-xs text-muted-foreground">Cần giỏ chờ để gom hàng. Bấm PASS là tự tạo giỏ (số trống thấp nhất) và hiện tem giỏ để in.</p>
+            <p class="text-xs text-muted-foreground">Đơn chưa có giỏ chờ. Cần gom hàng thì bấm <b>Tạo giỏ chờ</b> (lấy số trống thấp nhất, hiện tem giỏ để in) — PASS không tự tạo giỏ.</p>
           </div>
           <button v-if="canJudge && basketInfo" class="btn-secondary" :disabled="creatingBasket" @click="createBasket(basketInfo.order_id)">
             <UiSpinner v-if="creatingBasket" :size="14" /><UiIcon v-else name="box" :size="16" /> Tạo giỏ chờ
@@ -874,7 +873,7 @@ onMounted(focusScan)
               :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : ''))"
               @click="pass"
             >
-              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : needsBasket ? 'PASS + vào giỏ chờ' : 'PASS — Đã QC' }}
+              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
             </button>
             <button
               class="btn-danger"
