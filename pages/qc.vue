@@ -218,6 +218,12 @@ async function scan() {
       const { data } = await qcApi.scanOrder({ code: value })
       result.value = null
       order.value = data
+      // Đơn 1 sản phẩm: mã sản phẩm CHÍNH LÀ mã đơn (103216, không còn _1/1) —
+      // quét là mở thẳng sản phẩm để QC, khỏi bấm thêm một lần.
+      if (data?.items?.length === 1) {
+        const { data: one } = await qcApi.scan({ item_id: data.items[0].item_id })
+        result.value = one
+      }
     }
   } catch (e) {
     result.value = null
