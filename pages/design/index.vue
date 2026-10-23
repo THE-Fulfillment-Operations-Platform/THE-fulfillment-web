@@ -1043,13 +1043,16 @@ async function setReady() {
         </div>
 
         <div class="flex items-center justify-between">
-          <button
-            class="text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          <!-- Ô tick đầu hàng = chọn tất cả đơn đang liệt kê; tick lại = bỏ chọn. -->
+          <input
+            type="checkbox"
+            class="ml-3 h-4 w-4 cursor-pointer accent-primary disabled:opacity-50"
+            :checked="allZipSelected"
+            :indeterminate.prop="zipSelected.size > 0 && !allZipSelected"
             :disabled="zipItems.length === 0"
-            @click="toggleSelectAll"
-          >
-            {{ allZipSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả' }}
-          </button>
+            aria-label="Chọn tất cả đơn"
+            @change="toggleSelectAll"
+          />
           <span class="text-xs text-muted-foreground">
             <template v-if="zipLoading">Đang tải…</template>
             <template v-else>{{ zipItems.length }} đơn khớp · đã chọn {{ zipSelected.size }}</template>

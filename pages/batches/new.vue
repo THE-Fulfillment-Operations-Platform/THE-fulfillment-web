@@ -151,6 +151,8 @@ function toggleAll() {
 }
 
 const selectedCount = computed(() => selectedIds.value.size)
+const allItemsSelected = computed(() => items.value.length > 0 && selectedIds.value.size === items.value.length)
+const someItemsSelected = computed(() => selectedIds.value.size > 0 && !allItemsSelected.value)
 
 const priorityOptions = PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label }))
 
@@ -246,9 +248,7 @@ onMounted(() => {
           <h3 class="text-sm font-semibold text-foreground">
             Item NVL {{ activeMaterial.material_name }} (chưa vào batch)
           </h3>
-          <button class="text-xs font-medium text-primary hover:underline" @click="toggleAll">
-            {{ selectedIds.size === items.length && items.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả' }}
-          </button>
+          <span class="text-xs text-muted-foreground">Đã chọn {{ selectedIds.size }}/{{ items.length }}</span>
         </div>
         <UiStateBlock
           :loading="itemsLoading"
@@ -261,7 +261,18 @@ onMounted(() => {
             <table class="min-w-full divide-y divide-border">
               <thead class="bg-card">
                 <tr>
-                  <th class="table-th w-10"></th>
+                  <th class="table-th w-10">
+                    <!-- Tick ô này = chọn tất cả item trong danh sách; tick lại = bỏ chọn. -->
+                    <input
+                      type="checkbox"
+                      class="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                      :checked="allItemsSelected"
+                      :indeterminate.prop="someItemsSelected"
+                      :disabled="items.length === 0"
+                      aria-label="Chọn tất cả item"
+                      @change="toggleAll"
+                    />
+                  </th>
                   <th class="table-th">Mã nội bộ</th>
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th">
