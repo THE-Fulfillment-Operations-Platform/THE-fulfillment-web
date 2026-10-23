@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
-import { batchesApi, materialsApi } from '~/services/api'
+import { batchesApi, materialsApi, sellersApi } from '~/services/api'
 import type { AutoCreateBatchesResult } from '~/services/api'
-import type { Batch, Material } from '~/types'
+import type { Batch, Material, Seller } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY, PRIORITY_OPTIONS } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
@@ -41,6 +41,8 @@ const filters = reactive({
   batch_id: '', // client-side refine
   sku: '', // client-side refine
   code: '', // server-side: mã nội bộ đơn / mã tem item → batch chứa đơn đó
+  seller_id: '', // server-side: batch chứa hàng của seller này
+  store_order: '', // server-side: batch chứa đơn có mã đơn shop khớp
   overdue: false, // client-side refine
   page: 1,
   page_size: 20,
@@ -53,6 +55,8 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     ...statusQuery(filters.status),
     priority: filters.priority || undefined,
     code: filters.code.trim() || undefined,
+    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    store_order: filters.store_order.trim() || undefined,
     page: filters.page,
     page_size: filters.page_size,
   }),
@@ -87,6 +91,19 @@ const priorityOptions = [
   ...PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label })),
 ]
 
+const sellers = ref<Seller[]>([])
+const sellerOptions = computed(() => [
+  { value: '', label: 'Tất cả seller' },
+  ...sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code })),
+])
+onMounted(async () => {
+  try {
+    const { data: rows } = await sellersApi.list()
+    sellers.value = rows ?? []
+  } catch {
+    /* Bộ lọc seller là phụ trợ: hỏng thì danh sách batch vẫn phải hiện. */
+  }
+})
 onMounted(async () => {
   try {
     const { data: m } = await materialsApi.list()
@@ -235,7 +252,7 @@ async function autoCreateBatches() {
     </PageHeader>
 
     <div class="card mb-4 p-4">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
         <div>
           <label class="label">Batch ID</label>
           <input v-model="filters.batch_id" class="input" placeholder="#101001" @keyup.enter="applyFilters" />
@@ -244,6 +261,14 @@ async function autoCreateBatches() {
         <div>
           <label class="label">Mã nội bộ đơn</label>
           <input v-model="filters.code" class="input font-mono" placeholder="100047 / 100047_1/1" @keyup.enter="applyFilters" />
+        </div>
+        <div>
+          <label class="label">Mã đơn shop</label>
+          <input v-model="filters.store_order" class="input" placeholder="Etsy-7821…" @keyup.enter="applyFilters" />
+        </div>
+        <div>
+          <label class="label">Seller</label>
+          <UiSelect v-model="filters.seller_id" :options="sellerOptions" aria-label="Seller" @change="applyFilters" />
         </div>
         <div>
           <label class="label">Material</label>
