@@ -402,10 +402,6 @@ const scrapForm = reactive({ reason: '', route: 'PRODUCTION' as 'PRODUCTION' | '
 const scrapReason = computed(() => scrapForm.reason.trim())
 // 60 ký tự là đúng sức chứa cột lý do ở BE — chặn ngay ở đây để không mất công gõ.
 const scrapReasonValid = computed(() => scrapReason.value.length > 0 && scrapReason.value.length <= 60)
-const scrapRouteOptions = [
-  { value: 'PRODUCTION', label: 'Làm lại sản xuất (file design giữ nguyên)' },
-  { value: 'DESIGN', label: 'Trả về Chờ thiết kế (cả tấm sai vì file sai)' },
-]
 
 function openScrap() {
   scrapForm.reason = ''
@@ -1089,13 +1085,6 @@ async function printLabels() {
           <p class="mt-1 flex justify-between text-[11px] text-muted-foreground">
             <span>Lý do đi vào lịch sử sản xuất — tháng sau còn tra được vì sao mất tấm này.</span>
             <span>{{ scrapReason.length }}/60</span>
-          </p>
-        </div>
-        <div>
-          <label class="label">Trả về đâu để làm lại</label>
-          <UiSelect v-model="scrapForm.route" :options="scrapRouteOptions" aria-label="Hướng xử lý" />
-          <p class="mt-1 text-[11px] text-muted-foreground">
-            Cả tấm sai vì file sai thì phải sửa file trước, nếu không lần in lại hỏng y hệt.
           </p>
         </div>
       </div>

@@ -254,7 +254,7 @@ onMounted(() => {
           :loading="itemsLoading"
           :error="itemsError"
           :empty="!itemsLoading && !itemsError && items.length === 0"
-          empty-text="Không còn item design-ready cho material này."
+          empty-text="Không còn sản phẩm nào chờ gom batch cho material này."
           @retry="fetchItems"
         >
           <div class="overflow-x-auto">

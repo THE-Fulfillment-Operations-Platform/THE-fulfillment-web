@@ -57,12 +57,12 @@ const reviewDead = computed(
 // Derive a coarse timeline from the items' internal statuses.
 const timeline = computed(() => {
   const its = items.value
-  const allReady = its.length > 0 && its.every((i) => i.design_status === 'READY')
   const allBatched = its.length > 0 && its.every((i) => (i.batch_items?.length ?? 0) > 0)
   const atLeast = (set: string[]) => its.length > 0 && its.every((i) => set.includes(i.internal_status))
   return [
     { key: 'import', label: 'Import', done: true },
-    { key: 'design', label: 'Design', done: allReady },
+    // Không còn bước Design / set ready (23/10/2026): duyệt xong là vào gom batch.
+    { key: 'review', label: 'Đã duyệt', done: reviewStatus.value === 'APPROVED' },
     { key: 'batch', label: 'Batch', done: allBatched },
     { key: 'print', label: 'Đã in', done: atLeast(['PRINTED', 'CUT', 'QC_PASSED']) },
     { key: 'cut', label: 'Đã cắt', done: atLeast(['CUT', 'QC_PASSED']) },

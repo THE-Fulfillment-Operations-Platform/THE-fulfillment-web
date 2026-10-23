@@ -357,11 +357,6 @@ function pass() {
 // Lỗi thuộc về FILE design thì in lại y hệt sẽ hỏng y hệt — mặc định trả về khâu
 // thiết kế. Các lỗi còn lại là lỗi làm, chỉ cần làm lại sản xuất. Người QC vẫn
 // đổi được nếu thực tế khác.
-const DESIGN_DEFECTS = ['ENGRAVE_WRONG', 'WRONG_MOCKUP']
-const routeOptions = [
-  { value: 'PRODUCTION', label: 'Làm lại sản xuất (file design giữ nguyên)' },
-  { value: 'DESIGN', label: 'Trả về Chờ thiết kế (phải sửa file trước)' },
-]
 // Các phần NVL còn hiệu lực của sản phẩm — combo phải chỉ rõ phần nào hỏng.
 const failableParts = computed(() => result.value?.batches ?? [])
 const partOptions = computed(() =>
@@ -422,13 +417,8 @@ function openFail() {
   failOpen.value = true
 }
 
-// Đổi loại lỗi thì gợi ý lại hướng xử lý cho khớp.
-watch(
-  () => defect.defect_code,
-  (code) => {
-    defect.rework_route = DESIGN_DEFECTS.includes(code) ? 'DESIGN' : 'PRODUCTION'
-  },
-)
+// Không còn màn Chờ thiết kế (23/10/2026): hàng hỏng nào cũng quay về chờ gom batch
+// làm lại (rework_route luôn PRODUCTION); file sai thì designer nộp file mới ở batch làm lại.
 
 async function submitFail() {
   if (!result.value || failing.value) return
@@ -444,9 +434,7 @@ async function submitFail() {
     })
     // Nói rõ sản phẩm đã đi đâu — người QC không phải đoán bước tiếp theo.
     toast.error(
-      data?.route === 'DESIGN'
-        ? `${code}: đã huỷ phần hỏng, trả về Chờ thiết kế để sửa file (lần sản xuất ${data?.attempt ?? 1})`
-        : `${code}: đã huỷ phần hỏng, trả về danh sách chờ gom batch làm lại (lần sản xuất ${data?.attempt ?? 1})`,
+      `${code}: đã huỷ phần hỏng, trả về danh sách chờ gom batch làm lại (lần sản xuất ${data?.attempt ?? 1})`,
     )
     failOpen.value = false
     clearStation()
@@ -939,13 +927,6 @@ onMounted(focusScan)
           />
           <p class="mt-1 text-[11px] text-muted-foreground">
             Sản phẩm combo: chỉ phần được chọn bị huỷ và làm lại, phần đạt giữ nguyên.
-          </p>
-        </div>
-        <div>
-          <label class="label">Trả về đâu để làm lại</label>
-          <UiSelect v-model="defect.rework_route" :options="routeOptions" aria-label="Hướng xử lý" />
-          <p class="mt-1 text-[11px] text-muted-foreground">
-            Lỗi từ file design thì phải sửa file trước, nếu không lần in lại sẽ hỏng y hệt.
           </p>
         </div>
         <div>
