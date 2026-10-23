@@ -470,6 +470,8 @@ export interface ImportPreview {
   total_rows: number
   order_count: number
   valid_rows: number
+  // Số sản phẩm sẽ tạo: dòng Số lượng N thành N sản phẩm riêng, mỗi cái một mã nội bộ.
+  item_count?: number
   error_rows: number
   created_count?: number
   errors?: ImportError[]

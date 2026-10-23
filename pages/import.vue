@@ -399,6 +399,10 @@ function masterDataLink(code?: string) {
               <div class="rounded-md bg-emerald-50 p-3 dark:bg-emerald-500/10">
                 <p class="text-2xl font-semibold text-emerald-700 dark:text-emerald-300">{{ preview.valid_rows }}</p>
                 <p class="text-xs text-emerald-600 dark:text-emerald-400">Hợp lệ</p>
+                <p
+                  v-if="preview.item_count && preview.item_count !== preview.valid_rows"
+                  class="mt-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-300"
+                >→ {{ preview.item_count }} sản phẩm (dòng Số lượng N thành N sản phẩm riêng, mỗi cái một mã nội bộ)</p>
               </div>
               <div class="rounded-md bg-red-50 dark:bg-rose-500/10 p-3">
                 <p class="text-2xl font-semibold text-red-700 dark:text-rose-300">{{ preview.error_rows }}</p>
