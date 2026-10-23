@@ -38,7 +38,7 @@ const filters = reactive({
   material_id: '',
   status: '',
   priority: '',
-  batch_id: '', // client-side refine
+  batch_id: '', // server-side: mã batch chứa chuỗi này
   sku: '', // client-side refine
   code: '', // server-side: mã nội bộ đơn / mã tem item → batch chứa đơn đó
   seller_id: '', // server-side: batch chứa hàng của seller này
@@ -57,6 +57,7 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     code: filters.code.trim() || undefined,
     seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
     store_order: filters.store_order.trim() || undefined,
+    batch: filters.batch_id.trim().replace(/^#/, '') || undefined,
     page: filters.page,
     page_size: filters.page_size,
   }),
@@ -129,7 +130,6 @@ function skuSummary(b: Batch): string {
 
 const rows = computed(() => {
   let list = data.value ?? []
-  if (filters.batch_id) list = list.filter((b) => b.code.includes(filters.batch_id))
   if (filters.sku) {
     const q = filters.sku.toUpperCase()
     list = list.filter((b) => (b.items ?? []).some((i) => (i.sku_code ?? '').toUpperCase().includes(q)))

@@ -141,6 +141,10 @@ export interface BatchListParams extends ListParams {
   // Batch chứa hàng của seller này / của đơn có mã đơn shop chứa chuỗi này.
   seller_id?: number
   store_order?: string
+  // Mã batch chứa chuỗi này ("101602" ra "#101602").
+  batch?: string
+  // Ô tìm chung: mã batch, mã đơn / mã tem, mã đơn shop hoặc tên seller.
+  q?: string
   // Tách "Chờ xử lý" như nhãn trên bảng: ready = đã đủ link in + cắt ("Đã có file
   // SX"), missing = chưa đủ. Đi kèm status=PENDING.
   files?: 'ready' | 'missing'

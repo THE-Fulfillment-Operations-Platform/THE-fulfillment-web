@@ -6,12 +6,24 @@ import { formatDate } from '~/utils/format'
 import { batchMaterialLabel, batchMaterialUnits, batchStatusBadge, PRODUCTION_FILES_READY } from '~/utils/batch'
 import { useApiResource } from '~/composables/useApiResource'
 
+const q = ref('')
+const appliedQ = ref('')
+
 const { data, loading, error, reload } = useApiResource<Batch[]>(() =>
   // Bảng sản xuất chỉ hiện batch còn việc: batch mà toàn bộ hàng đã bị huỷ ở QC
   // không còn gì để in/cắt (hàng được làm lại ở batch mới) nên không được chiếm
   // chỗ trên bảng.
-  batchesApi.list({ page_size: 200, open: true }),
+  batchesApi.list({ page_size: 200, open: true, q: appliedQ.value || undefined }),
 )
+
+function search() {
+  appliedQ.value = q.value.trim()
+  reload()
+}
+function clearSearch() {
+  q.value = ''
+  search()
+}
 
 const columns = computed(() => {
   const grouped: Record<InternalStatus, Batch[]> = {
@@ -37,6 +49,28 @@ const columns = computed(() => {
         <button class="btn-secondary" @click="reload"><UiIcon name="refresh" :size="16" /> Làm mới</button>
       </template>
     </PageHeader>
+
+    <!-- Ô tìm: mã batch (101602), mã đơn / mã tem item (103038, 103038_1/3), mã đơn shop
+         hoặc tên seller. Chỉ còn các batch chứa thứ vừa gõ, vẫn chia theo cột trạng thái. -->
+    <form class="card mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center" @submit.prevent="search">
+      <div class="relative flex-1">
+        <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          id="production-q"
+          v-model="q"
+          class="input pl-9"
+          placeholder="Mã batch (101602), mã đơn (103038), mã đơn shop hoặc tên seller…"
+          autocomplete="off"
+        />
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn-primary" :disabled="loading">Tìm</button>
+        <button v-if="appliedQ || q" type="button" class="btn-secondary" @click="clearSearch">Xoá lọc</button>
+      </div>
+    </form>
+    <p v-if="appliedQ" class="mb-3 text-xs text-muted-foreground">
+      Đang tìm “<b class="text-foreground">{{ appliedQ }}</b>” — chỉ hiện batch chứa mã / seller này.
+    </p>
 
     <UiStateBlock :loading="loading" :error="error" @retry="reload">
       <!-- items-start stops the grid from stretching every column to the tallest
