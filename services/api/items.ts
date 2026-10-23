@@ -1,4 +1,4 @@
-import { apiGet, apiPatch } from '../http'
+import { apiGet, apiPatch, apiDownload } from '../http'
 import type { OrderItem, ListParams } from '~/types'
 
 export interface ItemListParams extends ListParams {
@@ -44,6 +44,18 @@ export interface DesignPatch {
 
 export const itemsApi = {
   list: (params?: ItemListParams) => apiGet<OrderItem[]>('/api/items', params),
+  /**
+   * Xuất các sản phẩm khớp bộ lọc theo ĐÚNG mẫu import đơn (sửa rồi import lại được).
+   * Chỉ kỹ thuật viên — backend chặn vai trò khác.
+   */
+  exportAsImportTemplate: (params: Omit<ItemListParams, 'page' | 'page_size'>) => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    return apiDownload(`/api/orders/export/import-template.xlsx?${q.toString()}`, `orders-import-${today}.xlsx`)
+  },
   get: (id: number | string) => apiGet<OrderItem>(`/api/items/${id}`),
   patchDesign: (id: number | string, body: DesignPatch) =>
     apiPatch<OrderItem>(`/api/items/${id}/design`, body),

@@ -77,6 +77,24 @@ const sort = reactive<{ by: '' | 'sku' | 'quantity' | 'created_at'; dir: 'asc' |
 })
 usePersistedFilters('orders-sort', sort)
 
+// Bộ lọc đang áp dụng (không kèm phân trang / sắp xếp) — dùng chung cho danh sách
+// và nút "Xuất theo mẫu import".
+function filterParams() {
+  return {
+    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    store_order_id: filters.store_order_id || undefined,
+    sku: filters.sku || undefined,
+    internal_code: filters.internal_code || undefined,
+    status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
+    handed_over: filters.status === HANDED_OVER || undefined,
+    design_status: filters.design_status || undefined,
+    review_status: filters.review_status || undefined,
+    batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
+    date_from: filters.date_from || undefined,
+    date_to: inclusiveEnd(filters.date_to),
+  }
+}
+
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   itemsApi.list({
     seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
@@ -213,6 +231,19 @@ const items = computed(() => data.value ?? [])
 // đếm cả hai con số. Chỉ chọn trong trang đang xem — đổi trang/bộ lọc/sắp xếp là
 // bỏ chọn, để không bao giờ xoá thứ không nhìn thấy.
 const auth = useAuthStore()
+
+const exportingImport = ref(false)
+async function exportAsImport() {
+  if (exportingImport.value) return
+  exportingImport.value = true
+  try {
+    await itemsApi.exportAsImportTemplate(filterParams())
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    exportingImport.value = false
+  }
+}
 const canDelete = computed(
   () => auth.hasAdminRights && auth.can('orders.manage'),
 )
@@ -338,6 +369,18 @@ function exportItems() {
           @click="exportItems"
         >
           <UiIcon name="upload" :size="16" /> Xuất CSV
+        </button>
+        <!-- Chỉ kỹ thuật viên: file đúng mẫu import (sửa rồi import lại được). -->
+        <button
+          v-if="auth.isTechnician"
+          class="btn-secondary"
+          :disabled="exportingImport"
+          title="Xuất mọi sản phẩm khớp bộ lọc (mọi trang) theo đúng mẫu Import đơn — sửa rồi import lại được"
+          @click="exportAsImport"
+        >
+          <UiSpinner v-if="exportingImport" :size="16" />
+          <UiIcon v-else name="upload" :size="16" />
+          Xuất theo mẫu import
         </button>
       </template>
     </PageHeader>
