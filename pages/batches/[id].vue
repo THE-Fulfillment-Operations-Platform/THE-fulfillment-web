@@ -943,6 +943,7 @@ async function printLabels() {
               <thead class="bg-card">
                 <tr>
                   <th class="table-th sticky left-0 z-20 bg-card">Mã nội bộ</th>
+                  <th class="table-th">Seller</th>
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th hidden sm:table-cell">SKU</th>
                   <th class="table-th hidden md:table-cell">Loại VL</th>
@@ -961,6 +962,7 @@ async function printLabels() {
               <tbody class="divide-y divide-border">
                 <tr v-for="(r, idx) in prodRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.internal_code }}</td>
+                  <td class="table-td whitespace-nowrap">{{ r.seller_name || '—' }}</td>
                   <td class="table-td whitespace-nowrap">
                     <!-- OrderID theo đơn từ import tới hành trình — bấm là sang
                          thẳng trang đơn, khỏi tra lại bằng mã nội bộ. -->
