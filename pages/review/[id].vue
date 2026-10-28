@@ -217,7 +217,6 @@ const shippingRows = computed<[string, string][]>(() => {
                   <p class="text-sm text-muted-foreground">{{ it.product_name }} · SL {{ it.quantity }}</p>
                   <p v-if="it.engrave_text" class="mt-1 text-xs text-muted-foreground">Khắc: "{{ it.engrave_text }}"</p>
                 </div>
-                <UiStatusBadge kind="design" :value="it.design_status" />
               </div>
 
               <div class="mt-3 flex flex-wrap items-center gap-4 border-t border-border pt-3 text-sm">

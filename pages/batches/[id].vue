@@ -417,9 +417,8 @@ async function submitScrap() {
       reason: scrapReason.value,
       route: scrapForm.route,
     })
-    const where = data.route === 'DESIGN' ? 'hàng chờ thiết kế' : 'hàng chờ gom batch'
     toast.success(
-      `Đã huỷ ${data.batch_codes.join(', ')} — ${data.scrapped_parts} phần sản xuất ghi bỏ, sản phẩm về ${where} để làm lại.`,
+      `Đã huỷ ${data.batch_codes.join(', ')} — ${data.scrapped_parts} phần sản xuất ghi bỏ, sản phẩm về hàng chờ gom batch để làm lại.`,
     )
     scrapOpen.value = false
     await reload()

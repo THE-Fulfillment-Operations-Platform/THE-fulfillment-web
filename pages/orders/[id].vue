@@ -510,7 +510,6 @@ async function syncTracking() {
                 </div>
                 <div class="flex flex-col items-end gap-1">
                   <UiStatusBadge kind="internal" :value="it.internal_status" />
-                  <UiStatusBadge kind="design" :value="it.design_status" />
                 </div>
               </div>
 

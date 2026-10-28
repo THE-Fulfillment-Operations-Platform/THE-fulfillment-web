@@ -6,7 +6,6 @@ import {
   INTERNAL_STATUS,
   INTERNAL_STATUS_ORDER,
   REVIEW_STATUS,
-  DESIGN_STATUS,
   SELLER_STATUS,
   TRACKING_STATUS,
   badgeFrom,
@@ -44,7 +43,6 @@ const filters = reactive({
   sku: '',
   internal_code: '',
   status: '',
-  design_status: '',
   review_status: '',
   batch_id: '',
   date_from: '',
@@ -87,7 +85,6 @@ function filterParams() {
     internal_code: filters.internal_code || undefined,
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
-    design_status: filters.design_status || undefined,
     review_status: filters.review_status || undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
@@ -106,7 +103,6 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     internal_code: filters.internal_code || undefined,
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
-    design_status: filters.design_status || undefined,
     review_status: filters.review_status || undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
@@ -174,13 +170,6 @@ const statusOptions = computed(() => [
   ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
   { value: HANDED_OVER, label: 'Đã giao hàng' },
 ])
-const designStatusOptions = [
-  { value: '', label: 'Tất cả' },
-  { value: 'PENDING', label: 'Chờ design' },
-  { value: 'IN_PROGRESS', label: 'Đang design' },
-  { value: 'READY', label: 'Sẵn sàng' },
-  { value: 'MISSING', label: 'Thiếu file' },
-]
 const reviewStatusOptions = [
   { value: '', label: 'Tất cả' },
   { value: 'PENDING_REVIEW', label: 'Chờ duyệt' },
@@ -202,7 +191,6 @@ function resetFilters() {
   filters.sku = ''
   filters.internal_code = ''
   filters.status = ''
-  filters.design_status = ''
   filters.review_status = ''
   filters.batch_id = ''
   filters.date_from = ''
@@ -345,7 +333,6 @@ function exportItems() {
     { label: 'Sản phẩm', value: (it) => it.product_name ?? '' },
     { label: 'Số lượng', value: 'quantity' },
     { label: 'NVL', value: (it) => itemMaterial(it) },
-    { label: 'Design', value: (it) => badgeFrom(DESIGN_STATUS, it.design_status).label },
     { label: 'Batch', value: (it) => itemBatchLabel(it) },
     { label: 'Ngày tạo', value: (it) => formatDate(itemCreatedAt(it)) },
     { label: 'Trạng thái', value: (it) => statusLabel(it) },
@@ -412,10 +399,6 @@ function exportItems() {
         <div>
           <label class="label">Trạng thái nội bộ</label>
           <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái nội bộ" />
-        </div>
-        <div>
-          <label class="label">Design</label>
-          <UiSelect v-model="filters.design_status" :options="designStatusOptions" aria-label="Design" />
         </div>
         <div>
           <label class="label">Duyệt (review)</label>
@@ -496,7 +479,6 @@ function exportItems() {
                   </button>
                 </th>
                 <th class="table-th hidden lg:table-cell">NVL</th>
-                <th class="table-th hidden sm:table-cell">Design</th>
                 <th class="table-th hidden lg:table-cell">Mockup</th>
                 <th class="table-th hidden md:table-cell">Batch</th>
                 <th class="table-th hidden lg:table-cell">
@@ -558,7 +540,6 @@ function exportItems() {
                 <td class="table-td">{{ it.sku_code }}</td>
                 <td class="table-td tabular-nums">{{ it.quantity }}</td>
                 <td class="table-td hidden lg:table-cell">{{ itemMaterial(it) }}</td>
-                <td class="table-td hidden sm:table-cell"><UiStatusBadge kind="design" :value="it.design_status" /></td>
                 <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell" :title="formatDateTime(itemCreatedAt(it))">{{ formatDate(itemCreatedAt(it)) }}</td>

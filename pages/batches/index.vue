@@ -182,7 +182,7 @@ function exportBatches() {
 }
 
 // ---- Tạo batch tự động ------------------------------------------------------
-// Hệ thống tự gom TOÀN BỘ pool design-ready: phân theo NVL, chia theo định mức,
+// Hệ thống tự gom TOÀN BỘ sản phẩm của đơn đã duyệt chưa vào batch: phân theo NVL, chia theo định mức,
 // tự sinh mã batch. Người vận hành không chọn từng sản phẩm, không đặt tên.
 const autoCreating = ref(false)
 const autoResult = ref<AutoCreateBatchesResult | null>(null)
@@ -194,7 +194,7 @@ async function autoCreateBatches() {
   const ok = await useConfirm().confirm({
     title: 'Tạo batch tự động',
     message:
-      'Hệ thống sẽ tự gom TOÀN BỘ sản phẩm đã sẵn sàng thiết kế thành batch theo từng nguyên vật liệu và định mức, tự sinh mã batch. Tiếp tục?',
+      'Hệ thống sẽ tự gom TOÀN BỘ sản phẩm của đơn đã duyệt (chưa vào batch) thành batch theo từng nguyên vật liệu và định mức, tự sinh mã batch. Tiếp tục?',
     tone: 'primary',
     confirmText: 'Tạo batch',
   })
@@ -239,7 +239,7 @@ async function autoCreateBatches() {
           v-if="canDesignOps"
           class="btn-primary"
           :disabled="autoCreating"
-          title="Hệ thống tự gom sản phẩm đã sẵn sàng thiết kế thành batch theo NVL và định mức"
+          title="Hệ thống tự gom sản phẩm của đơn đã duyệt thành batch theo NVL và định mức"
           @click="autoCreateBatches"
         >
           <UiSpinner v-if="autoCreating" :size="16" />

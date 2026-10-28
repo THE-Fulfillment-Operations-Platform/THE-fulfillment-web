@@ -341,7 +341,7 @@ function another() {
           <p class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
             Đã tạo đơn {{ created.storeOrderId }}<template v-if="created.internalCode"> (mã nội bộ {{ created.internalCode }})</template>
           </p>
-          <p class="mt-1 text-sm text-muted-foreground">Đơn đang ở <b>Chờ duyệt</b> — duyệt xong mới vào thiết kế / sản xuất như đơn thật.</p>
+          <p class="mt-1 text-sm text-muted-foreground">Đơn đang ở <b>Chờ duyệt</b> — duyệt xong mới vào gom batch / sản xuất như đơn thật.</p>
           <div class="mt-3 flex flex-wrap gap-2">
             <NuxtLink v-if="created.orderId" :to="`/orders/${created.orderId}`" class="btn-secondary">Mở đơn</NuxtLink>
             <NuxtLink to="/review" class="btn-secondary">Tới Chờ duyệt</NuxtLink>
