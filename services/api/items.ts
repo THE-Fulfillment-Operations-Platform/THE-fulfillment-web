@@ -17,6 +17,8 @@ export interface ItemListParams extends ListParams {
   store_order_id?: string // partial match on the parent order's store order id
   internal_code?: string // partial match on the item's internal (QR) code
   batch_id?: number
+  // Sản phẩm có SKU gắn với NVL này (theo mapping SKU → NVL, kể cả chưa vào batch).
+  material_id?: number
   seller_id?: number
   // Xin trả kèm seller của đơn (order.seller). Tắt mặc định ở backend vì đó là
   // một round trip nữa tới DB; chỉ màn nào in tên seller mới bật.

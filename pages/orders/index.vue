@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
-import { itemsApi, ordersApi, sellersApi } from '~/services/api'
-import type { OrderItem, Seller } from '~/types'
+import { itemsApi, materialsApi, ordersApi, sellersApi } from '~/services/api'
+import type { Material, OrderItem, Seller } from '~/types'
 import {
   INTERNAL_STATUS,
   INTERNAL_STATUS_ORDER,
@@ -43,6 +43,8 @@ const filters = reactive({
   sku: '',
   internal_code: '',
   status: '',
+  // NVL: sản phẩm có SKU gắn với vật liệu này (trước nằm ở màn Chờ thiết kế đã bỏ).
+  material_id: '',
   review_status: '',
   batch_id: '',
   date_from: '',
@@ -86,6 +88,7 @@ function filterParams() {
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
     review_status: filters.review_status || undefined,
+    material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
     date_to: inclusiveEnd(filters.date_to),
@@ -104,6 +107,7 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
     review_status: filters.review_status || undefined,
+    material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
     date_to: inclusiveEnd(filters.date_to),
@@ -156,6 +160,20 @@ const sellerOptions = computed(() => [
   { value: '', label: 'Tất cả seller' },
   ...sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code })),
 ])
+// Danh sách NVL cho bộ lọc NVL.
+const materials = ref<Material[]>([])
+const materialOptions = computed(() => [
+  { value: '', label: 'Tất cả NVL' },
+  ...materials.value.map((m) => ({ value: String(m.id), label: m.code ? `${m.name} (${m.code})` : m.name })),
+])
+onMounted(async () => {
+  try {
+    const { data: rows } = await materialsApi.list()
+    materials.value = rows ?? []
+  } catch {
+    /* Bộ lọc NVL là phụ trợ: hỏng thì màn vẫn phải liệt kê được đơn. */
+  }
+})
 onMounted(async () => {
   try {
     const { data: rows } = await sellersApi.list()
@@ -192,6 +210,7 @@ function resetFilters() {
   filters.internal_code = ''
   filters.status = ''
   filters.review_status = ''
+  filters.material_id = ''
   filters.batch_id = ''
   filters.date_from = ''
   filters.date_to = ''
@@ -399,6 +418,10 @@ function exportItems() {
         <div>
           <label class="label">Trạng thái nội bộ</label>
           <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái nội bộ" />
+        </div>
+        <div>
+          <label class="label">NVL</label>
+          <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="NVL" />
         </div>
         <div>
           <label class="label">Duyệt (review)</label>
