@@ -37,6 +37,13 @@ const LIVE: THEShipmentStatus[] = ['CREATING', 'CREATED', 'LABELED']
 const live = computed(() => rows.value.find((r) => LIVE.includes(r.status)) ?? null)
 const history = computed(() => rows.value.filter((r) => r !== live.value))
 
+// THE giữ đơn cho nhân viên THE xử lý (đường bay không nhận hàng này, hoặc hãng
+// từ chối sau khi đã chốt). Chưa trừ tiền; nhân viên THE xử lý xong thì hệ thống
+// tự lấy mã + label. Khớp heldOnTHEPrefix ở API.
+const HELD_PREFIX = 'Chờ nhân viên THE xử lý: '
+const held = computed(() => live.value?.status === 'CREATED' && (live.value.error ?? '').startsWith(HELD_PREFIX))
+const heldReason = computed(() => (held.value ? live.value!.error.slice(HELD_PREFIX.length) : ''))
+
 const STATUS_LABEL: Record<THEShipmentStatus, string> = {
   CREATING: 'Đang tạo',
   CREATED: 'Đã tạo, chưa chốt (chưa trừ tiền)',
@@ -122,7 +129,10 @@ async function cancel() {
     <dl v-if="live" class="space-y-1.5 text-sm">
       <div class="flex justify-between gap-3">
         <dt class="text-muted-foreground">Trạng thái</dt>
-        <dd><span class="rounded-md px-2 py-0.5 text-xs font-medium" :class="STATUS_CLASS[live.status]">{{ STATUS_LABEL[live.status] }}</span></dd>
+        <dd>
+          <span v-if="held" class="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">Chờ nhân viên THE xử lý</span>
+          <span v-else class="rounded-md px-2 py-0.5 text-xs font-medium" :class="STATUS_CLASS[live.status]">{{ STATUS_LABEL[live.status] }}</span>
+        </dd>
       </div>
       <div v-if="live.tracking_code" class="flex justify-between gap-3">
         <dt class="text-muted-foreground">Mã THE</dt>
@@ -149,7 +159,11 @@ async function cancel() {
         <dt class="text-muted-foreground">Chốt lúc</dt>
         <dd class="text-xs text-foreground">{{ formatDateTime(live.labeled_at) }}</dd>
       </div>
-      <p v-if="live.error" class="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+      <p v-if="held" class="rounded-md bg-rose-50 px-2 py-1.5 text-xs text-rose-800 dark:bg-rose-500/10 dark:text-rose-300">
+        <span class="font-medium">{{ heldReason }}</span>
+        <span class="mt-0.5 block opacity-80">Chưa trừ tiền. Nhân viên THE xử lý xong, hệ thống tự lấy mã THE và label về.</span>
+      </p>
+      <p v-else-if="live.error" class="rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
         {{ live.error }}
       </p>
     </dl>

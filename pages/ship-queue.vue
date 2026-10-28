@@ -280,6 +280,7 @@ const SKIP_HINT: Record<string, string> = {
   THE: 'THE từ chối',
   WAIT: 'Đợi rồi gửi lại — an toàn, không trừ tiền 2 lần',
   UNCLEAR: 'Gửi lại sau — hệ thống tự đối chiếu với THE',
+  HELD: 'Đơn vẫn nằm chờ trên THE, chưa trừ tiền — nhân viên THE xử lý xong, hệ thống tự lấy label',
 }
 
 // ---- Trạm quét gửi hàng ------------------------------------------------------
