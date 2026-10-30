@@ -187,17 +187,6 @@ function another() {
       </template>
     </PageHeader>
 
-    <div
-      class="mb-5 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
-    >
-      <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
-      <p>
-        Đơn tạo ở đây là <b>đơn thật trong hệ thống</b> (xưởng thấy ở mọi danh sách). Giữ tiền tố <b>TEST-</b> ở ORDER ID cho dễ nhận.
-        Đừng bấm <b>Gửi cho THE</b> với đơn test khi kết nối THE đang bật — THE sẽ tạo vận đơn thật và trừ ví.
-        Test xong thì huỷ hoặc xoá đơn.
-      </p>
-    </div>
-
     <form class="grid grid-cols-1 gap-5 lg:grid-cols-3" @submit.prevent="submit">
       <!-- Thông tin đơn + người nhận -->
       <div class="card space-y-3 p-5 lg:col-span-1">
