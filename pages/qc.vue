@@ -452,19 +452,28 @@ const canReworkInPlace = computed(
 )
 const reworkOpen = ref(false)
 const reworking = ref(false)
-// Lần sản xuất sắp tạo (cao nhất hiện có + 1) — để hộp xác nhận nói đúng số.
-const nextAttempt = computed(() => Math.max(1, ...parts.value.map((b) => b.attempt ?? 1)) + 1)
-// Batch cũ sẽ nhận phần làm lại: batch của phần huỷ mới nhất của từng NVL chờ làm lại.
-const reworkBatchCodes = computed(() => {
-  const codes = new Set<string>()
-  for (const m of reworkMaterials.value) {
-    const latest = scrappedParts.value
-      .filter((b) => b.material_code === m)
-      .reduce<QcScanBatch | null>((a, b) => (!a || (b.attempt ?? 0) >= (a.attempt ?? 0) ? b : a), null)
-    if (latest) codes.add(latest.batch_code)
-  }
-  return [...codes]
-})
+// Không còn phần sống nào (mọi NVL đều đã huỷ): FAIL cũng phải khoá. Để mở thì
+// hộp FAIL không có phần để chọn, server rơi vào nhánh "chưa sản xuất" và ghi thêm
+// một QC FAIL không phần, cộng rework_count, mở thêm ghi chú — fail đúp cho một
+// tấm đã vứt rồi. Hàng này chỉ có hai đường: gom batch mới hoặc Làm lại tại chỗ.
+const noLivePartLeft = computed(() => awaitingRework.value && !liveParts.value.length)
+// Từng NVL đang chờ làm lại: lần sản xuất server sẽ tạo (cao nhất của ĐÚNG NVL đó
+// + 1 — combo gỗ lần 3 còn sống, mica lần 1 huỷ thì mica là lần 2, không phải
+// lần 4) và batch cũ sẽ nhận phần mới (batch của phần huỷ mới nhất của NVL đó).
+const reworkPlan = computed(() =>
+  reworkMaterials.value.map((m) => {
+    const ofMaterial = parts.value.filter((b) => b.material_code === m)
+    const latest = ofMaterial.reduce<QcScanBatch | null>(
+      (a, b) => (!a || (b.attempt ?? 0) >= (a.attempt ?? 0) ? b : a),
+      null,
+    )
+    return {
+      material_code: m,
+      next_attempt: Math.max(1, ...ofMaterial.map((b) => b.attempt ?? 1)) + 1,
+      batch_code: latest?.batch_code ?? '',
+    }
+  }),
+)
 
 function openRework() {
   reworkOpen.value = true
@@ -475,16 +484,23 @@ async function submitRework() {
   reworking.value = true
   try {
     const itemCode = result.value.item_code
+    // Chốt danh sách NVL sắp làm lại TRƯỚC khi gán result mới (reworkPlan tính từ result).
+    const planned = reworkPlan.value
     const { data } = await qcApi.reworkInPlace({ item_id: result.value.item_id })
     reworkOpen.value = false
     // Server trả về đúng màn quét mới: phần làm lại đã ở "Đã cắt", PASS mở lại.
     // Gán như một lần quét lại (watch(result) reset ghi chú đơn / ảnh như mọi lần quét).
     result.value = data
-    const fresh = data.batches.find((b) => !b.scrapped)
+    // Chỉ gọi tên phần VỪA tạo (NVL vừa chờ làm lại), không lấy bừa phần sống đầu
+    // tiên — combo thì đó có thể là phần gỗ cũ chứ không phải mica mới.
+    const made = data.batches
+      .filter((b) => !b.scrapped && planned.some((p) => p.material_code === b.material_code))
+      .map((b) => `${b.material_code} lần ${b.attempt ?? '?'}`)
     toast.success(
-      `${itemCode}: đã ghi nhận phần in lẻ (lần sản xuất ${fresh?.attempt ?? '?'}) — đối chiếu mockup rồi PASS.`,
+      `${itemCode}: đã ghi nhận phần in lẻ (${made.join(', ') || 'phần mới'}) — đối chiếu mockup rồi PASS.`,
     )
-    // Màn đơn: sản phẩm này từ "Đang làm lại" về "Chờ QC".
+    // Tải lại màn đơn cho đúng chặng sản xuất (về "Đã cắt"). Chip vẫn là "Đang làm
+    // lại" (rework_count > 0 và chưa QC) cho tới khi PASS — đúng, nó vẫn là hàng làm lại.
     void refreshOrder()
   } catch (e) {
     toast.error(errorMessage(e))
@@ -494,6 +510,8 @@ async function submitRework() {
 }
 
 function openFail() {
+  // Không còn phần sống thì không có gì để fail (nút đã khoá; chặn thêm cho chắc).
+  if (noLivePartLeft.value) return
   defect.defect_code = 'PRINT_WRONG'
   defect.note = ''
   defect.rework_route = 'PRODUCTION'
@@ -1006,8 +1024,8 @@ onMounted(focusScan)
             </button>
             <button
               class="btn-danger"
-              :disabled="failing"
-              :title="alreadyQC ? 'Sản phẩm đã QC — ghi lỗi sẽ huỷ phần đã sản xuất và trả về làm lại' : ''"
+              :disabled="failing || noLivePartLeft"
+              :title="noLivePartLeft ? 'Phần cũ đã huỷ rồi — gom batch mới hoặc Làm lại tại chỗ trước' : (alreadyQC ? 'Sản phẩm đã QC — ghi lỗi sẽ huỷ phần đã sản xuất và trả về làm lại' : '')"
               @click="openFail"
             >
               <UiIcon name="alert" :size="16" /> FAIL — Ghi lỗi
@@ -1118,11 +1136,15 @@ onMounted(focusScan)
       <div class="space-y-3">
         <p class="text-sm text-foreground">
           Sản phẩm <span class="font-mono font-semibold">{{ result?.item_code }}</span>: hệ thống sẽ tạo
-          phần sản xuất <b>lần {{ nextAttempt }}</b> cho NVL <b>{{ reworkMaterials.join(', ') }}</b> ở trạng
-          thái “Đã cắt”, nằm ngay trong batch cũ
-          <span class="font-mono font-semibold">{{ reworkBatchCodes.join(', ') }}</span> (batch đã đóng sẽ mở
-          lại). Không gom batch mới.
+          phần sản xuất mới ở trạng thái “Đã cắt” ngay trong batch cũ (batch đã đóng sẽ mở lại), không
+          gom batch mới:
         </p>
+        <ul class="space-y-1 text-sm text-foreground">
+          <li v-for="p in reworkPlan" :key="p.material_code">
+            NVL <b>{{ p.material_code }}</b> → <b>lần {{ p.next_attempt }}</b> · batch
+            <span class="font-mono font-semibold">{{ p.batch_code }}</span>
+          </li>
+        </ul>
         <ul class="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           <li>Sản phẩm rời danh sách chờ gom batch của NVL này ngay.</li>
           <li>Không tính thêm một lần làm lại (QC FAIL đã tính), không mở ghi chú mới — ghi chú QC fail đang mở tự đóng khi PASS.</li>
