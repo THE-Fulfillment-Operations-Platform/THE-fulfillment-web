@@ -6,7 +6,7 @@ import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
 import { isValidUrl, toDisplayImageUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
-import { DEFECT_CODE_OPTIONS, INTERNAL_STATUS } from '~/utils/enums'
+import { DEFECT_CODE_OPTIONS, INTERNAL_STATUS, reasonCodeLabel } from '~/utils/enums'
 import { printBasketLabel } from '~/utils/basketLabel'
 
 // Scan-driven QC station (Wireframe: Scan QC). The operator scans an item code,
@@ -51,9 +51,33 @@ const noteAcked = ref(false)
 const mustAckNote = computed(() => !!orderNote.value && !noteAcked.value)
 
 const READY_STATUSES =['CUT', 'QC_PASSED']
+// Mọi phần sản xuất của sản phẩm, KỂ CẢ phần đã huỷ — hiện để người QC thấy lịch sử.
 const parts = computed(() => result.value?.batches ?? [])
-const notReadyParts = computed(() => parts.value.filter((b) => !READY_STATUSES.includes(b.status)))
+// Phần đã huỷ (QC fail / huỷ batch) chỉ là lịch sử: không QC được, không tính là
+// sẵn sàng dù status vẫn ghi "Đã cắt". Trước đây trạm không phân biệt nên PASS mở,
+// thợ bấm rồi server mới văng "phần sản xuất đã bị huỷ".
+const liveParts = computed(() => parts.value.filter((b) => !b.scrapped))
+const scrappedParts = computed(() => parts.value.filter((b) => b.scrapped))
+const notReadyParts = computed(() => liveParts.value.filter((b) => !READY_STATUSES.includes(b.status)))
 const notProducedYet = computed(() => notReadyParts.value.length > 0)
+// NVL mà phần mới nhất đã huỷ và CHƯA có phần sống thay thế → sản phẩm đang chờ
+// làm lại (gom batch mới, hoặc in lẻ rồi "Làm lại tại chỗ"). Combo chỉ liệt kê NVL
+// hỏng; NVL đã được gom lại (có phần sống) thì không còn nằm ở đây.
+const reworkMaterials = computed(() => {
+  const live = new Set(liveParts.value.map((b) => b.material_code))
+  return [...new Set(scrappedParts.value.map((b) => b.material_code))].filter((c) => !live.has(c))
+})
+const awaitingRework = computed(() => reworkMaterials.value.length > 0)
+// Lý do huỷ của lần huỷ gần nhất, để banner nói được "vì sao".
+const lastScrapReason = computed(() => {
+  const s = scrappedParts.value
+  if (!s.length) return ''
+  const latest = s.reduce((a, b) => ((b.attempt ?? 0) >= (a.attempt ?? 0) ? b : a))
+  return reasonCodeLabel(latest.scrap_reason)
+})
+// Nhãn ngắn cho chip phần đã huỷ: "đã huỷ (In sai / lệch màu)".
+const scrapLabel = (b: { scrap_reason?: string }) =>
+  b.scrap_reason ? `đã huỷ (${reasonCodeLabel(b.scrap_reason)})` : 'đã huỷ'
 
 // Mockup preview. The picture is the one thing at this station that used to make
 // the operator wait: mockups live on the seller's Google Drive, and loading one
@@ -322,7 +346,7 @@ function markPassedLocally(itemId: number) {
 
 function pass() {
   const item = result.value
-  if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || mustAckNote.value) return
+  if (!item || !canJudge.value || alreadyQC.value || notProducedYet.value || awaitingRework.value || mustAckNote.value) return
   // Giỏ chờ, chốt TRƯỚC khi nhả trạm (sau đó basketInfo bị xoá theo result): đơn
   // đã có giỏ → PASS xong báo bỏ vào giỏ nào, hoặc báo ĐỦ nếu là SP cuối.
   // PASS KHÔNG tự tạo giỏ nữa (khách chốt 24/10/2026): tạo giỏ hoàn toàn do người
@@ -364,8 +388,9 @@ function pass() {
 // Lỗi thuộc về FILE design thì in lại y hệt sẽ hỏng y hệt — mặc định trả về khâu
 // thiết kế. Các lỗi còn lại là lỗi làm, chỉ cần làm lại sản xuất. Người QC vẫn
 // đổi được nếu thực tế khác.
-// Các phần NVL còn hiệu lực của sản phẩm — combo phải chỉ rõ phần nào hỏng.
-const failableParts = computed(() => result.value?.batches ?? [])
+// Các phần NVL còn hiệu lực của sản phẩm — combo phải chỉ rõ phần nào hỏng. Phần
+// đã huỷ không fail lại được (server từ chối "đã bị huỷ trước đó") nên không đưa vào.
+const failableParts = computed(() => liveParts.value)
 const partOptions = computed(() =>
   failableParts.value.map((b) => ({
     value: b.batch_item_id,
@@ -826,14 +851,25 @@ onMounted(focusScan)
               Các phần NVL của sản phẩm ({{ parts.length }}) — QC 1 lần cho cả sản phẩm
             </p>
             <div class="flex flex-wrap gap-2">
+              <!-- Phần đã huỷ: chip mờ, gạch tên, nói rõ "đã huỷ (lý do)" thay vì
+                   badge "Đã cắt" gây hiểu là hàng đang sẵn sàng. -->
               <NuxtLink
                 v-for="b in parts"
                 :key="b.batch_item_id"
                 :to="`/batches/${b.batch_code.replace('#', '')}`"
-                class="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+                :class="b.scrapped
+                  ? 'border-rose-300 bg-rose-50/60 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200'
+                  : 'border-border text-foreground'"
+                :title="b.scrapped ? `Lần sản xuất ${b.attempt ?? 1} — ${scrapLabel(b)}` : (b.attempt && b.attempt > 1 ? `Lần sản xuất ${b.attempt}` : '')"
               >
-                {{ b.batch_code }} · {{ b.material_code }}
-                <UiStatusBadge kind="internal" :value="b.status" />
+                <span :class="b.scrapped ? 'line-through decoration-rose-500/70' : ''">{{ b.batch_code }} · {{ b.material_code }}</span>
+                <span v-if="b.attempt && b.attempt > 1" class="text-[10px] font-semibold uppercase tracking-wide opacity-80">lần {{ b.attempt }}</span>
+                <span
+                  v-if="b.scrapped"
+                  class="rounded px-1.5 py-0.5 text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
+                >{{ scrapLabel(b) }}</span>
+                <UiStatusBadge v-else kind="internal" :value="b.status" />
               </NuxtLink>
             </div>
           </div>
@@ -866,14 +902,36 @@ onMounted(focusScan)
             </div>
           </div>
 
+          <!-- Đã FAIL QC, phần cũ đã huỷ và chưa có phần mới: nói rõ ngay lúc quét
+               hai đường để QC lại (gom batch mới / in lẻ), thay vì để PASS mở rồi
+               server văng lỗi. -->
+          <div
+            v-if="awaitingRework && !alreadyQC"
+            class="mb-3 flex items-start gap-2 rounded-md border-2 border-amber-400 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-500/60 dark:bg-amber-500/10 dark:text-amber-100"
+            role="alert"
+          >
+            <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold">
+                Sản phẩm này đã FAIL QC, phần sản xuất cũ đã huỷ<template v-if="lastScrapReason"> ({{ lastScrapReason }})</template>.
+              </p>
+              <p class="mt-0.5 text-xs">
+                Để QC lại: gom batch mới → Đã in → Đã cắt rồi quét lại tem cũ, hoặc bấm “Làm lại tại chỗ” nếu đã in lẻ xong.
+              </p>
+              <p v-if="liveParts.length" class="mt-0.5 text-xs">
+                NVL đang chờ làm lại: <b>{{ reworkMaterials.join(', ') }}</b> — các phần NVL khác vẫn còn, QC cả sản phẩm sau khi làm lại xong.
+              </p>
+            </div>
+          </div>
+
           <p v-if="!canJudge" class="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
             Tài khoản chỉ có quyền xem ở trạm QC — quét để tra thông tin, không bấm Pass / Fail được.
           </p>
           <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
-              :disabled="alreadyQC || notProducedYet || mustAckNote"
-              :title="alreadyQC ? 'Item đã QC rồi' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : ''))"
+              :disabled="alreadyQC || notProducedYet || awaitingRework || mustAckNote"
+              :title="alreadyQC ? 'Item đã QC rồi' : (awaitingRework ? 'Phần sản xuất cũ đã huỷ (QC fail) — gom batch mới hoặc bấm “Làm lại tại chỗ” trước' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : '')))"
               @click="pass"
             >
               <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}

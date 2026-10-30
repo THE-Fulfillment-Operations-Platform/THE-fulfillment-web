@@ -894,6 +894,16 @@ export interface QcScanBatch {
   batch_code: string
   material_code: string
   status: InternalStatus
+  /** Lần sản xuất của phần này (1 = lần đầu, 2 = làm lại lần 1…). */
+  attempt?: number
+  /**
+   * Phần đã bị huỷ (QC fail / huỷ batch): chỉ còn là lịch sử, không QC được và
+   * không tính là "sẵn sàng" dù status vẫn ghi Đã cắt. API cũ không có cờ này
+   * nên trạm từng mở PASS cho tấm đã vứt đi — thợ bấm rồi mới văng lỗi.
+   */
+  scrapped?: boolean
+  /** Lý do huỷ (mã lỗi QC như PRINT_WRONG, hoặc câu người huỷ batch gõ). */
+  scrap_reason?: string
 }
 
 // Kết quả QC fail: note đã mở + hệ thống đã làm gì với sản phẩm.
