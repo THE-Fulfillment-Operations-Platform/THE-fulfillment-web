@@ -101,6 +101,8 @@ export interface THEShipment {
   cost?: number | null
   label_type: string
   error: string
+  // Trạng thái package lần cuối THE báo (pre-transit, in-transit…).
+  the_status?: string
   labeled_at?: string | null
   cancelled_at?: string | null
   created_at: string
@@ -115,6 +117,8 @@ export const carrierApi = {
   /** Trước khi gửi: đơn nào sẵn sàng, thiếu gì, ví còn bao nhiêu. Không tốn tiền. */
   preflight: (orderIds: number[]) => apiPost<THEPreflight>('/api/orders/the/preflight', { order_ids: orderIds }),
   shipments: (orderId: number | string) => apiGet<THEShipment[]>(`/api/orders/${orderId}/the/shipments`),
+  /** Hỏi THE ngay: label THE đã huỷ thì FFM bỏ label + tracking cũ. Trả lại danh sách đơn THE. */
+  checkOrder: (orderId: number | string) => apiPost<THEShipment[]>(`/api/orders/${orderId}/the/check`),
   labelBlob: (orderId: number | string) => apiBlob(`/api/orders/${orderId}/the/label`, 'Không tải được label'),
   cancel: (orderId: number | string, reason: string) =>
     apiPost<THEShipment>(`/api/orders/${orderId}/the/cancel`, { reason }),

@@ -956,6 +956,8 @@ export interface QcResultOrder {
   // Label đã tạo trên THE (rỗng = chưa có). Tạo label và Xuất kho là hai bước riêng.
   the_tracking?: string
   the_last_mile?: string
+  // Mã label cũ THE đã huỷ: đơn phải tạo label mới rồi mới xuất kho được.
+  the_cancelled?: string
 }
 
 // Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn

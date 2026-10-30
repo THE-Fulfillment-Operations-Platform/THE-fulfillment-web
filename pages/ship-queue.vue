@@ -266,7 +266,7 @@ async function printLabels(orders: Array<{ id: number; code?: string }>) {
   printing.value = true
   try {
     const res = await printTHELabels(orders)
-    if (res.failed.length) toast.error(`${res.failed.length} label chưa tải được — in lại từ chi tiết đơn.`)
+    if (res.failed.length) toast.error(res.failed.length === 1 ? res.failed[0]!.reason : `${res.failed.length} label chưa tải được: ${res.failed[0]!.reason}`)
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -625,6 +625,12 @@ function submitScan() {
                     class="ml-1 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
                     :title="`Đã tạo label THE ${o.the_tracking}${o.the_last_mile ? ' · mã chặng cuối ' + o.the_last_mile : ''} — chờ Xuất kho`"
                   >Đã có label THE</span>
+                  <!-- THE đã huỷ label cũ: Xuất kho bị chặn tới khi có label mới. -->
+                  <span
+                    v-if="o.the_cancelled"
+                    class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
+                    :title="`THE đã huỷ label ${o.the_cancelled} — bấm 1. Tạo label THE, dán đè label cũ rồi mới Xuất kho`"
+                  >THE đã huỷ label — tạo lại</span>
                 </td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>
                 <td class="table-td">

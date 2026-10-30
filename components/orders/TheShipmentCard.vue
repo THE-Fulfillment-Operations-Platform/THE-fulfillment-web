@@ -59,6 +59,34 @@ const STATUS_CLASS: Record<THEShipmentStatus, string> = {
   FAILED: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
 }
 
+// Đơn THE gần nhất bị chính THE huỷ (khớp theCancelledPrefix ở API): label và
+// tracking cũ đã bỏ, phải tạo label mới.
+const killed = computed(() => {
+  const last = rows.value[0]
+  return !live.value && last?.status === 'CANCELLED' && (last.error ?? '').startsWith('THE đã huỷ đơn') ? last : null
+})
+
+// Hỏi THE ngay thay vì chờ lượt kiểm tra định kỳ.
+const checking = ref(false)
+async function checkOnTHE() {
+  if (checking.value) return
+  checking.value = true
+  try {
+    const { data } = await carrierApi.checkOrder(props.orderId)
+    rows.value = data ?? []
+    if (killed.value) {
+      toast.error('THE đã huỷ đơn này — FFM đã bỏ label và tracking cũ')
+      emit('changed')
+    } else {
+      toast.success('Đơn trên THE vẫn bình thường')
+    }
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    checking.value = false
+  }
+}
+
 const printing = ref(false)
 async function print() {
   if (printing.value) return
@@ -108,6 +136,14 @@ async function cancel() {
       <h3 class="text-sm font-semibold text-foreground">Đơn THE</h3>
       <div class="flex items-center gap-3">
         <button
+          v-if="live?.status === 'LABELED'"
+          class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+          :disabled="checking"
+          @click="checkOnTHE"
+        >
+          <UiSpinner v-if="checking" :size="12" /> Kiểm tra với THE
+        </button>
+        <button
           v-if="live?.has_label"
           class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-50"
           :disabled="printing"
@@ -126,6 +162,13 @@ async function cancel() {
       </div>
     </div>
 
+    <p
+      v-if="killed"
+      class="mb-2 rounded-md bg-rose-50 px-2 py-1.5 text-xs font-medium text-rose-800 dark:bg-rose-500/10 dark:text-rose-300"
+    >
+      {{ killed.error }}
+    </p>
+
     <dl v-if="live" class="space-y-1.5 text-sm">
       <div class="flex justify-between gap-3">
         <dt class="text-muted-foreground">Trạng thái</dt>
@@ -133,6 +176,10 @@ async function cancel() {
           <span v-if="held" class="rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">Chờ nhân viên THE xử lý</span>
           <span v-else class="rounded-md px-2 py-0.5 text-xs font-medium" :class="STATUS_CLASS[live.status]">{{ STATUS_LABEL[live.status] }}</span>
         </dd>
+      </div>
+      <div v-if="live.the_status" class="flex justify-between gap-3">
+        <dt class="text-muted-foreground">Trạng thái trên THE</dt>
+        <dd class="text-xs text-foreground">{{ live.the_status }}</dd>
       </div>
       <div v-if="live.tracking_code" class="flex justify-between gap-3">
         <dt class="text-muted-foreground">Mã THE</dt>

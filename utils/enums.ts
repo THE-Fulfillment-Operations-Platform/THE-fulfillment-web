@@ -311,9 +311,11 @@ export const DEFECT_CODE_OPTIONS: { value: string; label: string }[] = [
   { value: 'WRONG_MOCKUP', label: 'Không khớp mockup' },
   { value: 'OTHER', label: 'Lỗi khác' },
 ]
-export const DEFECT_CODE_LABEL: Record<string, string> = Object.fromEntries(
-  DEFECT_CODE_OPTIONS.map((o) => [o.value, o.label]),
-)
+export const DEFECT_CODE_LABEL: Record<string, string> = {
+  ...Object.fromEntries(DEFECT_CODE_OPTIONS.map((o) => [o.value, o.label])),
+  // Không phải lỗi QC, nhưng cũng là reason_code của ghi chú hiện ở cùng chỗ.
+  THE_CANCELLED: 'THE đã huỷ vận đơn',
+}
 // Display helper for a note reason_code; unknown/custom codes fall back to raw.
 export const reasonCodeLabel = (code?: string | null): string =>
   (code && DEFECT_CODE_LABEL[code]) || code || ''
