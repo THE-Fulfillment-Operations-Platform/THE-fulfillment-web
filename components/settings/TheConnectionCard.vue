@@ -186,7 +186,12 @@ const serviceOptions = computed(() => {
           <div class="grid grid-cols-1 gap-3 border-t border-border p-3 sm:grid-cols-2">
             <div>
               <label class="label">Mã HS mặc định</label>
-              <input v-model="form.hs" class="input font-mono" placeholder="Mã trong bảng mã HS của THE" />
+              <input v-model="form.hs" class="input font-mono" placeholder="VD bưu thiếp: 4909002000347" />
+              <!-- THE tra mã theo MÃ HỆ THỐNG của THE (mã HS + 3 số đuôi), không phải mã HS 10 số:
+                   điền 4909002000 là bị THE trả "Hs Code does not exist". -->
+              <p class="mt-1 text-[11px] text-muted-foreground">
+                Điền <b>mã hệ thống THE</b> (mã HS + 3 số đuôi, cột D Sheet2 file mẫu THE) — vd bưu thiếp <span class="font-mono">4909002000347</span>, không phải <span class="font-mono">4909002000</span>.
+              </p>
             </div>
             <div>
               <label class="label">Giá trị khai báo (USD / sản phẩm)</label>
