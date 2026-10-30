@@ -66,6 +66,11 @@ export const qcApi = {
   // Gỡ một lần QC pass bấm nhầm — mọi phần còn sống về "Đã cắt", ghi lịch sử
   // QC result=UNDO. Hàng hỏng thật thì dùng fail() hoặc huỷ batch.
   undo: (input: QcUndoInput) => apiPost<QcUndoResult>('/api/qc/undo', input),
+  // Làm lại tại chỗ: hàng QC fail đã được in/cắt LẺ bằng tay (không gom batch
+  // mới). Server tạo phần sản xuất lần kế tiếp ở "Đã cắt" ngay trong batch cũ,
+  // mở lại batch nếu đã đóng, không tăng rework_count, rồi trả về đúng kết quả
+  // scan mới để trạm vẽ lại và PASS ngay. Chỉ OWNER/ADMIN/Kỹ thuật viên (như undo).
+  reworkInPlace: (input: QcScanInput) => apiPost<QcScanResult>('/api/qc/rework-inplace', input),
   // Kết quả QC theo đơn: mỗi đơn kèm trạng thái QC của từng sản phẩm trong đó.
   results: (params?: QcResultsParams) => apiGet<QcResultsPayload>('/api/qc/results', params),
 }

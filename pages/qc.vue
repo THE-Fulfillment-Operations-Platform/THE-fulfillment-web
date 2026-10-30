@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { basketsApi, qcApi } from '~/services/api'
-import type { Basket, BasketForOrder, QcScanResult, QcOrderScan, QcResultItem } from '~/types'
+import type { Basket, BasketForOrder, QcScanBatch, QcScanResult, QcOrderScan, QcResultItem } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { errorMessage } from '~/utils/api-error'
@@ -437,6 +437,59 @@ async function submitUndo() {
     toast.error(errorMessage(e))
   } finally {
     undoing.value = false
+  }
+}
+
+// ---- Làm lại tại chỗ (hàng QC fail đã in LẺ xong) ----------------------------
+// Đường thứ hai, song song với gom batch mới. Xưởng hay in lại lẻ một tấm bằng
+// tay rồi mang thẳng ra trạm QC — không ai gom batch cho một món. Nút này bảo
+// server tạo phần sản xuất lần kế tiếp (đã cắt) ngay trong batch cũ, mở lại batch
+// nếu đã đóng, để PASS mở ngay. Cùng bar với hạ QC (OWNER/ADMIN/Kỹ thuật viên +
+// quyền Thao tác), khớp guard BE: "tấm này đã in lẻ thật" phải có người chịu
+// trách nhiệm xác nhận.
+const canReworkInPlace = computed(
+  () => auth.hasAdminRights && canJudge.value && awaitingRework.value && !alreadyQC.value,
+)
+const reworkOpen = ref(false)
+const reworking = ref(false)
+// Lần sản xuất sắp tạo (cao nhất hiện có + 1) — để hộp xác nhận nói đúng số.
+const nextAttempt = computed(() => Math.max(1, ...parts.value.map((b) => b.attempt ?? 1)) + 1)
+// Batch cũ sẽ nhận phần làm lại: batch của phần huỷ mới nhất của từng NVL chờ làm lại.
+const reworkBatchCodes = computed(() => {
+  const codes = new Set<string>()
+  for (const m of reworkMaterials.value) {
+    const latest = scrappedParts.value
+      .filter((b) => b.material_code === m)
+      .reduce<QcScanBatch | null>((a, b) => (!a || (b.attempt ?? 0) >= (a.attempt ?? 0) ? b : a), null)
+    if (latest) codes.add(latest.batch_code)
+  }
+  return [...codes]
+})
+
+function openRework() {
+  reworkOpen.value = true
+}
+
+async function submitRework() {
+  if (!result.value || reworking.value) return
+  reworking.value = true
+  try {
+    const itemCode = result.value.item_code
+    const { data } = await qcApi.reworkInPlace({ item_id: result.value.item_id })
+    reworkOpen.value = false
+    // Server trả về đúng màn quét mới: phần làm lại đã ở "Đã cắt", PASS mở lại.
+    // Gán như một lần quét lại (watch(result) reset ghi chú đơn / ảnh như mọi lần quét).
+    result.value = data
+    const fresh = data.batches.find((b) => !b.scrapped)
+    toast.success(
+      `${itemCode}: đã ghi nhận phần in lẻ (lần sản xuất ${fresh?.attempt ?? '?'}) — đối chiếu mockup rồi PASS.`,
+    )
+    // Màn đơn: sản phẩm này từ "Đang làm lại" về "Chờ QC".
+    void refreshOrder()
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    reworking.value = false
   }
 }
 
@@ -921,6 +974,21 @@ onMounted(focusScan)
               <p v-if="liveParts.length" class="mt-0.5 text-xs">
                 NVL đang chờ làm lại: <b>{{ reworkMaterials.join(', ') }}</b> — các phần NVL khác vẫn còn, QC cả sản phẩm sau khi làm lại xong.
               </p>
+              <!-- Đã in lẻ xong thì ghi nhận tại chỗ, không bắt gom batch cho một món.
+                   Chỉ Owner/Admin/Kỹ thuật viên (khớp guard BE) — người khác thấy
+                   lời nhắc thay vì nút chết. -->
+              <button
+                v-if="canReworkInPlace"
+                type="button"
+                class="btn-secondary mt-2 border-amber-400 text-amber-900 dark:text-amber-100"
+                :disabled="reworking"
+                @click="openRework"
+              >
+                <UiSpinner v-if="reworking" :size="14" /><UiIcon v-else name="print" :size="16" /> Làm lại tại chỗ (đã in lẻ xong)
+              </button>
+              <p v-else-if="canJudge" class="mt-1 text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                “Làm lại tại chỗ” chỉ Owner/Admin bấm được — nhờ quản lý xác nhận, hoặc gom batch mới như thường.
+              </p>
             </div>
           </div>
 
@@ -1041,6 +1109,34 @@ onMounted(focusScan)
         <button class="btn-secondary" @click="undoOpen = false">Đóng</button>
         <button class="btn-primary" :disabled="undoing || !undoReasonValid" @click="submitUndo">
           <UiSpinner v-if="undoing" :size="16" /> Hạ QC
+        </button>
+      </template>
+    </UiModal>
+
+    <!-- Làm lại tại chỗ: hàng QC fail đã in LẺ xong, không gom batch mới -->
+    <UiModal v-model="reworkOpen" title="Làm lại tại chỗ (đã in lẻ xong)">
+      <div class="space-y-3">
+        <p class="text-sm text-foreground">
+          Sản phẩm <span class="font-mono font-semibold">{{ result?.item_code }}</span>: hệ thống sẽ tạo
+          phần sản xuất <b>lần {{ nextAttempt }}</b> cho NVL <b>{{ reworkMaterials.join(', ') }}</b> ở trạng
+          thái “Đã cắt”, nằm ngay trong batch cũ
+          <span class="font-mono font-semibold">{{ reworkBatchCodes.join(', ') }}</span> (batch đã đóng sẽ mở
+          lại). Không gom batch mới.
+        </p>
+        <ul class="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+          <li>Sản phẩm rời danh sách chờ gom batch của NVL này ngay.</li>
+          <li>Không tính thêm một lần làm lại (QC FAIL đã tính), không mở ghi chú mới — ghi chú QC fail đang mở tự đóng khi PASS.</li>
+          <li>Xong thì trạm hiện lại sản phẩm với PASS mở: đối chiếu mockup rồi PASS / FAIL như bình thường.</li>
+        </ul>
+        <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          Chỉ bấm khi tấm làm lại ĐÃ in và cắt xong, đang cầm trên tay. Chưa in thì để sản phẩm ở hàng chờ gom
+          batch (gom batch mới → Đã in → Đã cắt → quét lại tem cũ) — không bấm trước để “giữ chỗ”.
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="reworkOpen = false">Đóng</button>
+        <button class="btn-primary" :disabled="reworking" @click="submitRework">
+          <UiSpinner v-if="reworking" :size="16" /> Xác nhận đã in lẻ xong
         </button>
       </template>
     </UiModal>
