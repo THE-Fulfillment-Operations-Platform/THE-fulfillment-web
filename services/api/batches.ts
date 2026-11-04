@@ -148,6 +148,9 @@ export interface BatchListParams extends ListParams {
   // Tách "Chờ xử lý" như nhãn trên bảng: ready = đã đủ link in + cắt ("Đã có file
   // SX"), missing = chưa đủ. Đi kèm status=PENDING.
   files?: 'ready' | 'missing'
+  // Tách "Đã QC": done = đã QC và mọi đơn còn sống đã rời xưởng ("Đã bàn giao"),
+  // pending = còn lại. Đi kèm status=QC_PASSED.
+  handover?: 'done' | 'pending'
 }
 
 export interface CreateBatchInput {

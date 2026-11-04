@@ -1,5 +1,5 @@
 import type { Batch, BatchLinkKind, InternalStatus } from '~/types'
-import { INTERNAL_STATUS, type BadgeMeta } from '~/utils/enums'
+import { INTERNAL_STATUS, SELLER_STATUS, type BadgeMeta } from '~/utils/enums'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -191,6 +191,9 @@ export const PRODUCTION_FILES_READY: BadgeMeta = {
   classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
 }
 
+/** Chip "Đã bàn giao" của batch — cùng màu với HANDED_OFF của đơn. */
+export const BATCH_HANDED_OVER: BadgeMeta = SELLER_STATUS.HANDED_OFF
+
 /**
  * Nhãn trạng thái để HIỂN THỊ cho batch. Chờ xử lý tách làm hai: chưa ai đụng tới,
  * và "Đã có file SX" — đã đủ link in + cắt, chỉ chờ xưởng làm. Đây là trạng thái
@@ -198,6 +201,9 @@ export const PRODUCTION_FILES_READY: BadgeMeta = {
  * và đếm theo status ở backend vẫn gộp chung hai loại vào Chờ xử lý.
  */
 export function batchStatusBadge(b: Batch): BadgeMeta {
+  // Đã QC + mọi đơn còn sống đã rời xưởng (server tính, xem Batch.handed_over).
+  // Bàn giao một phần vẫn là "Đã QC".
+  if (b.status === 'QC_PASSED' && b.handed_over) return BATCH_HANDED_OVER
   if (b.status === 'PENDING' && !b.closed_at && missingBatchLinks(b).length === 0) {
     return PRODUCTION_FILES_READY
   }

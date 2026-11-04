@@ -884,6 +884,8 @@ export interface Batch {
   close_reason?: string
   // Số phần đã huỷ do QC fail (vẫn thuộc batch này để truy vết).
   scrapped_count?: number
+  // Server tính: đã QC và mọi đơn còn sống trong batch đã bàn giao trở đi.
+  handed_over?: boolean
   // Số tấm NVL batch cần: ⌈Σ SL / định mức⌉ theo định mức của từng cặp SKU – NVL
   // (khai, chưa khai thì ước tính theo kích thước), server tính từ các phần còn
   // sống. null = có phần chưa có định mức → không có con số để nói.

@@ -15,6 +15,7 @@ import {
   batchStatusBadge,
   missingBatchLinks,
   PRODUCTION_FILES_READY,
+  BATCH_HANDED_OVER,
 } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { errorMessage } from '~/utils/api-error'
@@ -71,6 +72,9 @@ const materialOptions = computed(() => [
 // cắt (xem batchStatusBadge). Lọc vẫn chạy ở backend (?files=) để phân trang và
 // tổng số đúng; "Chờ xử lý" vì thế chỉ còn các batch chưa đủ file, khớp nhãn.
 const FILES_READY = 'FILES_READY'
+// Tương tự: "Đã bàn giao" là QC_PASSED mà mọi đơn còn sống đã rời xưởng (?handover=).
+// "Đã QC" vì thế chỉ còn batch chưa bàn giao hết (bàn giao một phần vẫn ở đây).
+const HANDED_OVER = 'HANDED_OVER'
 const statusOptions = [
   { value: '', label: 'Tất cả' },
   ...INTERNAL_STATUS_ORDER.flatMap((s) =>
@@ -79,10 +83,17 @@ const statusOptions = [
           { value: s, label: INTERNAL_STATUS[s].label },
           { value: FILES_READY, label: PRODUCTION_FILES_READY.label },
         ]
-      : [{ value: s, label: INTERNAL_STATUS[s].label }],
+      : s === 'QC_PASSED'
+        ? [
+            { value: s, label: INTERNAL_STATUS[s].label },
+            { value: HANDED_OVER, label: BATCH_HANDED_OVER.label },
+          ]
+        : [{ value: s, label: INTERNAL_STATUS[s].label }],
   ),
 ]
-function statusQuery(v: string): { status?: string; files?: 'ready' | 'missing' } {
+function statusQuery(v: string): { status?: string; files?: 'ready' | 'missing'; handover?: 'done' | 'pending' } {
+  if (v === HANDED_OVER) return { status: 'QC_PASSED', handover: 'done' }
+  if (v === 'QC_PASSED') return { status: 'QC_PASSED', handover: 'pending' }
   if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
   if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
   return { status: v || undefined }
