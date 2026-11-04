@@ -162,7 +162,7 @@ const visible = computed(
     (props.order.warranty_seq ?? 0) > 0 ||
     (props.order.warranty_count ?? 0) > 0 ||
     info.value?.can_warranty ||
-    (!!info.value && !!info.value.reason && props.order.review_status === 'APPROVED' && isHandedOverOrder.value),
+    (!!info.value?.role_allowed && !!info.value.reason && props.order.review_status === 'APPROVED' && isHandedOverOrder.value),
 )
 // Chỉ nhắc "vì sao chưa bấm được" cho đơn đã rời xưởng; đơn đang sản xuất không cần.
 const isHandedOverOrder = computed(() =>
@@ -204,14 +204,14 @@ const isHandedOverOrder = computed(() =>
       </button>
 
       <div class="ml-auto flex items-center gap-2">
-        <span v-if="info && !info.can_warranty && info.reason" class="text-xs text-muted-foreground">
+        <span v-if="info?.role_allowed && !info.can_warranty && info.reason" class="text-xs text-muted-foreground">
           {{ info.reason }}
           <NuxtLink v-if="info.blocking" :to="`/orders/${info.blocking.id}`" class="text-primary hover:underline">
             Xem {{ info.blocking.store_order_id }}
           </NuxtLink>
         </span>
         <button
-          v-if="info && (info.can_warranty || info.reason)"
+          v-if="info?.role_allowed && (info.can_warranty || info.reason)"
           class="btn-secondary"
           :disabled="!info.can_warranty"
           @click="openForm"

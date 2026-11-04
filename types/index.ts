@@ -421,6 +421,8 @@ export interface WarrantyRef {
 }
 
 export interface WarrantyInfo {
+  /** Vai trò này được bấm Bảo hành không. false = ẩn hẳn nút và lý do. */
+  role_allowed: boolean
   can_warranty: boolean
   /** Lý do không bấm được (khi can_warranty = false). */
   reason?: string
