@@ -47,6 +47,7 @@ const filters = reactive({
   // NVL: sản phẩm có SKU gắn với vật liệu này (trước nằm ở màn Chờ thiết kế đã bỏ).
   material_id: '',
   review_status: '',
+  warranty: '',
   batch_id: '',
   date_from: '',
   date_to: '',
@@ -89,6 +90,7 @@ function filterParams() {
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
     review_status: filters.review_status || undefined,
+    warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
@@ -108,6 +110,7 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
     review_status: filters.review_status || undefined,
+    warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
     date_from: filters.date_from || undefined,
@@ -198,6 +201,14 @@ const reviewStatusOptions = [
   { value: 'CANCELLED', label: 'Đã huỷ' },
 ]
 
+// Bộ lọc "Bảo hành": tìm đơn để bấm Bảo hành mà không cần biết mã đơn.
+const warrantyOptions = [
+  { value: '', label: 'Tất cả' },
+  { value: 'eligible', label: 'Có thể bảo hành' },
+  { value: 'child', label: 'Đơn bảo hành (-BH)' },
+  { value: 'root', label: 'Đơn đã từng bảo hành' },
+]
+
 function applyFilters() {
   filters.page = 1
   clear()
@@ -211,6 +222,7 @@ function resetFilters() {
   filters.internal_code = ''
   filters.status = ''
   filters.review_status = ''
+  filters.warranty = ''
   filters.material_id = ''
   filters.batch_id = ''
   filters.date_from = ''
@@ -441,6 +453,10 @@ function exportItems() {
           <label class="label">Đến ngày</label>
           <UiDatePicker v-model="filters.date_to" :min="filters.date_from" aria-label="Đến ngày" />
         </div>
+        <div>
+          <label class="label">Bảo hành</label>
+          <UiSelect v-model="filters.warranty" :options="warrantyOptions" aria-label="Bảo hành" />
+        </div>
         <div class="col-span-2 flex items-end gap-2 md:col-span-1">
           <button class="btn-primary flex-1" @click="applyFilters">
             <UiIcon name="search" :size="16" /> Lọc
@@ -474,7 +490,10 @@ function exportItems() {
         @retry="reload"
       >
         <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">
-          <table class="min-w-full divide-y divide-border">
+          <!-- Bảng này phải vừa khung, không kéo ngang: SKU/Store Order/NVL/Tracking
+               được xuống dòng trong ô có chiều rộng cố định, ô và tiêu đề gọn hơn mặc định
+               (chỉ ở bảng này, không đụng .table-td dùng chung). -->
+          <table class="min-w-full divide-y divide-border [&_.table-td]:px-2 [&_.table-th]:whitespace-normal [&_.table-th]:px-2">
             <thead class="sticky top-0 z-10 bg-muted">
               <tr>
                 <th v-if="canDelete" class="table-th w-10">
@@ -490,8 +509,7 @@ function exportItems() {
                 </th>
                 <th class="table-th w-12">STT</th>
                 <th class="table-th">Internal Item</th>
-                <th class="table-th hidden md:table-cell">Store Order</th>
-                <th class="table-th hidden lg:table-cell">Seller</th>
+                <th class="table-th hidden md:table-cell">Store Order / Seller</th>
                 <th class="table-th">
                   <button class="inline-flex items-center gap-1 hover:text-foreground" @click="toggleSort('sku')">
                     SKU <span class="text-[10px] opacity-70">{{ sortIcon('sku') }}</span>
@@ -528,7 +546,7 @@ function exportItems() {
               >
                 <!-- Cả ô là vùng bấm (label): lỡ tay bấm cạnh checkbox không bị
                      nhảy sang chi tiết đơn. -->
-                <td v-if="canDelete" class="table-td p-0">
+                <td v-if="canDelete" class="table-td !p-0">
                   <label class="flex h-full cursor-pointer items-center px-3 py-2.5">
                     <input
                       type="checkbox"
@@ -541,37 +559,53 @@ function exportItems() {
                 </td>
                 <td class="table-td font-semibold tabular-nums text-foreground">{{ rowNumber(idx) }}</td>
                 <td class="table-td font-medium text-foreground">
+                  <!-- Huy hiệu (Làm lại / Trùng) được xuống dòng dưới mã, không đẩy rộng cột. -->
+                  <div class="max-w-[9rem] whitespace-normal">
                   {{ it.internal_code }}
                   <!-- Sản phẩm từng QC fail: nói ngay đang ở lần sản xuất thứ mấy,
                        để không ai tưởng đơn "biến mất" khi nó rời batch cũ. -->
                   <span
                     v-if="(it.rework_count ?? 0) > 0"
-                    class="ml-1.5 inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
+                    class="ml-1.5 inline-flex items-center whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
                     :title="`QC fail ${it.rework_count} lần — đang làm lại (lần sản xuất thứ ${(it.rework_count ?? 0) + 1})`"
                   >
                     Làm lại ×{{ it.rework_count }}
                   </span>
                   <span
                     v-if="itemStoreOrderDup(it)"
-                    class="ml-1.5 inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                    class="ml-1.5 inline-flex items-center gap-0.5 whitespace-nowrap rounded bg-rose-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
                     title="StoreOrderID này trùng với đơn khác — kiểm tra, báo khách nếu cần"
                   >
                     <UiIcon name="alert" :size="10" /> Trùng
                   </span>
+                  </div>
                 </td>
-                <td class="table-td hidden md:table-cell" :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''">{{ itemStoreOrderId(it) }}
-                  <WarrantyBadge :seq="it.order?.warranty_seq" class="ml-1" />
-                  <span
-                    v-if="(it.order?.warranty_count ?? 0) > 0"
-                    class="ml-1 text-[10px] font-semibold text-orange-700 dark:text-orange-300"
-                    title="Đơn này đã được bảo hành — mở đơn để xem các đơn bảo hành"
-                  >Đã BH ×{{ it.order?.warranty_count }}</span>
+                <td class="table-td hidden md:table-cell">
+                  <div class="max-w-[11rem] whitespace-normal break-words">
+                    <span
+                      class="whitespace-nowrap"
+                      :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''"
+                    >{{ itemStoreOrderId(it) }}</span>
+                    <div v-if="(it.order?.warranty_seq ?? 0) > 0 || (it.order?.warranty_count ?? 0) > 0">
+                      <WarrantyBadge :seq="it.order?.warranty_seq" />
+                      <span
+                        v-if="(it.order?.warranty_count ?? 0) > 0"
+                        class="whitespace-nowrap text-[10px] font-semibold text-orange-700 dark:text-orange-300"
+                        :class="(it.order?.warranty_seq ?? 0) > 0 ? 'ml-1' : ''"
+                        title="Đơn này đã được bảo hành — mở đơn để xem các đơn bảo hành"
+                      >Đã BH ×{{ it.order?.warranty_count }}</span>
+                    </div>
+                    <!-- Seller: dòng nhỏ mờ dưới Store Order (đỡ một cột). -->
+                    <div class="text-xs text-muted-foreground">{{ itemSellerName(it) || '—' }}</div>
+                  </div>
                 </td>
-                <td class="table-td hidden lg:table-cell">{{ itemSellerName(it) || '—' }}</td>
-                <td class="table-td">{{ it.sku_code }}</td>
+                <td class="table-td">
+                  <!-- SKU dài xuống dòng trong ô hẹp, đủ chữ để CS copy; title = SKU đầy đủ. -->
+                  <div class="w-28 whitespace-normal [overflow-wrap:anywhere]" :title="it.sku_code">{{ it.sku_code }}</div>
+                </td>
                 <td class="table-td tabular-nums">{{ it.quantity }}</td>
-                <td class="table-td hidden lg:table-cell">{{ itemMaterial(it) }}</td>
-                <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small label="Mockup" /></td>
+                <td class="table-td hidden lg:table-cell"><div class="max-w-[7rem] whitespace-normal break-words">{{ itemMaterial(it) }}</div></td>
+                <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small icon-only label="Mockup" /></td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell" :title="formatDateTime(itemCreatedAt(it))">{{ formatDate(itemCreatedAt(it)) }}</td>
                 <td class="table-td">
@@ -593,15 +627,25 @@ function exportItems() {
                     >
                       Vẫn tính tiền
                     </span>
+                    <!-- Backend đã tính: đơn bảo hành được và vai trò này được bấm. Mở thẳng form
+                         ở trang chi tiết đơn (dùng lại WarrantyCard, không chép form). -->
+                    <NuxtLink
+                      v-if="it.order?.warranty_eligible && itemOrderId(it)"
+                      :to="{ path: `/orders/${itemOrderId(it)}`, query: { baohanh: '1' } }"
+                      class="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium text-primary hover:bg-muted"
+                      title="Tạo đơn bảo hành cho đơn này"
+                    >
+                      Bảo hành
+                    </NuxtLink>
                   </div>
                 </td>
                 <!-- Mã vận đơn nằm trên ĐƠN nên mọi sản phẩm cùng một đơn hiện
                      cùng một mã. Cột này in ra chính con số CS đã gắn — trạng
                      thái kiện hàng đã có ở cột Trạng thái bên cạnh. -->
                 <td class="table-td hidden md:table-cell">
-                  <span v-if="it.order?.tracking_number" class="font-mono text-xs text-foreground">
+                  <div v-if="it.order?.tracking_number" class="w-[5.5rem] whitespace-normal font-mono text-xs text-foreground [overflow-wrap:anywhere]">
                     {{ it.order.tracking_number }}
-                  </span>
+                  </div>
                   <span
                     v-else-if="isHandedOver(it.order?.seller_status)"
                     class="text-xs text-amber-600 dark:text-amber-400"

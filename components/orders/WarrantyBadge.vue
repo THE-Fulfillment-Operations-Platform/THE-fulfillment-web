@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Badge "Bảo hành" của đơn bảo hành; số nhỏ phía trên bên phải = warranty_seq
-// (lần bảo hành thứ mấy). Không render gì với đơn thường (seq <= 0).
+// Badge "BH1", "BH2"… của đơn bảo hành (số = warranty_seq, lần bảo hành thứ mấy,
+// khớp hậu tố mã đơn SON1-BH1). Không render gì với đơn thường (seq <= 0).
 defineProps<{ seq?: number | null }>()
 </script>
 
@@ -10,6 +10,6 @@ defineProps<{ seq?: number | null }>()
     class="inline-flex items-center rounded bg-orange-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-orange-800 dark:bg-orange-500/20 dark:text-orange-200"
     :title="`Đơn bảo hành lần ${seq}`"
   >
-    Bảo hành<sup class="ml-0.5 text-[9px] font-bold leading-none">{{ seq }}</sup>
+    BH{{ seq }}
   </span>
 </template>

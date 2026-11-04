@@ -157,6 +157,19 @@ async function submit() {
   }
 }
 
+// Đi từ nút "Bảo hành" ở danh sách Orders/Items (?baohanh=1): mở thẳng form, rồi
+// bỏ tham số khỏi URL để F5 không bật lại. Backend vẫn là bên quyết (info.can_warranty).
+const route = useRoute()
+const router = useRouter()
+let autoOpened = false
+watch(info, (v) => {
+  if (autoOpened || !v || route.query.baohanh !== '1') return
+  autoOpened = true
+  if (v.can_warranty) openForm()
+  else toast.info(v.reason || 'Đơn này chưa bảo hành được')
+  void router.replace({ query: { ...route.query, baohanh: undefined } })
+})
+
 const visible = computed(
   () =>
     (props.order.warranty_seq ?? 0) > 0 ||

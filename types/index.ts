@@ -406,6 +406,8 @@ export interface Order {
   root_order_id?: number | null
   warranty_seq?: number
   warranty_count?: number
+  /** Backend tính: đơn bảo hành được VÀ người đang đăng nhập được bấm (chỉ danh sách item điền). */
+  warranty_eligible?: boolean
   items?: OrderItem[]
   seller?: Seller
 }
