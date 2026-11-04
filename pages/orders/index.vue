@@ -14,6 +14,7 @@ import {
   orderStatusBadge,
   type StatusBadgeRef,
 } from '~/utils/enums'
+import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
 import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
 import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
@@ -558,7 +559,14 @@ function exportItems() {
                     <UiIcon name="alert" :size="10" /> Trùng
                   </span>
                 </td>
-                <td class="table-td hidden md:table-cell" :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''">{{ itemStoreOrderId(it) }}</td>
+                <td class="table-td hidden md:table-cell" :class="itemStoreOrderDup(it) ? 'font-medium text-rose-700 dark:text-rose-300' : ''">{{ itemStoreOrderId(it) }}
+                  <WarrantyBadge :seq="it.order?.warranty_seq" class="ml-1" />
+                  <span
+                    v-if="(it.order?.warranty_count ?? 0) > 0"
+                    class="ml-1 text-[10px] font-semibold text-orange-700 dark:text-orange-300"
+                    title="Đơn này đã được bảo hành — mở đơn để xem các đơn bảo hành"
+                  >Đã BH ×{{ it.order?.warranty_count }}</span>
+                </td>
                 <td class="table-td hidden lg:table-cell">{{ itemSellerName(it) || '—' }}</td>
                 <td class="table-td">{{ it.sku_code }}</td>
                 <td class="table-td tabular-nums">{{ it.quantity }}</td>

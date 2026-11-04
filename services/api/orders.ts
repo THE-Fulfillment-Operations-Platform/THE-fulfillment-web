@@ -1,5 +1,13 @@
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '../http'
-import type { Order, OrderDeleteResult, ListParams, TrackingStatus } from '~/types'
+import type {
+  Order,
+  OrderDeleteResult,
+  ListParams,
+  TrackingStatus,
+  WarrantyEntry,
+  WarrantyInfo,
+  WarrantyReason,
+} from '~/types'
 
 export interface OrderListParams extends ListParams {
   seller_id?: number
@@ -85,6 +93,23 @@ export interface UpdateTrackingInput {
   tracking_url?: string
 }
 
+// Form "Bảo hành". items rỗng = gửi lại toàn bộ; address bỏ trống = giữ địa chỉ cũ.
+export interface CreateWarrantyInput {
+  reason: WarrantyReason
+  reason_note?: string
+  items?: Array<{ item_id: number; quantity: number }>
+  address?: {
+    shipping_name?: string
+    shipping_address1?: string
+    shipping_address2?: string
+    shipping_city?: string
+    shipping_zip?: string
+    shipping_province?: string
+    shipping_country?: string
+    shipping_phone?: string
+  }
+}
+
 export const ordersApi = {
   list: (params?: OrderListParams) => apiGet<Order[]>('/api/orders', params),
   get: (id: number | string) => apiGet<Order>(`/api/orders/${id}`),
@@ -98,4 +123,9 @@ export const ordersApi = {
   bulkRemove: (ids: number[]) => apiPost<OrderDeleteResult>('/api/orders/bulk-delete', { ids }),
   updateTracking: (id: number | string, body: UpdateTrackingInput) =>
     apiPatch<Order>(`/api/orders/${id}/tracking`, body),
+  // Bảo hành: tạo đơn MỚI (chờ duyệt) nối với đơn này; đơn cũ giữ nguyên.
+  warrantyInfo: (id: number | string) => apiGet<WarrantyInfo>(`/api/orders/${id}/warranty-info`),
+  warranties: (id: number | string) => apiGet<WarrantyEntry[]>(`/api/orders/${id}/warranties`),
+  createWarranty: (id: number | string, body: CreateWarrantyInput) =>
+    apiPost<Order>(`/api/orders/${id}/warranty`, body),
 }

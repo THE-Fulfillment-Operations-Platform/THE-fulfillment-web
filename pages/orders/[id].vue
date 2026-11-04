@@ -10,6 +10,8 @@ import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import TheShipmentCard from '~/components/orders/TheShipmentCard.vue'
+import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
+import WarrantyCard from '~/components/orders/WarrantyCard.vue'
 import {
   TRACKING_STATUS_OPTIONS,
   cancelStageLabel,
@@ -387,6 +389,7 @@ async function syncTracking() {
               <h1 class="text-xl font-semibold text-foreground">{{ order.internal_code }}</h1>
               <p class="mt-1 text-sm text-muted-foreground">
                 Store Order: <span class="font-medium text-foreground">{{ order.store_order_id }}</span>
+                <WarrantyBadge :seq="order.warranty_seq" class="ml-1.5" />
                 <span class="mx-2 text-muted-foreground">·</span>
                 {{ order.store_name }}
                 <span class="mx-2 text-muted-foreground">·</span>
@@ -494,6 +497,9 @@ async function syncTracking() {
             </template>
           </div>
         </div>
+
+        <!-- Bảo hành: nút + liên kết đơn gốc / đơn con (backend quyết ai bấm được) -->
+        <WarrantyCard :order="order" :items="items" @changed="reload" />
 
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <!-- Item cards -->

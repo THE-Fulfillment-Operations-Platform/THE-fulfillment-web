@@ -399,8 +399,58 @@ export interface Order {
   tracking_synced_at?: string | null
   tracking_sync_error?: string
   created_at: string
+  // Bảo hành: đơn bảo hành là đơn MỚI nối với đơn cũ (không reset đơn cũ).
+  // warranty_seq > 0 = đây là đơn bảo hành lần N; parent = đơn vừa bảo hành,
+  // root = đơn gốc đầu tiên. warranty_count (tính sẵn) = "Đã bảo hành ×N" ở đơn cũ.
+  parent_order_id?: number | null
+  root_order_id?: number | null
+  warranty_seq?: number
+  warranty_count?: number
   items?: OrderItem[]
   seller?: Seller
+}
+
+// ---- Bảo hành --------------------------------------------------------------
+export type WarrantyReason = 'SHIPPING_DAMAGE' | 'WRONG_ITEM' | 'MISSING_ITEM' | 'OTHER'
+export type WarrantyScope = 'FULL' | 'PARTIAL'
+
+export interface WarrantyRef {
+  id: number
+  internal_code: string
+  store_order_id: string
+}
+
+export interface WarrantyInfo {
+  can_warranty: boolean
+  /** Lý do không bấm được (khi can_warranty = false). */
+  reason?: string
+  /** Đơn bảo hành chưa giao đang chặn bấm đúp. */
+  blocking?: WarrantyRef
+  can_override: boolean
+  next_seq: number
+  next_store_order_id: string
+  bill_seller: boolean
+  root_order_id: number
+  warranty_count: number
+}
+
+export interface OrderWarranty {
+  id: number
+  order_id: number
+  parent_order_id: number
+  root_order_id: number
+  seq: number
+  reason: WarrantyReason
+  reason_note: string
+  scope: WarrantyScope
+  address_changed: boolean
+  bill_seller: boolean
+  created_at: string
+}
+
+export interface WarrantyEntry {
+  order: Order
+  warranty?: OrderWarranty
 }
 
 // ---- Import ----------------------------------------------------------------
