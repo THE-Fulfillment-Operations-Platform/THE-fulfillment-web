@@ -30,10 +30,11 @@ import { errorMessage } from '~/utils/api-error'
 // Bấm vào bất kỳ đâu trên một dòng là vào thẳng chi tiết (xem useRowLink).
 const { rowLinkAttrs } = useRowLink()
 
-// "Đã giao hàng" nằm chung ô lọc trạng thái nhưng không phải một trạng thái nội
+// "Đã bàn giao" nằm chung ô lọc trạng thái nhưng không phải một trạng thái nội
 // bộ: đơn đã bàn giao THE thì sản phẩm vẫn đứng ở Đã QC. Nó lọc theo trạng thái
-// của đơn (đã bàn giao / đã gửi đi / đã giao) — đúng nhóm hiện nhãn "Đã bàn
-// giao" ở cột Trạng thái — nên gửi đi bằng ?handed_over, không phải ?status.
+// của đơn (đã bàn giao / đã gửi đi / đã giao) — đúng nhóm mà orderStatusBadge
+// thôi hiện khâu nội bộ (isHandedOver) — nên gửi đi bằng ?handed_over, không phải
+// ?status. Ngược lại, chọn "Đã QC" thì API loại các dòng của đơn nhóm này ra.
 const HANDED_OVER = 'HANDED_OVER'
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
@@ -190,7 +191,7 @@ onMounted(async () => {
 const statusOptions = computed(() => [
   { value: '', label: 'Tất cả' },
   ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
-  { value: HANDED_OVER, label: 'Đã giao hàng' },
+  { value: HANDED_OVER, label: 'Đã bàn giao' },
 ])
 const reviewStatusOptions = [
   { value: '', label: 'Tất cả' },
