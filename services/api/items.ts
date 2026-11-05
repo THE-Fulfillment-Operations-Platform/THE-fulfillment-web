@@ -7,6 +7,7 @@ export interface ItemListParams extends ListParams {
   // Chỉ sản phẩm của đơn đã rời xưởng (bàn giao THE / đã gửi đi / đã giao) —
   // nhãn "Đã bàn giao" ở cột Trạng thái, đọc từ seller_status của đơn.
   handed_over?: boolean
+  packed?: boolean
   // Lọc bảo hành: eligible = có thể bảo hành, child = đơn bảo hành (-BH1…), root = đơn đã từng bảo hành.
   warranty?: 'eligible' | 'child' | 'root'
   design_status?: string

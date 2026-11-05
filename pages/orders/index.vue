@@ -36,6 +36,8 @@ const { rowLinkAttrs } = useRowLink()
 // thôi hiện khâu nội bộ (isHandedOver) — nên gửi đi bằng ?handed_over, không phải
 // ?status. Ngược lại, chọn "Đã QC" thì API loại các dòng của đơn nhóm này ra.
 const HANDED_OVER = 'HANDED_OVER'
+// Tương tự: "Đã đóng gói" là trạng thái của đơn (seller_status PACKED), gửi bằng ?packed.
+const PACKED = 'PACKED'
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
@@ -88,8 +90,9 @@ function filterParams() {
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku || undefined,
     internal_code: filters.internal_code || undefined,
-    status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
+    status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
+    packed: filters.status === PACKED || undefined,
     review_status: filters.review_status || undefined,
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
@@ -108,8 +111,9 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku || undefined,
     internal_code: filters.internal_code || undefined,
-    status: filters.status && filters.status !== HANDED_OVER ? filters.status : undefined,
+    status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
+    packed: filters.status === PACKED || undefined,
     review_status: filters.review_status || undefined,
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
@@ -191,6 +195,7 @@ onMounted(async () => {
 const statusOptions = computed(() => [
   { value: '', label: 'Tất cả' },
   ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+  { value: PACKED, label: 'Đã đóng gói' },
   { value: HANDED_OVER, label: 'Đã bàn giao' },
 ])
 const reviewStatusOptions = [
