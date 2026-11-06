@@ -67,6 +67,7 @@ export interface EditOrderItemInput {
   // trên một đơn sẽ khiến đơn đó lệch với catalogue. Đổi SKU, hoặc sửa tên SKU.
   design_url?: string
   back_design_url?: string
+  mockup_url?: string
   engrave_text?: string
   note?: string
 }

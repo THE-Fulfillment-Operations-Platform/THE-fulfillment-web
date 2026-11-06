@@ -111,6 +111,7 @@ interface EditItemForm {
   quantity: number
   design_url: string
   back_design_url: string
+  mockup_url: string
   engrave_text: string
 }
 const editOpen = ref(false)
@@ -149,6 +150,7 @@ function openEdit() {
     quantity: it.quantity ?? 1,
     design_url: it.design_url ?? '',
     back_design_url: it.back_design_url ?? '',
+    mockup_url: it.mockup_url ?? '',
     engrave_text: it.engrave_text ?? '',
   }))
   editOpen.value = true
@@ -182,6 +184,7 @@ async function submitEdit() {
         quantity: it.quantity,
         design_url: it.design_url,
         back_design_url: it.back_design_url,
+        mockup_url: it.mockup_url,
         engrave_text: it.engrave_text,
       })),
     }
@@ -780,6 +783,10 @@ async function syncTracking() {
                     <div>
                       <label class="label">Design (mặt sau)</label>
                       <input v-model="it.back_design_url" class="input" placeholder="https://…" />
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="label">Link mockup</label>
+                      <input v-model="it.mockup_url" class="input" placeholder="https://…" />
                     </div>
                     <div class="sm:col-span-2">
                       <label class="label">Khắc chữ</label>
