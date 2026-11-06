@@ -102,8 +102,9 @@ const prodRows = computed<ProdRow[]>(() =>
       material: bi.material?.name ?? batch.value?.material_name ?? batch.value?.material?.name ?? '—',
       qc_description: oi?.qc_description ?? '',
       image_code: oi?.image_code ?? '',
-      // API đánh số; thiếu (API cũ) thì rơi về vị trí trong danh sách.
-      sequence: bi.sequence || idx + 1,
+      // API đánh số (0 = không có tem, vd phần đã huỷ ghi bỏ). Chỉ khi API chưa trả
+      // trường này hẳn (undefined) mới rơi về vị trí trong danh sách.
+      sequence: bi.sequence ?? (bi.scrapped_at ? 0 : idx + 1),
       quantity: oi?.quantity ?? '',
       design_url: oi?.design_url ?? '',
       mockup_url: oi?.mockup_url ?? bi.mockup_url ?? '',
@@ -501,7 +502,10 @@ async function deleteBatch() {
 // Tem chỉ in cho phần CÒN SỐNG. Batch đã đóng vẫn trả về cả phần đã huỷ để màn
 // chi tiết kể được tấm đó đã làm ra những gì, nhưng in tem cho một sản phẩm đã
 // vứt đi là dán nhãn lên hàng không tồn tại — và số trên tem lô sẽ sai theo.
-const labelRows = computed(() => prodRows.value.filter((r) => !r.scrapped))
+// Cùng quy tắc với STT: tem = các dòng có sequence > 0, in theo thứ tự sequence.
+const labelRows = computed(() =>
+  prodRows.value.filter((r) => Number(r.sequence) > 0).sort((a, b) => Number(a.sequence) - Number(b.sequence)),
+)
 
 // Số trên tem lô là số SẢN PHẨM, không phải số dòng: một dòng có thể mang SL > 1,
 // mà người ở xưởng đếm hàng chứ không đếm dòng. Dữ liệu thiếu SL thì rơi về số
@@ -1059,7 +1063,7 @@ async function printLabels() {
                     {{ r.qc_description || '—' }}
                   </td>
                   <td class="table-td hidden text-xs lg:table-cell">{{ r.image_code || '—' }}</td>
-                  <td class="table-td text-xs font-semibold text-foreground">{{ r.sequence }}</td>
+                  <td class="table-td text-xs font-semibold text-foreground">{{ Number(r.sequence) > 0 ? r.sequence : '—' }}</td>
                   <td class="table-td hidden text-xs sm:table-cell">{{ r.quantity === '' ? '—' : r.quantity }}</td>
                   <td class="table-td hidden lg:table-cell">
                     <a v-if="r.design_url" :href="r.design_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
