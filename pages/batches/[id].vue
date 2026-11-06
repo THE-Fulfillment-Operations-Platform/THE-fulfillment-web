@@ -7,7 +7,11 @@ import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { designDownloadFailure, type DesignDownloadFailure } from '~/utils/design-download-error'
 import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
-import { isBatchOverdue, overdueDays, missingBatchLinks } from '~/utils/batch'
+import {
+  isBatchOverdue, overdueDays, missingBatchLinks,
+  batchItemChip, batchItemStage, batchItemNotHanded, matchesStageFilter,
+  BATCH_STAGE_FILTERS, type BatchStage, type BatchStageFilter,
+} from '~/utils/batch'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 import { refreshActionCounts } from '~/composables/useActionCounts'
@@ -61,7 +65,9 @@ interface ProdRow {
   material: string
   qc_description: string
   image_code: string
-  production_sequence: number | string
+  // STT = vị trí của item trong batch, API đánh số (cùng thứ tự tem QR và Excel).
+  // Là số CỦA ITEM: lọc/sắp xếp bảng không làm nó đổi.
+  sequence: number | string
   quantity: number | string
   design_url: string
   mockup_url: string
@@ -69,6 +75,10 @@ interface ProdRow {
   print_file_url: string
   cut_file_url: string
   status: InternalStatus
+  // Chip cột Trạng thái: cùng luật với Đơn hàng/Sản phẩm (orderStatusBadge).
+  chip: { kind: 'review' | 'internal' | 'seller' | 'tracking'; value: string }
+  stage: BatchStage
+  not_handed: boolean
   // Phần đã ghi bỏ (QC fail lẻ hoặc huỷ cả batch) — dòng vẫn hiện để truy vết.
   scrapped: boolean
   scrap_reason: string
@@ -80,7 +90,7 @@ interface ProdRow {
   seller_name: string
 }
 const prodRows = computed<ProdRow[]>(() =>
-  items.value.map((bi) => {
+  items.value.map((bi, idx) => {
     const oi = bi.order_item
     // BatchLink is the canonical production link shared by every row. Keep the
     // old per-item URL as a fallback for legacy batches that have no shared link.
@@ -92,7 +102,8 @@ const prodRows = computed<ProdRow[]>(() =>
       material: bi.material?.name ?? batch.value?.material_name ?? batch.value?.material?.name ?? '—',
       qc_description: oi?.qc_description ?? '',
       image_code: oi?.image_code ?? '',
-      production_sequence: oi?.production_sequence ?? '',
+      // API đánh số; thiếu (API cũ) thì rơi về vị trí trong danh sách.
+      sequence: bi.sequence || idx + 1,
       quantity: oi?.quantity ?? '',
       design_url: oi?.design_url ?? '',
       mockup_url: oi?.mockup_url ?? bi.mockup_url ?? '',
@@ -100,6 +111,9 @@ const prodRows = computed<ProdRow[]>(() =>
       print_file_url: sharedPrintUrl || oi?.print_file_url || bi.print_file_url || '',
       cut_file_url: sharedCutUrl || oi?.cut_file_url || bi.cut_file_url || '',
       status: bi.status,
+      chip: batchItemChip(oi?.order, bi.status),
+      stage: batchItemStage(oi?.order, bi.status),
+      not_handed: batchItemNotHanded(oi?.order),
       scrapped: !!bi.scrapped_at,
       scrap_reason: bi.scrap_reason ?? '',
       // Batch detail preload kèm order_item.order; hai nhánh sau là dự phòng cho
@@ -122,8 +136,26 @@ function pieceCount(r: ProdRow): number {
 function pieceCode(r: ProdRow, piece: number, of: number): string {
   return of > 1 ? `${r.internal_code}-${piece}/${of}` : r.internal_code
 }
+// Bộ lọc theo chặng (chip). Batch tải đủ item một lần (không phân trang) nên lọc ở
+// client. Lọc chỉ ẩn dòng — STT vẫn là số của item.
+const stageFilter = ref<BatchStageFilter>('ALL')
+const stageCounts = computed<Record<BatchStageFilter, number>>(() => {
+  const c: Record<BatchStageFilter, number> = { ALL: 0, NOT_HANDED: 0, NOT_QC: 0, QC: 0, PACKED: 0, HANDED: 0, DELIVERED: 0, OTHER: 0 }
+  for (const r of prodRows.value) {
+    c.ALL++
+    if (r.scrapped) continue
+    c[r.stage]++
+    if (r.not_handed) c.NOT_HANDED++
+  }
+  return c
+})
+const filteredRows = computed(() =>
+  prodRows.value.filter((r) =>
+    stageFilter.value === 'ALL' || (!r.scrapped && matchesStageFilter(stageFilter.value, r.stage, r.not_handed)),
+  ),
+)
 const tableRows = computed(() =>
-  prodRows.value.flatMap((r) => {
+  filteredRows.value.flatMap((r) => {
     const n = pieceCount(r)
     return Array.from({ length: n }, (_, i) => ({
       ...r,
@@ -778,8 +810,9 @@ async function printLabels() {
                   <UiIcon name="alert" :size="13" /> Đã đóng
                 </span>
                 <span class="text-xs text-muted-foreground">
-                  {{ liveItemCount }} item còn lại
+                  {{ liveItemCount }} item
                   <template v-if="batch.scrapped_count"> · {{ batch.scrapped_count }} đã huỷ</template>
+                  <template v-if="liveItemCount"> · {{ stageCounts.NOT_HANDED }} chưa bàn giao</template>
                 </span>
                 <span v-if="batch.due_date" class="text-xs text-muted-foreground">· Hạn: {{ formatDate(batch.due_date) }}</span>
               </div>
@@ -964,6 +997,24 @@ async function printLabels() {
           <div class="border-b border-border bg-muted px-4 py-2.5">
             <h3 class="text-sm font-semibold text-foreground">Items trong batch (dữ liệu sản xuất)</h3>
           </div>
+          <!-- Lọc theo chặng (cùng chip cột Trạng thái). STT là số của item nên
+               không đổi khi lọc. Số đếm tính theo item, không theo cái. -->
+          <div class="flex flex-wrap items-center gap-1.5 border-b border-border px-4 py-2.5" role="group" aria-label="Lọc theo trạng thái">
+            <button
+              v-for="f in BATCH_STAGE_FILTERS"
+              :key="f.value"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
+              :class="stageFilter === f.value
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-border text-muted-foreground hover:bg-muted'"
+              :aria-pressed="stageFilter === f.value"
+              @click="stageFilter = f.value"
+            >
+              {{ f.label }}
+              <span class="rounded bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-foreground">{{ stageCounts[f.value] }}</span>
+            </button>
+          </div>
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border">
               <thead class="bg-card">
@@ -975,7 +1026,7 @@ async function printLabels() {
                   <th class="table-th hidden md:table-cell">Loại VL</th>
                   <th class="table-th hidden lg:table-cell">Mô tả QC</th>
                   <th class="table-th hidden lg:table-cell">Mã ảnh</th>
-                  <th class="table-th hidden lg:table-cell">STT</th>
+                  <th class="table-th" title="Số thứ tự của item trong batch, theo thứ tự tem QR và file Excel">STT</th>
                   <th class="table-th hidden sm:table-cell">SL</th>
                   <th class="table-th hidden lg:table-cell">Link ảnh</th>
                   <th class="table-th hidden md:table-cell">Mockup</th>
@@ -986,6 +1037,9 @@ async function printLabels() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
+                <tr v-if="!tableRows.length">
+                  <td colspan="15" class="table-td py-6 text-center text-sm text-muted-foreground">Không có item nào ở nhóm này.</td>
+                </tr>
                 <tr v-for="(r, idx) in tableRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.display_code }}</td>
                   <td class="table-td whitespace-nowrap">{{ r.seller_name || '—' }}</td>
@@ -1005,7 +1059,7 @@ async function printLabels() {
                     {{ r.qc_description || '—' }}
                   </td>
                   <td class="table-td hidden text-xs lg:table-cell">{{ r.image_code || '—' }}</td>
-                  <td class="table-td hidden text-xs lg:table-cell">{{ r.production_sequence === '' ? '—' : r.production_sequence }}</td>
+                  <td class="table-td text-xs font-semibold text-foreground">{{ r.sequence }}</td>
                   <td class="table-td hidden text-xs sm:table-cell">{{ r.quantity === '' ? '—' : r.quantity }}</td>
                   <td class="table-td hidden lg:table-cell">
                     <a v-if="r.design_url" :href="r.design_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
@@ -1031,7 +1085,7 @@ async function printLabels() {
                     >
                       <UiIcon name="alert" :size="12" /> Đã huỷ
                     </span>
-                    <UiStatusBadge v-else kind="internal" :value="r.status" />
+                    <UiStatusBadge v-else :kind="r.chip.kind" :value="r.chip.value" />
                   </td>
                 </tr>
               </tbody>

@@ -848,6 +848,9 @@ export interface BatchItem {
   scrapped_at?: string | null
   scrap_reason?: string
   scrapped_by_id?: number | null
+  // STT của item trong batch (1, 2, 3…): API đánh số, cùng thứ tự tem QR và cột
+  // "Số thứ tự" của Excel. 0/thiếu = không đánh số.
+  sequence?: number
   item_code?: string
   order_code?: string
   store_order_id?: string

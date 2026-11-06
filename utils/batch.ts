@@ -1,5 +1,5 @@
 import type { Batch, BatchLinkKind, InternalStatus } from '~/types'
-import { INTERNAL_STATUS, SELLER_STATUS, type BadgeMeta } from '~/utils/enums'
+import { INTERNAL_STATUS, SELLER_STATUS, isHandedOver, orderStatusBadge, type BadgeMeta, type StatusBadgeRef } from '~/utils/enums'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -209,3 +209,51 @@ export function batchStatusBadge(b: Batch): BadgeMeta {
   }
   return INTERNAL_STATUS[b.status] ?? { label: b.status, classes: 'bg-muted text-muted-foreground' }
 }
+
+// ---- Chặng của từng item trong batch (chip + bộ lọc) -------------------------
+// Chip của item = ĐÚNG chip cột Trạng thái ở Đơn hàng/Sản phẩm (orderStatusBadge):
+// chưa QC thì chặng sản xuất của item, đã QC thì đi theo đơn: Đã QC → Đã đóng gói →
+// Đã bàn giao → vận chuyển → Đã giao. Bộ lọc chỉ gom chip đó thành nhóm, không có
+// quy tắc riêng nào khác.
+export type BatchStage = 'NOT_QC' | 'QC' | 'PACKED' | 'HANDED' | 'DELIVERED' | 'OTHER'
+export type BatchStageFilter = 'ALL' | 'NOT_HANDED' | BatchStage
+
+type BatchItemOrder = Parameters<typeof orderStatusBadge>[0]
+
+export function batchItemChip(order: BatchItemOrder | null | undefined, itemStatus: InternalStatus): StatusBadgeRef {
+  return orderStatusBadge(order ?? {}, itemStatus)
+}
+
+export function batchItemStage(order: BatchItemOrder | null | undefined, itemStatus: InternalStatus): BatchStage {
+  const chip = batchItemChip(order, itemStatus)
+  if (chip.kind === 'internal') return chip.value === 'QC_PASSED' ? 'QC' : 'NOT_QC'
+  if (chip.kind === 'tracking') return chip.value === 'DELIVERED' ? 'DELIVERED' : 'HANDED'
+  if (chip.kind === 'seller') {
+    if (chip.value === 'DELIVERED') return 'DELIVERED'
+    if (chip.value === 'PACKED') return 'PACKED'
+    if (chip.value === 'PRODUCTION') return 'NOT_QC' // chưa có chặng sản xuất để hiện
+    return 'HANDED'
+  }
+  return 'OTHER' // review: chờ duyệt / từ chối / huỷ
+}
+
+/** Item còn nằm ở xưởng (chưa bàn giao cho hãng vận chuyển). */
+export function batchItemNotHanded(order: BatchItemOrder | null | undefined): boolean {
+  return !isHandedOver(order?.seller_status)
+}
+
+export function matchesStageFilter(f: BatchStageFilter, stage: BatchStage, notHanded: boolean): boolean {
+  if (f === 'ALL') return true
+  if (f === 'NOT_HANDED') return notHanded
+  return stage === f
+}
+
+export const BATCH_STAGE_FILTERS: { value: BatchStageFilter; label: string }[] = [
+  { value: 'ALL', label: 'Tất cả' },
+  { value: 'NOT_HANDED', label: 'Chưa bàn giao' },
+  { value: 'NOT_QC', label: 'Chưa QC' },
+  { value: 'QC', label: 'Đã QC (chưa đóng gói)' },
+  { value: 'PACKED', label: 'Đã đóng gói' },
+  { value: 'HANDED', label: 'Đã bàn giao' },
+  { value: 'DELIVERED', label: 'Đã giao' },
+]
