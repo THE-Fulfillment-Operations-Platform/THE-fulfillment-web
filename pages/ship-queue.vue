@@ -15,6 +15,8 @@ import { useAuthStore } from '~/stores/auth'
 
 // Quét gửi cho THE = "Thao tác" màn Chờ gửi hàng; chỉ Xem thì xem danh sách.
 const canShip = computed(() => useAuthStore().can('ship_queue.manage'))
+// Chỉ Owner/Admin được "Vẫn xuất kho" khi đơn chưa QC đạt; API kiểm lại vai trò.
+const canForceExport = computed(() => ['OWNER', 'ADMIN'].includes(useAuthStore().user?.role ?? ''))
 
 // Chờ gửi hàng — điểm nối giữa hai nửa vòng đời của đơn.
 //
@@ -304,6 +306,25 @@ function startScan() {
   scanMode.value = true
   focusScan()
 }
+// ---- Vượt chặn QC khi xuất kho (Owner/Admin) ----------------------------------
+const forceTarget = ref<string | null>(null)
+const forceReason = ref('')
+const forceOpen = computed({
+  get: () => forceTarget.value !== null,
+  set: (v: boolean) => { if (!v) forceTarget.value = null },
+})
+function askForce(value: string) {
+  forceReason.value = ''
+  forceTarget.value = value
+}
+function confirmForce() {
+  const value = forceTarget.value
+  const reason = forceReason.value.trim()
+  if (!value || !reason) return
+  forceTarget.value = null
+  runScan(value, { export_only: true, force_unqc: true, force_reason: reason })
+}
+
 function stopScan() {
   scanMode.value = false
   code.value = ''
@@ -327,6 +348,8 @@ interface ScanLogEntry {
   the_tracking?: string
   has_label?: boolean
   reason?: string
+  /** Lượt xuất kho bị chặn vì chưa QC đạt: Owner/Admin có nút "Vẫn xuất kho". */
+  qcBlocked?: boolean
 }
 const scanLog = ref<ScanLogEntry[]>([])
 const shippedCount = computed(() => scanLog.value.filter((e) => e.ok).length)
@@ -347,12 +370,15 @@ function submitScan() {
   const value = code.value.trim()
   code.value = ''
   focusScan()
+  runScan(value, scanKind.value === 'export' ? { export_only: true } : {})
+}
+
+function runScan(value: string, scanOpts: ShipOptions) {
   if (!value || pending.value.includes(value)) return
 
   pending.value.push(value)
-  const exporting = scanKind.value === 'export'
   handoffsApi
-    .shipScan(value, exporting ? { export_only: true } : {})
+    .shipScan(value, scanOpts)
     .then(({ data: res }) => {
       scanLog.value.unshift({
         key: ++logKey, code: value, ok: true, time: timeNow(),
@@ -365,7 +391,7 @@ function submitScan() {
       if (res?.exported) {
         const left = res.unfinished_items ?? 0
         const msg = `Đã xuất kho đơn ${res.internal_code ?? value}`
-        if (left > 0) toast.info(`${msg} — lưu ý: hệ thống còn ${left}/${res.total_items} sản phẩm chưa QC đạt`)
+        if (left > 0) toast.info(`${msg} (vượt chặn QC: còn ${left}/${res.total_items} sản phẩm chưa QC đạt)`)
         else toast.success(msg)
       } else if (res?.label_only) {
         toast.success(`Đã tạo label THE cho đơn ${res.internal_code ?? value} — chưa xuất kho, quét ở chế độ Xuất kho khi hàng ra khỏi kho`)
@@ -375,10 +401,12 @@ function submitScan() {
       void reload()
     })
     .catch((e) => {
+      const reason = errorMessage(e)
       scanLog.value.unshift({
-        key: ++logKey, code: value, ok: false, time: timeNow(), reason: errorMessage(e),
+        key: ++logKey, code: value, ok: false, time: timeNow(), reason,
+        qcBlocked: !!scanOpts.export_only && !scanOpts.force_unqc && /chưa QC đạt/.test(reason),
       })
-      toast.error(`${value}: ${errorMessage(e)}`)
+      toast.error(`${value}: ${reason}`)
     })
     .finally(() => {
       const i = pending.value.indexOf(value)
@@ -504,7 +532,16 @@ function submitScan() {
                   In label
                 </button>
               </template>
-              <template v-else> — {{ entry.reason }}</template>
+              <template v-else>
+                — {{ entry.reason }}
+                <button
+                  v-if="entry.qcBlocked && canForceExport"
+                  class="ml-2 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium text-red-800 hover:bg-white dark:bg-white/10 dark:text-rose-200"
+                  @click="askForce(entry.code)"
+                >
+                  Vẫn xuất kho (xe đang đợi)
+                </button>
+              </template>
             </span>
             <span class="shrink-0 text-xs opacity-70">{{ entry.time }}</span>
           </li>
@@ -769,6 +806,19 @@ function submitScan() {
         <button class="btn-primary" :disabled="shipping || !readyIds.length || !!(preflight?.problem && !preflight.ready)" @click="confirmTHE">
           Tạo & gửi {{ readyIds.length }} đơn
         </button>
+      </template>
+    </UiModal>
+
+    <UiModal v-model="forceOpen" title="Vẫn xuất kho đơn chưa QC đạt">
+      <p class="mb-2 text-sm">
+        Đơn <span class="font-mono font-semibold">{{ forceTarget }}</span> còn sản phẩm chưa QC đạt. Chỉ Owner/Admin được vượt;
+        lý do và tên bạn được ghi vào nhật ký.
+      </p>
+      <label class="label">Lý do (bắt buộc)</label>
+      <input v-model="forceReason" class="input" maxlength="200" placeholder="Ví dụ: xe đang đợi, hàng đã kiểm tay" @keyup.enter="confirmForce" />
+      <template #footer>
+        <button class="btn-secondary" @click="forceOpen = false">Huỷ</button>
+        <button class="btn-primary" :disabled="!forceReason.trim()" @click="confirmForce">Xuất kho</button>
       </template>
     </UiModal>
   </div>

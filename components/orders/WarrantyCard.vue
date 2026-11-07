@@ -175,9 +175,12 @@ const visible = computed(
     (props.order.warranty_seq ?? 0) > 0 ||
     (props.order.warranty_count ?? 0) > 0 ||
     info.value?.can_warranty ||
-    (!!info.value?.role_allowed && !!info.value.reason && props.order.review_status === 'APPROVED' && isHandedOverOrder.value),
+    // Đơn chưa bàn giao cũng hiện thẻ (nút mờ + lý do + gợi ý QC fail → Làm lại)
+    // để người dùng biết nút ở đâu và vì sao chưa bấm được.
+    (!!info.value?.role_allowed && !!info.value.reason && props.order.review_status === 'APPROVED' &&
+      !['SELLER', 'APPROVED'].includes(props.order.cancellation_status ?? '')),
 )
-// Chỉ nhắc "vì sao chưa bấm được" cho đơn đã rời xưởng; đơn đang sản xuất không cần.
+// Đơn đã xuất kho / bàn giao thì bảo hành được; chưa thì chỉ hiện gợi ý làm lại.
 const isHandedOverOrder = computed(() =>
   ['HANDED_OFF', 'SHIPPED', 'DELIVERED'].includes(props.order.seller_status),
 )
@@ -234,6 +237,9 @@ const isHandedOverOrder = computed(() =>
       </div>
     </div>
 
+    <p v-if="info?.role_allowed && !isHandedOverOrder && !info.can_warranty" class="mt-2 text-xs text-muted-foreground">
+      Hàng hỏng khi sản xuất: dùng <strong>QC fail → Làm lại</strong> ở màn QC (hoặc “Làm lại tại chỗ” nếu đã in lẻ), không cần tạo đơn bảo hành.
+    </p>
     <p v-if="info?.can_warranty && info.blocking" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
       Đơn {{ info.blocking.store_order_id }} đang bảo hành, chưa giao — chỉ Owner được tạo thêm.
     </p>

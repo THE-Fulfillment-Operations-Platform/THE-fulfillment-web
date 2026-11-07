@@ -59,9 +59,13 @@ export interface ShipOptions {
   manual_handoff?: boolean
   /**
    * Quét xuất kho (XK): chỉ đếm + ghi nhận đơn đã ra khỏi kho. Không gọi THE nên không
-   * cần cân nặng / hộp, và nhận cả đơn hệ thống còn ghi đang sản xuất.
+   * cần cân nặng / hộp. Đơn còn sản phẩm chưa QC đạt bị chặn 409 (từ 07/11), trừ khi
+   * Owner/Admin gửi kèm force_unqc + force_reason.
    */
   export_only?: boolean
+  /** Owner/Admin vượt chặn QC khi xuất kho (xe đang đợi). API kiểm vai trò, cần force_reason. */
+  force_unqc?: boolean
+  force_reason?: string
 }
 
 export const handoffsApi = {
