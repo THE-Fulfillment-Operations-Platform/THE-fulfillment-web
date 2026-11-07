@@ -79,7 +79,7 @@ async function toggleChildren() {
 const open = ref(false)
 const saving = ref(false)
 const form = reactive({
-  reason: 'SHIPPING_DAMAGE' as WarrantyReason,
+  reason: '' as WarrantyReason | '',
   reason_note: '',
   scope: 'FULL' as 'FULL' | 'PARTIAL',
   keepAddress: true,
@@ -96,7 +96,7 @@ const picks = ref<{ item: OrderItem; on: boolean; qty: number }[]>([])
 
 function openForm() {
   const o = props.order
-  form.reason = 'SHIPPING_DAMAGE'
+  form.reason = '' // bắt buộc chọn, không đặt mặc định
   form.reason_note = ''
   form.scope = 'FULL'
   form.keepAddress = true
@@ -119,14 +119,14 @@ const badQty = computed(
     form.scope === 'PARTIAL' &&
     picks.value.some((p) => p.on && !(p.qty >= 1 && p.qty <= (p.item.quantity ?? 1))),
 )
-const canSubmit = computed(() => !saving.value && !noteMissing.value && !nothingPicked.value && !badQty.value)
+const canSubmit = computed(() => !saving.value && !!form.reason && !noteMissing.value && !nothingPicked.value && !badQty.value)
 
 async function submit() {
   if (!canSubmit.value) return
   saving.value = true
   try {
     const body: CreateWarrantyInput = {
-      reason: form.reason,
+      reason: form.reason as WarrantyReason,
       reason_note: form.reason_note.trim(),
     }
     if (form.scope === 'PARTIAL') {
@@ -184,6 +184,9 @@ const visible = computed(
 const isHandedOverOrder = computed(() =>
   ['HANDED_OFF', 'SHIPPED', 'DELIVERED'].includes(props.order.seller_status),
 )
+// Nút "Bảo hành" nằm ở thanh nút đầu trang chi tiết đơn (pages/orders/[id].vue):
+// trang cha đọc `info` và gọi `openForm` qua ref; form vẫn chỉ có MỘT bản ở đây.
+defineExpose({ info, openForm })
 </script>
 
 <template>
@@ -226,14 +229,6 @@ const isHandedOverOrder = computed(() =>
             Xem {{ info.blocking.store_order_id }}
           </NuxtLink>
         </span>
-        <button
-          v-if="info?.role_allowed && (info.can_warranty || info.reason)"
-          class="btn-secondary"
-          :disabled="!info.can_warranty"
-          @click="openForm"
-        >
-          <UiIcon name="alert" :size="16" /> Bảo hành
-        </button>
       </div>
     </div>
 
@@ -280,7 +275,7 @@ const isHandedOverOrder = computed(() =>
 
         <div>
           <label class="label">Lý do *</label>
-          <UiSelect v-model="form.reason" :options="REASONS" aria-label="Lý do bảo hành" />
+          <UiSelect v-model="form.reason" :options="REASONS" placeholder="Chọn lý do…" aria-label="Lý do bảo hành" />
         </div>
         <div>
           <label class="label">Ghi chú {{ form.reason === 'OTHER' ? '*' : '' }}</label>

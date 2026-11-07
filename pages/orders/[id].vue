@@ -100,8 +100,13 @@ const canEdit = computed(() => auth.can('orders.manage'))
 const canCancel = computed(() => auth.can('orders.manage'))
 const canDelete = computed(() => isAdminOwner.value && auth.can('orders.manage'))
 const canEditTracking = computed(() => auth.can('journeys.manage') || auth.can('cs.manage'))
+const warrantyRef = ref<InstanceType<typeof WarrantyCard> | null>(null)
+// Nút Bảo hành ở thanh đầu trang: ẩn nếu vai trò không được bấm; mờ + tooltip lý do
+// nếu chưa đủ điều kiện. Backend (warranty-info) quyết cả hai.
+const warrantyInfo = computed(() => warrantyRef.value?.info ?? null)
+const showWarranty = computed(() => !!warrantyInfo.value?.role_allowed)
 const hasActions = computed(
-  () => canEdit.value || canCancel.value || canDelete.value || canEditTracking.value,
+  () => canEdit.value || canCancel.value || canDelete.value || canEditTracking.value || showWarranty.value,
 )
 
 // ---- Edit order ------------------------------------------------------------
@@ -456,6 +461,15 @@ async function syncTracking() {
               <UiIcon name="close" :size="16" /> Huỷ đơn
             </button>
             <button
+              v-if="showWarranty"
+              class="btn-secondary"
+              :disabled="!warrantyInfo?.can_warranty"
+              :title="warrantyInfo?.can_warranty ? 'Tạo đơn bảo hành (đơn mới, chờ duyệt)' : (warrantyInfo?.reason || '')"
+              @click="warrantyRef?.openForm()"
+            >
+              <UiIcon name="alert" :size="16" /> Bảo hành
+            </button>
+            <button
               v-if="canDelete"
               class="btn-danger"
               :disabled="deleting"
@@ -502,7 +516,7 @@ async function syncTracking() {
         </div>
 
         <!-- Bảo hành: nút + liên kết đơn gốc / đơn con (backend quyết ai bấm được) -->
-        <WarrantyCard :order="order" :items="items" @changed="reload" />
+        <WarrantyCard ref="warrantyRef" :order="order" :items="items" @changed="reload" />
 
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <!-- Item cards -->
