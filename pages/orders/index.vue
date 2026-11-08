@@ -633,16 +633,6 @@ function exportItems() {
                     >
                       Vẫn tính tiền
                     </span>
-                    <!-- Backend đã tính: đơn bảo hành được và vai trò này được bấm. Mở thẳng form
-                         ở trang chi tiết đơn (dùng lại WarrantyCard, không chép form). -->
-                    <NuxtLink
-                      v-if="it.order?.warranty_eligible && itemOrderId(it)"
-                      :to="{ path: `/orders/${itemOrderId(it)}`, query: { baohanh: '1' } }"
-                      class="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium text-primary hover:bg-muted"
-                      title="Tạo đơn bảo hành cho đơn này"
-                    >
-                      Bảo hành
-                    </NuxtLink>
                   </div>
                 </td>
                 <!-- Mã vận đơn nằm trên ĐƠN nên mọi sản phẩm cùng một đơn hiện

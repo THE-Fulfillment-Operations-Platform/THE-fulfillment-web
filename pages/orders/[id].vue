@@ -106,7 +106,7 @@ const warrantyRef = ref<InstanceType<typeof WarrantyCard> | null>(null)
 const warrantyInfo = computed(() => warrantyRef.value?.info ?? null)
 const showWarranty = computed(() => !!warrantyInfo.value?.role_allowed)
 const hasActions = computed(
-  () => canEdit.value || canCancel.value || canDelete.value || canEditTracking.value || showWarranty.value,
+  () => canEdit.value || canCancel.value || canDelete.value || canEditTracking.value,
 )
 
 // ---- Edit order ------------------------------------------------------------
@@ -406,6 +406,18 @@ async function syncTracking() {
                   <span class="mx-2 text-muted-foreground">·</span>
                   STT ngày: <span class="font-medium text-foreground">{{ order.daily_seq }}</span>
                 </template>
+                <!-- Bảo hành ít dùng: nút nhỏ ngay dòng thông tin đầu trang (anh Kiên 08/11),
+                     ẩn nếu vai trò không được bấm, mờ + tooltip lý do nếu chưa đủ điều kiện. -->
+                <button
+                  v-if="showWarranty"
+                  type="button"
+                  class="ml-3 inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium text-primary hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                  :disabled="!warrantyInfo?.can_warranty"
+                  :title="warrantyInfo?.can_warranty ? 'Tạo đơn bảo hành (đơn mới, chờ duyệt)' : (warrantyInfo?.reason || '')"
+                  @click="warrantyRef?.openForm()"
+                >
+                  <UiIcon name="alert" :size="12" /> Bảo hành
+                </button>
               </p>
             </div>
             <div class="flex flex-col items-end gap-1">
@@ -459,15 +471,6 @@ async function syncTracking() {
               @click="openCancel"
             >
               <UiIcon name="close" :size="16" /> Huỷ đơn
-            </button>
-            <button
-              v-if="showWarranty"
-              class="btn-secondary"
-              :disabled="!warrantyInfo?.can_warranty"
-              :title="warrantyInfo?.can_warranty ? 'Tạo đơn bảo hành (đơn mới, chờ duyệt)' : (warrantyInfo?.reason || '')"
-              @click="warrantyRef?.openForm()"
-            >
-              <UiIcon name="alert" :size="16" /> Bảo hành
             </button>
             <button
               v-if="canDelete"
