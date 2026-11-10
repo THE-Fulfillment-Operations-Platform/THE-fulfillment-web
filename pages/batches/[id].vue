@@ -1024,13 +1024,14 @@ async function printLabels() {
               <thead class="bg-card">
                 <tr>
                   <th class="table-th sticky left-0 z-20 bg-card">Mã nội bộ</th>
+                  <!-- STT đứng ngay sau Mã nội bộ, xa cột SL — anh Kiên 10/11: thợ nhìn nhầm STT thành số lượng -->
+                  <th class="table-th" title="Số thứ tự của item trong batch, theo thứ tự tem QR và file Excel">STT</th>
                   <th class="table-th">Seller</th>
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th hidden sm:table-cell">SKU</th>
                   <th class="table-th hidden md:table-cell">Loại VL</th>
                   <th class="table-th hidden lg:table-cell">Mô tả QC</th>
                   <th class="table-th hidden lg:table-cell">Mã ảnh</th>
-                  <th class="table-th" title="Số thứ tự của item trong batch, theo thứ tự tem QR và file Excel">STT</th>
                   <th class="table-th hidden sm:table-cell">SL</th>
                   <th class="table-th hidden lg:table-cell">Link ảnh</th>
                   <th class="table-th hidden md:table-cell">Mockup</th>
@@ -1046,6 +1047,7 @@ async function printLabels() {
                 </tr>
                 <tr v-for="(r, idx) in tableRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.display_code }}</td>
+                  <td class="table-td text-xs font-semibold text-foreground">{{ Number(r.sequence) > 0 ? r.sequence : '—' }}</td>
                   <td class="table-td whitespace-nowrap">{{ r.seller_name || '—' }}</td>
                   <td class="table-td whitespace-nowrap">
                     <!-- OrderID theo đơn từ import tới hành trình — bấm là sang
@@ -1063,7 +1065,6 @@ async function printLabels() {
                     {{ r.qc_description || '—' }}
                   </td>
                   <td class="table-td hidden text-xs lg:table-cell">{{ r.image_code || '—' }}</td>
-                  <td class="table-td text-xs font-semibold text-foreground">{{ Number(r.sequence) > 0 ? r.sequence : '—' }}</td>
                   <td class="table-td hidden text-xs sm:table-cell">{{ r.quantity === '' ? '—' : r.quantity }}</td>
                   <td class="table-td hidden lg:table-cell">
                     <a v-if="r.design_url" :href="r.design_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
