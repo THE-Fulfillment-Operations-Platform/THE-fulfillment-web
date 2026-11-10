@@ -342,6 +342,7 @@ interface ScanLogEntry {
   handoff_code?: string
   exported?: boolean
   label_only?: boolean
+  already_exported?: boolean
   unfinished?: number
   total?: number
   order_id?: number
@@ -386,13 +387,15 @@ function runScan(value: string, scanOpts: ShipOptions) {
         handoff_code: res?.handoff_code, order_id: res?.order_id,
         exported: res?.exported, unfinished: res?.unfinished_items, total: res?.total_items,
         the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
-        label_only: res?.label_only,
+        label_only: res?.label_only, already_exported: res?.already_exported,
       })
       if (res?.exported) {
         const left = res.unfinished_items ?? 0
         const msg = `Đã xuất kho đơn ${res.internal_code ?? value}`
         if (left > 0) toast.info(`${msg} (vượt chặn QC: còn ${left}/${res.total_items} sản phẩm chưa QC đạt)`)
         else toast.success(msg)
+      } else if (res?.label_only && res?.already_exported) {
+        toast.success(`Đã tạo label THE cho đơn ${res.internal_code ?? value} (đơn đã xuất kho trước đó)`)
       } else if (res?.label_only) {
         toast.success(`Đã tạo label THE cho đơn ${res.internal_code ?? value} — chưa xuất kho, quét ở chế độ Xuất kho khi hàng ra khỏi kho`)
       } else {
@@ -520,7 +523,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
                   >còn {{ entry.unfinished }}/{{ entry.total }} SP chưa QC</span>
                 </template>
                 <template v-else>
-                  — {{ entry.label_only ? 'đã tạo label THE (chưa xuất kho)' : 'đã gửi' }}<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
+                  — {{ entry.label_only ? (entry.already_exported ? 'đã tạo label THE (đơn đã xuất kho)' : 'đã tạo label THE (chưa xuất kho)') : 'đã gửi' }}<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
                   <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
                 </template>
                 <button
