@@ -18,7 +18,7 @@ import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
 import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
 import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
-import { formatDate, formatDateTime } from '~/utils/format'
+import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 import { useAuthStore } from '~/stores/auth'
 import { useRowLink } from '~/composables/useRowLink'
@@ -527,6 +527,7 @@ function exportItems() {
                   </button>
                 </th>
                 <th class="table-th hidden lg:table-cell">NVL</th>
+                <th class="table-th hidden lg:table-cell">Design</th>
                 <th class="table-th hidden lg:table-cell">Mockup</th>
                 <th class="table-th hidden md:table-cell">Batch</th>
                 <th class="table-th hidden lg:table-cell">
@@ -611,6 +612,15 @@ function exportItems() {
                 </td>
                 <td class="table-td tabular-nums">{{ it.quantity }}</td>
                 <td class="table-td hidden lg:table-cell"><div class="max-w-[7rem] whitespace-normal break-words">{{ itemMaterial(it) }}</div></td>
+                <td class="table-td hidden lg:table-cell">
+                  <!-- Link design ngay trên bảng (anh Kiên 13/11): khỏi mở chi tiết đơn. Design có thể là mã tham chiếu, không phải link. -->
+                  <div class="flex items-center gap-1.5">
+                    <a v-if="isValidUrl(it.design_url)" :href="it.design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-primary hover:underline" title="Design mặt trước" aria-label="Design mặt trước"><UiIcon name="link" :size="13" /></a>
+                    <span v-else-if="it.design_url" class="max-w-[6rem] truncate text-xs" :title="it.design_url">{{ it.design_url }}</span>
+                    <span v-else class="inline-flex text-muted-foreground" title="Thiếu design"><UiIcon name="alert" :size="13" /></span>
+                    <a v-if="isValidUrl(it.back_design_url)" :href="it.back_design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 text-xs text-primary hover:underline" title="Design mặt sau" aria-label="Design mặt sau"><UiIcon name="link" :size="13" />Sau</a>
+                  </div>
+                </td>
                 <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small icon-only label="Mockup" /></td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell" :title="formatDateTime(itemCreatedAt(it))">{{ formatDate(itemCreatedAt(it)) }}</td>
