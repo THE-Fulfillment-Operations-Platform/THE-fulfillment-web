@@ -284,8 +284,10 @@ function another() {
               <label class="label" :for="`i-img-${i}`">Mã ảnh</label>
               <input :id="`i-img-${i}`" v-model="it.imageCode" class="input" />
             </div>
+            <!-- Design mặt trước + Mockup bắt buộc (luật import 13/11/2026). Không đặt
+                 `required` HTML: để trống vẫn bấm được, để test đúng lỗi đỏ của Import. -->
             <div class="col-span-2">
-              <label class="label" :for="`i-front-${i}`">Design mặt trước (link)</label>
+              <label class="label" :for="`i-front-${i}`">Design mặt trước (link hoặc mã) <span class="text-rose-600 dark:text-rose-400">*</span></label>
               <input :id="`i-front-${i}`" v-model="it.frontDesign" class="input" placeholder="https://…" />
             </div>
             <div class="col-span-2">
@@ -293,7 +295,7 @@ function another() {
               <input :id="`i-back-${i}`" v-model="it.backDesign" class="input" placeholder="https://…" />
             </div>
             <div class="col-span-2">
-              <label class="label" :for="`i-mock-${i}`">Mockup (link ảnh)</label>
+              <label class="label" :for="`i-mock-${i}`">Mockup (link ảnh) <span class="text-rose-600 dark:text-rose-400">*</span></label>
               <input :id="`i-mock-${i}`" v-model="it.mockup" class="input" placeholder="https://…" />
             </div>
             <div class="col-span-2">

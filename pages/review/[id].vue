@@ -262,11 +262,11 @@ const shippingRows = computed<[string, string][]>(() => {
                     <textarea v-model="form.qc_description" rows="2" class="input" placeholder="Mô tả để QC đối chiếu…" />
                   </div>
                   <div>
-                    <label class="label">Link ảnh / Design</label>
+                    <label class="label">Link ảnh / Design <span class="text-rose-600 dark:text-rose-400">*</span></label>
                     <input v-model="form.design_url" class="input" placeholder="https://…" />
                   </div>
                   <div>
-                    <label class="label">Mockup</label>
+                    <label class="label">Mockup <span class="text-rose-600 dark:text-rose-400">*</span></label>
                     <input v-model="form.mockup_url" class="input" placeholder="https://…" />
                   </div>
                   <div>

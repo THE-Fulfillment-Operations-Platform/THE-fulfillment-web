@@ -219,8 +219,10 @@ const canCommit = computed(
           <p class="mb-1 text-xs font-medium text-muted-foreground">Các cột cần có</p>
           <p class="text-[11px] leading-relaxed text-muted-foreground">{{ IMPORT_COLUMNS.join(', ') }}</p>
           <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            <b class="text-foreground">Front Design</b>: link design mặt trước — bắt buộc nếu sản phẩm có in.
-            <b class="text-foreground">Back Design</b>: link design mặt sau — chỉ điền khi sản phẩm in 2 mặt; để trống nếu chỉ in 1 mặt.
+            <b class="text-foreground">DESIGN ORDER</b>: link (hoặc mã) design mặt trước — <b class="text-foreground">bắt buộc</b> mọi dòng.
+            <b class="text-foreground">Mockup</b>: link ảnh mockup http(s) để xưởng đối chiếu khi QC — <b class="text-foreground">bắt buộc</b> mọi dòng.
+            Thiếu một trong hai thì dòng đó báo lỗi, không lên đơn được.
+            <b class="text-foreground">designBack</b>: link design mặt sau — chỉ điền khi sản phẩm in 2 mặt; để trống nếu chỉ in 1 mặt.
           </p>
         </div>
       </div>

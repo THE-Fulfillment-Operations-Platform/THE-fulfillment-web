@@ -170,6 +170,17 @@ async function submitEdit() {
     toast.error('Số lượng mỗi sản phẩm phải lớn hơn hoặc bằng 1.')
     return
   }
+  // Link design (mặt trước) + mockup bắt buộc: không được xoá trắng (BE cũng chặn).
+  // Sản phẩm cũ vốn đã trống thì để nguyên vẫn lưu được các ô khác.
+  const before = new Map(items.value.map((it) => [it.id, it]))
+  const wiped = editItems.value.find((it) => {
+    const was = before.get(it.id)
+    return (!!was?.design_url?.trim() && !it.design_url.trim()) || (!!was?.mockup_url?.trim() && !it.mockup_url.trim())
+  })
+  if (wiped) {
+    toast.error('Không được xoá trắng link design / mockup — muốn đổi thì dán link mới vào.')
+    return
+  }
   savingEdit.value = true
   try {
     const body: UpdateOrderInput = {
@@ -794,7 +805,7 @@ async function syncTracking() {
                       <input v-model.number="it.quantity" type="number" min="1" class="input" />
                     </div>
                     <div>
-                      <label class="label">Design (mặt trước)</label>
+                      <label class="label">Design (mặt trước) <span class="text-rose-600 dark:text-rose-400">*</span></label>
                       <input v-model="it.design_url" class="input" placeholder="https://…" />
                     </div>
                     <div>
@@ -802,7 +813,7 @@ async function syncTracking() {
                       <input v-model="it.back_design_url" class="input" placeholder="https://…" />
                     </div>
                     <div class="sm:col-span-2">
-                      <label class="label">Link mockup</label>
+                      <label class="label">Link mockup <span class="text-rose-600 dark:text-rose-400">*</span></label>
                       <input v-model="it.mockup_url" class="input" placeholder="https://…" />
                     </div>
                     <div class="sm:col-span-2">

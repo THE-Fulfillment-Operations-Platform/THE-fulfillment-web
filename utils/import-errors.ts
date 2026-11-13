@@ -42,6 +42,23 @@ const IMPORT_ERROR_VI: Record<string, ImportErrorVi> = {
     detail: 'Thiếu tên người nhận, Địa chỉ nhận hoặc Quốc Gia.',
     suggestion: 'Bổ sung đủ 3 cột: name, Địa chỉ nhận, Quốc Gia.',
   },
+  // Link design (mặt trước) + mockup bắt buộc từ 13/11/2026: không còn màn "Chờ
+  // thiết kế" để bắt dòng thiếu file, nên dòng thiếu link là lỗi đỏ, không commit.
+  DESIGN_MISSING: {
+    label: 'Thiếu link design',
+    detail: 'Dòng này chưa có link (hoặc mã) design mặt trước — xưởng không có file để in.',
+    suggestion: 'Seller gửi lại link design rồi import lại.',
+  },
+  MOCKUP_MISSING: {
+    label: 'Thiếu link mockup',
+    detail: 'Dòng này chưa có link mockup — QC không có ảnh để đối chiếu.',
+    suggestion: 'Seller gửi lại link mockup rồi import lại.',
+  },
+  DESIGN_MOCKUP_MISSING: {
+    label: 'Thiếu link design và mockup',
+    detail: 'Dòng này chưa có cả link design mặt trước lẫn link mockup.',
+    suggestion: 'Seller gửi lại link design + mockup rồi import lại.',
+  },
   MOCKUP_INVALID: {
     label: 'Link mockup không hợp lệ',
     detail: 'Link mockup không phải một địa chỉ http(s) hợp lệ.',
@@ -50,7 +67,7 @@ const IMPORT_ERROR_VI: Record<string, ImportErrorVi> = {
   DESIGN_INVALID: {
     label: 'Link design không hợp lệ',
     detail: 'Link design không phải một địa chỉ http(s) hợp lệ.',
-    suggestion: 'Sửa lại link design, hoặc để trống nếu chưa có.',
+    suggestion: 'Seller gửi lại link design đúng định dạng http(s), hoặc ghi mã design.',
   },
   ADDR_ZIP_STATE_SWAPPED: {
     label: 'ZIP và Bang có vẻ bị đảo cột',

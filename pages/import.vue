@@ -165,9 +165,9 @@ async function commitSingle(p: ImportPreview) {
     committed.value = true
     p.status = 'COMMITTED'
     toast.success(`Đã tạo ${data.created_count ?? 0} đơn`)
-    // Đơn vừa import vào thẳng hàng "Chờ duyệt", và item thiếu mockup còn sinh
-    // note "cần xử lý" — hai badge cùng TĂNG. Người vừa import cần thấy ngay số
-    // việc mình vừa tạo ra.
+    // Đơn vừa import vào thẳng hàng "Chờ duyệt" — badge TĂNG. Người vừa import
+    // cần thấy ngay số việc mình vừa tạo ra. (Dòng thiếu link design/mockup không
+    // còn lọt vào nữa: preview đã báo lỗi đỏ và không commit.)
     void refreshActionCounts()
   } catch (e) {
     toast.error(errorMessage(e))
@@ -365,8 +365,10 @@ function masterDataLink(code?: string) {
           <p class="mb-1 text-xs font-medium text-muted-foreground">Cột dữ liệu cần có</p>
           <p class="text-[11px] leading-relaxed text-muted-foreground">{{ IMPORT_COLUMNS.join(', ') }}</p>
           <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            <b class="text-foreground">Front Design</b>: link design mặt trước — bắt buộc nếu sản phẩm có in.
-            <b class="text-foreground">Back Design</b>: link design mặt sau — chỉ điền khi sản phẩm in 2 mặt; để trống nếu chỉ in 1 mặt.
+            <b class="text-foreground">DESIGN ORDER</b>: link (hoặc mã) design mặt trước — <b class="text-foreground">bắt buộc</b> mọi dòng.
+            <b class="text-foreground">Mockup</b>: link ảnh mockup http(s) để QC đối chiếu — <b class="text-foreground">bắt buộc</b> mọi dòng.
+            Thiếu một trong hai là lỗi đỏ, dòng đó không được commit.
+            <b class="text-foreground">designBack</b>: link design mặt sau — chỉ điền khi sản phẩm in 2 mặt; để trống nếu chỉ in 1 mặt.
           </p>
         </div>
       </div>
