@@ -19,6 +19,11 @@ export interface NavItem {
    * đăng nhập cũ chưa có danh sách quyền (trước khi /me làm mới xong).
    */
   roles: Role[]
+  /**
+   * Mục chat nội bộ: chỉ hiện khi API bật chat cho người này (GET /api/chat/config),
+   * và không bao giờ là trang chủ sau đăng nhập.
+   */
+  chat?: boolean
 }
 
 const ALL_INTERNAL: Role[] = [
@@ -36,6 +41,9 @@ const ALL_INTERNAL: Role[] = [
 // Sidebar for internal staff. Order follows the operational flow.
 export const INTERNAL_NAV: NavItem[] = [
   { label: 'Tổng quan', to: '/dashboard', feature: 'dashboard', icon: 'dashboard', roles: ALL_INTERNAL },
+  // Chat nội bộ: mọi tài khoản nội bộ (kể cả CS) nhắn được cho nhau — không phải
+  // một màn có tick quyền.
+  { label: 'Tin nhắn', to: '/chat', icon: 'chat', roles: [...ALL_INTERNAL, 'CS'], chat: true },
   // Tra cứu CS: ô tìm kiếm một dòng để CS tìm đơn theo mã đơn/tên khách rồi gắn
   // mã vận đơn. Ops/Admin cũng dùng được — cùng một việc, cùng một màn.
   { label: 'Tra cứu CS', to: '/cs', feature: 'cs', icon: 'search', roles: ['OWNER', 'ADMIN', 'TECHNICIAN', 'OPS', 'CS'] },
@@ -81,6 +89,7 @@ export const INTERNAL_NAV: NavItem[] = [
 export const SELLER_NAV: NavItem[] = [
   { label: 'Đơn của tôi', to: '/seller', icon: 'orders', roles: ['SELLER'] },
   { label: 'Tải đơn lên', to: '/seller/import', icon: 'upload', roles: ['SELLER'] },
+  { label: 'Tin nhắn', to: '/seller/chat', icon: 'chat', roles: ['SELLER'], chat: true },
 ]
 
 /**
@@ -126,7 +135,7 @@ export function navForUser(user: User | null | undefined): NavItem[] {
 
 /** Màn đầu tiên người này mở được (trang chủ sau đăng nhập), hoặc null. */
 export function firstAccessiblePath(user: User | null | undefined): string | null {
-  return navForUser(user)[0]?.to ?? null
+  return navForUser(user).filter((i) => !i.chat)[0]?.to ?? null
 }
 
 export function canAccessPath(user: User | null | undefined, path: string): boolean {

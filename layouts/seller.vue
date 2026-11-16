@@ -2,20 +2,27 @@
 import { useAuthStore } from '~/stores/auth'
 import { SELLER_NAV } from '~/utils/navigation'
 import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
+import { useChatStore } from '~/stores/chat'
 const apiDocsUrl = useApiDocsUrl()
 const auth = useAuthStore()
 const route = useRoute()
+const chat = useChatStore()
+// "Tin nhắn" chỉ hiện khi API mở chat cho seller (CHAT_ALLOW_SELLER).
+const nav = computed(() => SELLER_NAV.filter((i) => !i.chat || chat.enabled))
 
 function isActive(to: string) {
   if (to === '/seller') {
-    return route.path === '/seller' || (route.path.startsWith('/seller/') && !route.path.startsWith('/seller/import'))
+    return (
+      route.path === '/seller' ||
+      (route.path.startsWith('/seller/') && !route.path.startsWith('/seller/import') && !route.path.startsWith('/seller/chat'))
+    )
   }
   return route.path === to || route.path.startsWith(to + '/')
 }
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-background">
+  <div class="flex flex-col bg-background" :class="route.meta.fullBleed ? 'h-screen overflow-hidden supports-[height:100dvh]:h-[100dvh]' : 'min-h-screen'">
     <header class="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 sm:px-4 lg:px-6">
       <div class="flex min-w-0 items-center gap-2.5 sm:gap-4">
         <div class="flex min-w-0 items-center gap-2.5">
@@ -24,14 +31,19 @@ function isActive(to: string) {
         </div>
         <nav class="flex items-center gap-1">
           <NuxtLink
-            v-for="item in SELLER_NAV"
+            v-for="item in nav"
             :key="item.to"
             :to="item.to"
-            class="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors"
+            class="relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors"
             :class="isActive(item.to) ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
           >
             <UiIcon :name="item.icon" :size="16" />
             <span class="hidden sm:inline">{{ item.label }}</span>
+            <span
+              v-if="item.chat && chat.totalUnread > 0"
+              class="inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-rose-500 px-1 py-0.5 text-[10px] font-semibold leading-none text-white"
+              :title="`${chat.totalUnread} tin chưa đọc`"
+            >{{ chat.totalUnread > 99 ? '99+' : chat.totalUnread }}</span>
           </NuxtLink>
           <!-- Seller có hệ thống riêng thì đội kỹ thuật của họ cần trang này. -->
           <a
@@ -55,7 +67,12 @@ function isActive(to: string) {
         </button>
       </div>
     </header>
-    <main class="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
+    <!-- Trang chat (definePageMeta fullBleed: true) chiếm trọn phần còn lại của
+         màn hình, tự cuộn bên trong — không padding, không giới hạn bề ngang. -->
+    <main v-if="route.meta.fullBleed" class="min-h-0 flex-1 overflow-hidden">
+      <slot />
+    </main>
+    <main v-else class="flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6" :class="chat.enabled ? 'pb-24 sm:pb-24 lg:pb-24' : ''">
       <!-- Trang có bảng nhiều cột (definePageMeta wide: true) được nới khung;
            các trang còn lại giữ 5xl cho dễ đọc. -->
       <div class="mx-auto w-full" :class="route.meta.wide ? 'max-w-screen-2xl' : 'max-w-5xl'">

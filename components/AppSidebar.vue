@@ -4,12 +4,17 @@ import { navForUser } from '~/utils/navigation'
 import { ROLE_LABEL } from '~/utils/enums'
 import { useActionCounts } from '~/composables/useActionCounts'
 import { useApiDocsUrl } from '~/composables/useApiDocsUrl'
+import { useChatStore } from '~/stores/chat'
 
 defineEmits<{ (e: 'navigate'): void; (e: 'close'): void }>()
 
 const auth = useAuthStore()
-const items = computed(() => navForUser(auth.user))
-const { countForPath } = useActionCounts()
+const chat = useChatStore()
+// Mục "Tin nhắn" chỉ hiện khi API mở chat cho tài khoản này (CHAT_ROLES).
+const items = computed(() => navForUser(auth.user).filter((i) => !i.chat || chat.enabled))
+const { countForPath: actionCount } = useActionCounts()
+// Badge "Tin nhắn" = tổng tin chưa đọc.
+const countForPath = (to: string) => (to === '/chat' ? chat.totalUnread : actionCount(to))
 const apiDocsUrl = useApiDocsUrl()
 </script>
 
@@ -45,7 +50,7 @@ const apiDocsUrl = useApiDocsUrl()
         <span
           v-if="countForPath(item.to) > 0"
           class="ml-auto inline-flex min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white"
-          :title="`${countForPath(item.to)} mục cần xử lý`"
+          :title="item.chat ? `${countForPath(item.to)} tin chưa đọc` : `${countForPath(item.to)} mục cần xử lý`"
         >
           {{ countForPath(item.to) > 99 ? '99+' : countForPath(item.to) }}
         </span>

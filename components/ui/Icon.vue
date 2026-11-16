@@ -37,6 +37,11 @@ const PATHS: Record<string, string> = {
   trash: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
   scissors: 'M8.5 8.5L20 20M8.5 15.5L20 4M4 6a2.5 2.5 0 105 0 2.5 2.5 0 00-5 0zm0 12a2.5 2.5 0 105 0 2.5 2.5 0 00-5 0z',
   print: 'M7 8V4h10v4M7 17H5a2 2 0 01-2-2v-5a2 2 0 012-2h14a2 2 0 012 2v5a2 2 0 01-2 2h-2M7 14h10v6H7z',
+  // --- chat nội bộ ---
+  chat: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z',
+  send: 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
+  'arrow-left': 'M10 19l-7-7m0 0l7-7m-7 7h18',
+  expand: 'M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4',
 }
 
 const d = computed(() => PATHS[props.name] ?? PATHS.box)
