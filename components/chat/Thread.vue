@@ -3,11 +3,12 @@ import { useChatStore } from '~/stores/chat'
 import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
 import { ROLE_LABEL } from '~/utils/enums'
-import type { ChatMessage } from '~/types/chat'
-import { clockTime, dayLabel, sameDay } from '~/utils/chat'
+import type { ChatAttachment, ChatMember, ChatMessage } from '~/types/chat'
+import { convTitle, dayLabel, presenceLabel, sameDay } from '~/utils/chat'
 
 // Khung nhắn của một cuộc: luồng tin + ô soạn. Dùng ở trang đầy đủ (có đầu khung)
-// và trong ô chat nhỏ (ô chat tự vẽ đầu khung của nó: header=false).
+// và trong ô chat nhỏ (ô chat tự vẽ đầu khung của nó: header=false). Kéo thả
+// file vào khung để gửi; bấm ảnh / PDF để xem ngay; "đã xem" dưới tin.
 const props = withDefaults(defineProps<{ convId: number; header?: boolean }>(), { header: true })
 const emit = defineEmits<{ (e: 'back'): void }>()
 
@@ -15,30 +16,83 @@ const chat = useChatStore()
 const toast = useToastStore()
 
 const conv = computed(() => chat.byId(props.convId))
+const isGroup = computed(() => conv.value?.kind === 'group')
 const messages = computed<ChatMessage[]>(() => chat.messages[props.convId] || [])
 const scroller = ref<HTMLElement | null>(null)
-const ta = ref<HTMLTextAreaElement | null>(null)
-const text = ref('')
+const composer = ref<{ addFiles: (f: FileList | File[]) => void; focus: () => void } | null>(null)
 const loadingOlder = ref(false)
 const atBottom = ref(true)
 const newBelow = ref(0)
+const replyTo = ref<ChatMessage | null>(null)
+const editing = ref<ChatMessage | null>(null)
+const media = ref<{ items: ChatAttachment[]; index: number } | null>(null)
+const infoOpen = ref(false)
+const dragging = ref(false)
+const flash = ref<number | null>(null)
+/** Đã tải xong lượt đầu (trước đó hiện vòng xoay, không hiện "Chưa có tin nhắn"). */
+const loaded = ref(!!chat.messages[props.convId])
 
+const subtitle = computed(() => {
+  const c = conv.value
+  if (!c) return ''
+  if (c.kind === 'group') {
+    const on = c.members.filter((m) => m.id !== chat.me && chat.online[m.id]).length
+    return `${c.members.length} thành viên${on ? ` · ${on} đang hoạt động` : ''}`
+  }
+  const p = c.peer
+  if (!p) return ''
+  const pres = presenceLabel(!!chat.online[p.id], chat.lastSeen[p.id], chat.tick)
+  return [ROLE_LABEL[p.role] || p.role, pres].filter(Boolean).join(' · ')
+})
+const typingText = computed(() => {
+  const names = chat.typingNames(props.convId)
+  if (!names.length) return ''
+  if (!isGroup.value) return 'Đang soạn tin…'
+  const short = names.map((n) => n.split(' ').slice(-1)[0])
+  return `${short.slice(0, 3).join(', ')}${short.length > 3 ? '…' : ''} đang soạn tin…`
+})
+
+function gap(a: ChatMessage, b: ChatMessage) {
+  return a.sender_id !== b.sender_id || a.kind === 'system' || b.kind === 'system' || !sameDay(a.created_at, b.created_at) ||
+    Math.abs(Date.parse(b.created_at) - Date.parse(a.created_at)) > 5 * 60_000
+}
 function isFirst(i: number) {
-  const m = messages.value[i]
   const p = messages.value[i - 1]
-  return !p || p.sender_id !== m.sender_id || !sameDay(p.created_at, m.created_at) ||
-    Date.parse(m.created_at) - Date.parse(p.created_at) > 5 * 60_000
+  return !p || gap(p, messages.value[i])
 }
 function isLast(i: number) {
-  const m = messages.value[i]
   const n = messages.value[i + 1]
-  return !n || n.sender_id !== m.sender_id || !sameDay(n.created_at, m.created_at) ||
-    Date.parse(n.created_at) - Date.parse(m.created_at) > 5 * 60_000
+  return !n || gap(messages.value[i], n)
 }
 function showDay(i: number) {
   const p = messages.value[i - 1]
   return !p || !sameDay(p.created_at, messages.value[i].created_at)
 }
+
+// Đã xem: mỗi thành viên (trừ mình) hiện ở dưới tin mới nhất họ đã xem.
+const readers = computed<Record<number, ChatMember[]>>(() => {
+  const c = conv.value
+  const list = messages.value.filter((m) => m.id > 0)
+  const out: Record<number, ChatMember[]> = {}
+  if (!c || !list.length) return out
+  for (const mb of c.members) {
+    if (mb.id === chat.me || !mb.last_read_message_id) continue
+    let target: ChatMessage | undefined
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].id <= mb.last_read_message_id) {
+        target = list[i]
+        break
+      }
+    }
+    if (!target || target.sender_id === mb.id) continue
+    ;(out[target.id] ||= []).push(mb)
+  }
+  return out
+})
+const tailId = computed(() => {
+  const list = messages.value
+  return list.length ? list[list.length - 1].id : 0
+})
 
 // ---------------- cuộn ----------------
 function scrollToBottom(smooth = false) {
@@ -69,67 +123,136 @@ async function onScroll() {
   }
 }
 
+// Theo tin CUỐI (không theo độ dài): tải tin cũ ở đầu luồng không bị tính là "tin mới".
 watch(
-  () => messages.value.length,
-  async (n, old) => {
-    if (!old) return
-    const last = messages.value[n - 1]
+  () => tailId.value,
+  async (id, old) => {
+    if (!old || id === old) return
+    const list = messages.value
+    const last = list[list.length - 1]
     await nextTick()
     if (atBottom.value || last?.sender_id === chat.me) scrollToBottom(true)
-    else if (n > old) newBelow.value += n - old
+    else newBelow.value += 1
+  },
+)
+// "Đang soạn…" hiện ở cuối: đang ở đáy thì giữ đáy.
+watch(typingText, async () => {
+  if (!atBottom.value) return
+  await nextTick()
+  scrollToBottom(true)
+})
+
+async function scrollToMessage(id: number) {
+  await nextTick()
+  const el = scroller.value?.querySelector(`[data-chat-msg="${id}"]`) as HTMLElement | null
+  if (!el) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  flash.value = id
+  setTimeout(() => {
+    if (flash.value === id) flash.value = null
+  }, 2200)
+}
+async function jump(id: number) {
+  try {
+    if (!(await chat.jumpTo(props.convId, id))) {
+      toast.error('Không tìm thấy tin đó nữa (có thể đã quá cũ hoặc bị thu hồi)')
+      return
+    }
+  } catch (e) {
+    toast.error(errorMessage(e))
+    return
+  }
+  await scrollToMessage(id)
+}
+// Kết quả tìm kiếm trỏ vào cuộc đang mở sẵn.
+watch(
+  () => chat.highlight,
+  (h) => {
+    if (!h || h.convId !== props.convId || chat.activeId !== props.convId) return
+    chat.highlight = null
+    void jump(h.id)
   },
 )
 
 async function open() {
   newBelow.value = 0
   atBottom.value = true
+  replyTo.value = null
+  editing.value = null
   try {
     await chat.openConversation(props.convId)
   } catch (e) {
     toast.error(errorMessage(e))
+  } finally {
+    loaded.value = true
   }
   await nextTick()
-  scrollToBottom()
-  ta.value?.focus()
+  const h = chat.highlight
+  if (h && h.convId === props.convId) {
+    chat.highlight = null
+    scrollToBottom()
+    await jump(h.id)
+  } else {
+    scrollToBottom()
+  }
+  composer.value?.focus()
 }
 watch(() => props.convId, open)
 onMounted(open)
 onBeforeUnmount(() => {
   if (chat.activeId === props.convId) chat.activeId = null
 })
+// Mình bị mời ra / rời nhóm ở tab khác: cuộc biến mất → quay về danh sách.
+watch(conv, (c, prev) => {
+  if (!c && prev) emit('back')
+})
 
-// ---------------- soạn & gửi ----------------
-function autosize() {
-  const el = ta.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 140)}px`
+// ---------------- kéo thả file ----------------
+let dragDepth = 0
+function hasFiles(e: DragEvent) {
+  return !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')
+}
+function onDragEnter(e: DragEvent) {
+  if (!hasFiles(e) || !chat.filesEnabled) return
+  dragDepth++
+  dragging.value = true
+}
+function onDragLeave() {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dragging.value = false
+}
+function onDrop(e: DragEvent) {
+  dragDepth = 0
+  dragging.value = false
+  if (e.dataTransfer?.files?.length) composer.value?.addFiles(e.dataTransfer.files)
 }
 
-async function send() {
-  const body = text.value.trim()
-  if (!body) return
-  text.value = ''
-  nextTick(autosize)
+function startReply(m: ChatMessage) {
+  editing.value = null
+  replyTo.value = m
+}
+function startEdit(m: ChatMessage) {
+  replyTo.value = null
+  editing.value = m
+}
+async function togglePin() {
   try {
-    await chat.send(props.convId, body)
+    await chat.togglePin(props.convId)
   } catch (e) {
     toast.error(errorMessage(e))
   }
 }
-
-function onKeydown(e: KeyboardEvent) {
-  // Enter gửi, Shift+Enter xuống dòng. Đang gõ bộ gõ tiếng Việt (IME) thì Enter
-  // là chốt chữ, không phải gửi.
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    e.preventDefault()
-    void send()
-  }
-}
+defineExpose({ openInfo: () => (infoOpen.value = true) })
 </script>
 
 <template>
-  <section class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-card">
+  <section
+    class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-card"
+    @dragenter.prevent="onDragEnter"
+    @dragover.prevent
+    @dragleave="onDragLeave"
+    @drop.prevent="onDrop"
+  >
     <header v-if="header && conv" class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-2 sm:px-3">
       <button
         class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted md:hidden"
@@ -138,84 +261,115 @@ function onKeydown(e: KeyboardEvent) {
       >
         <UiIcon name="arrow-left" :size="20" />
       </button>
-      <ChatAvatar :id="conv.peer.id" :name="conv.peer.full_name" :size="38" />
-      <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-semibold text-foreground" data-chat-title>{{ conv.peer.full_name }}</p>
-        <p class="truncate text-xs text-muted-foreground">
-          {{ ROLE_LABEL[conv.peer.role] || conv.peer.role }}<template v-if="conv.peer.seller_name"> · {{ conv.peer.seller_name }}</template>
+      <ChatAvatar
+        :id="conv.peer?.id || conv.id"
+        :name="convTitle(conv)"
+        :size="38"
+        :group="isGroup"
+        :online="!isGroup && !!conv.peer && !!chat.online[conv.peer.id]"
+      />
+      <button type="button" class="min-w-0 flex-1 text-left" :disabled="!isGroup" @click="infoOpen = true">
+        <p class="truncate text-sm font-semibold text-foreground" data-chat-title>{{ convTitle(conv) }}</p>
+        <p class="truncate text-xs" :class="typingText ? 'italic text-primary' : 'text-muted-foreground'" data-chat-subtitle>
+          {{ typingText || subtitle }}
         </p>
-      </div>
+      </button>
       <span
         v-if="chat.wsState !== 'open'"
-        class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+        class="hidden rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 sm:inline"
         title="Mất kết nối thời gian thực — đang tự nối lại, tin vẫn được tải bù"
       >
         Đang nối lại…
       </span>
+      <button
+        type="button"
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+        :class="conv.pinned_at ? 'text-primary' : 'text-muted-foreground'"
+        :title="conv.pinned_at ? 'Bỏ ghim' : 'Ghim lên đầu danh sách'"
+        data-chat-thread-pin
+        @click="togglePin"
+      >
+        <UiIcon name="pin" :size="17" />
+      </button>
+      <button
+        v-if="isGroup"
+        type="button"
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+        title="Thành viên, đổi tên, rời nhóm"
+        data-chat-group-info-open
+        @click="infoOpen = true"
+      >
+        <UiIcon name="info" :size="18" />
+      </button>
     </header>
 
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2" data-chat-scroller @scroll.passive="onScroll">
       <div v-if="loadingOlder" class="flex justify-center py-2"><UiSpinner :size="18" /></div>
-      <p v-if="!messages.length" class="px-6 py-12 text-center text-sm text-muted-foreground">
+      <div v-if="!loaded && !messages.length" class="flex justify-center py-12"><UiSpinner :size="22" /></div>
+      <p v-else-if="!messages.length" class="px-6 py-12 text-center text-sm text-muted-foreground">
         Chưa có tin nhắn. Gửi lời chào đầu tiên 👋
       </p>
-      <template v-for="(m, i) in messages" :key="m.id">
-        <div v-if="showDay(i)" class="my-3 text-center text-xs font-medium text-muted-foreground">{{ dayLabel(m.created_at) }}</div>
-        <div
-          class="flex flex-col"
-          :class="[m.sender_id === chat.me ? 'items-end' : 'items-start', isFirst(i) ? 'mt-2' : 'mt-0.5']"
-          :data-chat-msg="m.id"
-        >
-          <div
-            class="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm leading-relaxed sm:max-w-[75%]"
-            :class="[
-              m.sender_id === chat.me ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
-              m.pending === 'sending' ? 'opacity-60' : '',
-            ]"
-            data-chat-body
-          >{{ m.body }}</div>
-          <div v-if="m.pending || isLast(i)" class="mt-0.5 px-1 text-[11px] text-muted-foreground">
-            <span v-if="m.pending === 'sending'">Đang gửi…</span>
-            <span v-else-if="m.pending === 'failed'" class="text-destructive">
-              Gửi lỗi · <button class="underline" @click="chat.retry(m)">Thử lại</button> ·
-              <button class="underline" @click="chat.discard(m)">Bỏ</button>
-            </span>
-            <span v-else>{{ clockTime(m.created_at) }}</span>
-          </div>
-        </div>
+      <template v-if="conv">
+        <template v-for="(m, i) in messages" :key="m.id">
+          <div v-if="showDay(i)" class="my-3 text-center text-xs font-medium text-muted-foreground">{{ dayLabel(m.created_at) }}</div>
+          <ChatBubble
+            :m="m"
+            :conv="conv"
+            :first="isFirst(i)"
+            :last="isLast(i)"
+            :readers="readers[m.id] || []"
+            :is-tail="m.id === tailId"
+            :highlight="flash === m.id"
+            @reply="startReply"
+            @edit="startEdit"
+            @media="(items, index) => (media = { items, index })"
+            @jump="jump"
+          />
+        </template>
       </template>
+      <div v-if="typingText" class="mt-2 flex items-center gap-2 px-1 text-xs italic text-muted-foreground" data-chat-typing>
+        <span class="inline-flex gap-0.5 rounded-2xl bg-muted px-3 py-2">
+          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
+          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
+          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+        </span>
+        {{ typingText }}
+      </div>
     </div>
 
     <button
       v-if="newBelow > 0"
-      class="absolute bottom-20 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-soft"
+      class="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-soft"
       @click="scrollToBottom(true)"
     >
       {{ newBelow }} tin mới ↓
     </button>
 
-    <div class="flex shrink-0 items-end gap-1.5 border-t border-border px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
-      <textarea
-        ref="ta"
-        v-model="text"
-        rows="1"
-        maxlength="4000"
-        class="max-h-36 min-h-[2.5rem] flex-1 resize-none rounded-2xl border border-input bg-muted/50 px-3.5 py-2 text-base text-foreground placeholder-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 sm:text-sm"
-        placeholder="Nhắn tin…"
-        data-chat-input
-        @input="autosize"
-        @keydown="onKeydown"
-      />
-      <button
-        type="button"
-        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted disabled:opacity-40"
-        :disabled="!text.trim()"
-        title="Gửi (Enter)"
-        data-chat-send
-        @click="send"
-      >
-        <UiIcon name="send" :size="20" class="rotate-90" />
-      </button>
+    <ChatComposer
+      ref="composer"
+      :conv-id="convId"
+      :reply-to="replyTo"
+      :editing="editing"
+      @cancel-reply="replyTo = null"
+      @cancel-edit="editing = null"
+      @sent="scrollToBottom(true)"
+    />
+
+    <!-- Kéo thả file -->
+    <div
+      v-if="dragging"
+      class="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 text-sm font-semibold text-primary"
+      data-chat-dropzone
+    >
+      Thả ảnh / file vào đây để gửi (tối đa 20 MB mỗi file)
     </div>
+
+    <ChatLightbox v-if="media" :items="media.items" :index="media.index" @close="media = null" />
+
+    <UiModal :model-value="infoOpen && isGroup" title="Thông tin nhóm" @update:model-value="infoOpen = $event">
+      <div class="flex h-[65vh] flex-col">
+        <ChatGroupInfo v-if="infoOpen" :conv-id="convId" @close="infoOpen = false" @left="infoOpen = false; emit('back')" />
+      </div>
+    </UiModal>
   </section>
 </template>

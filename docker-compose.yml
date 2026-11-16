@@ -71,6 +71,15 @@ services:
       # Mất volume không hỏng gì — chỉ là khay QC đầu tiên sau deploy phải dựng
       # lại ảnh, rồi tự ấm lại.
       - thumb_cache:/app/data
+      # File gửi trong chat nội bộ (ảnh, PDF, tài liệu) khi KHÔNG dùng Supabase
+      # Storage (CHAT_FILES_DIR mặc định ./data/chat = /app/data/chat). Volume
+      # RIÊNG, khác cache ở trên: đây là dữ liệu thật, mất là mất file đã gửi.
+      # Mỗi file ≤ 20 MB; backend ngừng nhận file khi ổ còn < 1 GB trống.
+      # Sao lưu (chạy trên VPS, ra file nén ở thư mục hiện tại):
+      #   docker run --rm -v the-fulfillment-web_chat_files:/v:ro -v "$PWD":/b alpine \
+      #     tar czf /b/chat-files-$(date +%F).tgz -C /v .
+      # (tên volume thật: `docker volume ls | grep chat_files`)
+      - chat_files:/app/data/chat
     expose:
       - "8080"                         # chỉ nội bộ network — KHÔNG publish ra host
     networks:
@@ -124,5 +133,6 @@ networks:
 # ----------------------------------------------------------------------- volumes
 volumes:
   thumb_cache:                   # cache thumbnail mockup của trạm QC
+  chat_files:                    # file gửi trong chat nội bộ (dữ liệu thật — sao lưu được, xem trên)
   caddy_data:                          # KHÔNG có volume postgres — DB ở Supabase
   caddy_config:
