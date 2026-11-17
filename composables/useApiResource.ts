@@ -16,18 +16,25 @@ export function useApiResource<T>(
   const loading = ref(false)
   const error = ref<string | null>(null)
 
+  // Lần gọi mới nhất thắng: ô tự tìm (vd. SKU ở màn Đơn hàng) bắn nhiều lần liền
+  // nhau, câu trả lời của lần cũ về sau thì không được đè lên kết quả mới.
+  let seq = 0
+
   async function load() {
+    const mine = ++seq
     loading.value = true
     error.value = null
     try {
       const res = await loader()
+      if (mine !== seq) return
       data.value = res.data
       meta.value = res.meta ?? null
     } catch (e) {
+      if (mine !== seq) return
       error.value = errorMessage(e)
       data.value = null
     } finally {
-      loading.value = false
+      if (mine === seq) loading.value = false
     }
   }
 

@@ -88,7 +88,7 @@ function filterParams() {
   return {
     seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
     store_order_id: filters.store_order_id || undefined,
-    sku: filters.sku || undefined,
+    sku: filters.sku.trim() || undefined,
     internal_code: filters.internal_code || undefined,
     status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
@@ -109,7 +109,7 @@ const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
     // opt-in, mặc định không trả (một round trip nữa tới DB ở đầu kia internet).
     with_seller: true,
     store_order_id: filters.store_order_id || undefined,
-    sku: filters.sku || undefined,
+    sku: filters.sku.trim() || undefined,
     internal_code: filters.internal_code || undefined,
     status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
     handed_over: filters.status === HANDED_OVER || undefined,
@@ -215,7 +215,40 @@ const warrantyOptions = [
   { value: 'root', label: 'Đơn đã từng bảo hành' },
 ]
 
+// Ô SKU tự tìm (anh Kiên 17/11: "chỉ cần gõ 2-3 ký tự là tự tìm"): từ 2 ký tự trở
+// lên thì ngừng gõ 350 ms là lọc; xoá trắng ô là về danh sách không lọc SKU. Một ký
+// tự thì chưa tìm (gần như SKU nào cũng chứa). API so khớp "có chứa", không phân
+// biệt hoa thường. Enter và nút Lọc vẫn lọc ngay, không chờ.
+const SKU_MIN_CHARS = 2
+const SKU_DEBOUNCE_MS = 350
+let skuTimer: ReturnType<typeof setTimeout> | null = null
+// SKU của lần lọc gần nhất: gõ lại đúng chuỗi đó (hoặc Xóa bộ lọc đặt ô về rỗng ngay
+// sau khi đã lọc) thì không gửi thêm một lần y hệt.
+let appliedSku = filters.sku.trim()
+function cancelSkuSearch() {
+  if (skuTimer) {
+    clearTimeout(skuTimer)
+    skuTimer = null
+  }
+}
+watch(
+  () => filters.sku,
+  (value) => {
+    cancelSkuSearch()
+    const term = value.trim()
+    if (term === appliedSku) return
+    if (term !== '' && term.length < SKU_MIN_CHARS) return
+    skuTimer = setTimeout(() => {
+      skuTimer = null
+      applyFilters()
+    }, SKU_DEBOUNCE_MS)
+  },
+)
+onBeforeUnmount(cancelSkuSearch)
+
 function applyFilters() {
+  cancelSkuSearch()
+  appliedSku = filters.sku.trim()
   filters.page = 1
   clear()
   reload()
