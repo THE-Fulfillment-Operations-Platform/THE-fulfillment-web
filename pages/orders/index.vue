@@ -16,6 +16,7 @@ import {
 } from '~/utils/enums'
 import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
 import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
+import { PRODUCTION_FILES_READY } from '~/utils/batch'
 import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
 import { formatDate, formatDateTime, isValidUrl } from '~/utils/format'
@@ -38,6 +39,26 @@ const { rowLinkAttrs } = useRowLink()
 const HANDED_OVER = 'HANDED_OVER'
 // Tương tự: "Đã đóng gói" là trạng thái của đơn (seller_status PACKED), gửi bằng ?packed.
 const PACKED = 'PACKED'
+// "Đã có file SX" (anh Kiên 19/11, #6360) cũng không lưu DB — y như màn Batch: là
+// sản phẩm Chờ xử lý mà mọi phần sản xuất còn sống đã nằm trong batch có đủ link in
+// + cắt. Lọc ở backend (?files=ready) để phân trang và tổng đúng; "Chờ xử lý" vì
+// thế chỉ còn sản phẩm chưa có file (?files=missing), khớp chip trên bảng.
+const FILES_READY = 'FILES_READY'
+
+// Giá trị ô "Trạng thái nội bộ" → tham số API. Dùng chung cho danh sách và các
+// nút xuất, để bộ lọc không bao giờ lệch giữa hai nơi.
+function statusParams(v: string): {
+  status?: string
+  files?: 'ready' | 'missing'
+  handed_over?: boolean
+  packed?: boolean
+} {
+  if (v === HANDED_OVER) return { handed_over: true }
+  if (v === PACKED) return { packed: true }
+  if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
+  if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
+  return { status: v || undefined }
+}
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
@@ -90,9 +111,7 @@ function filterParams() {
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku.trim() || undefined,
     internal_code: filters.internal_code || undefined,
-    status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
-    handed_over: filters.status === HANDED_OVER || undefined,
-    packed: filters.status === PACKED || undefined,
+    ...statusParams(filters.status),
     review_status: filters.review_status || undefined,
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
@@ -104,22 +123,12 @@ function filterParams() {
 
 const { data, meta, loading, error, reload } = useApiResource<OrderItem[]>(() =>
   itemsApi.list({
-    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    ...filterParams(),
     // Màn này có cột Seller nên phải xin kèm: /api/items để seller ở chế độ
     // opt-in, mặc định không trả (một round trip nữa tới DB ở đầu kia internet).
     with_seller: true,
-    store_order_id: filters.store_order_id || undefined,
-    sku: filters.sku.trim() || undefined,
-    internal_code: filters.internal_code || undefined,
-    status: filters.status && filters.status !== HANDED_OVER && filters.status !== PACKED ? filters.status : undefined,
-    handed_over: filters.status === HANDED_OVER || undefined,
-    packed: filters.status === PACKED || undefined,
-    review_status: filters.review_status || undefined,
-    warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
-    material_id: filters.material_id ? Number(filters.material_id) : undefined,
-    batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
-    date_from: filters.date_from || undefined,
-    date_to: inclusiveEnd(filters.date_to),
+    // Cờ "Đã có file SX" cho chip cột Trạng thái (cũng opt-in, một câu lệnh nữa).
+    with_files: true,
     sort: sort.by || undefined,
     order: sort.by ? sort.dir : undefined,
     page: filters.page,
@@ -194,7 +203,15 @@ onMounted(async () => {
 
 const statusOptions = computed(() => [
   { value: '', label: 'Tất cả' },
-  ...INTERNAL_STATUS_ORDER.map((s) => ({ value: s, label: INTERNAL_STATUS[s].label })),
+  // "Đã có file SX" đứng ngay sau "Chờ xử lý" (đúng thứ tự xưởng: có file rồi mới in) — như màn Batch.
+  ...INTERNAL_STATUS_ORDER.flatMap((s) =>
+    s === 'PENDING'
+      ? [
+          { value: s, label: INTERNAL_STATUS[s].label },
+          { value: FILES_READY, label: PRODUCTION_FILES_READY.label },
+        ]
+      : [{ value: s, label: INTERNAL_STATUS[s].label }],
+  ),
   { value: PACKED, label: 'Đã đóng gói' },
   { value: HANDED_OVER, label: 'Đã bàn giao' },
 ])
@@ -368,6 +385,13 @@ async function bulkDeleteOrders() {
 function itemStatus(it: OrderItem): StatusBadgeRef {
   return orderStatusBadge(it.order ?? {}, it.internal_status)
 }
+// Chip "Đã có file SX" thay cho "Chờ xử lý" khi server báo mọi phần của sản phẩm
+// đã nằm trong batch đủ link in + cắt — cùng điều kiện với bộ lọc ?files=ready.
+// Chỉ thay đúng chip Chờ xử lý: qua khâu in rồi thì "Đã in"/"Đã cắt" đã hàm ý có file.
+function itemFilesReady(it: OrderItem): boolean {
+  const s = itemStatus(it)
+  return s.kind === 'internal' && s.value === 'PENDING' && !!it.production_files_ready
+}
 function itemDead(it: OrderItem): boolean {
   const rv = it.order?.review_status
   return rv === 'REJECTED' || rv === 'CANCELLED'
@@ -382,6 +406,7 @@ const STATUS_LABEL_MAPS = {
 } as const
 
 function statusLabel(it: OrderItem): string {
+  if (itemFilesReady(it)) return PRODUCTION_FILES_READY.label
   const s = itemStatus(it)
   return badgeFrom(STATUS_LABEL_MAPS[s.kind] as never, s.value as never).label
 }
@@ -407,6 +432,17 @@ function exportItems() {
     { label: 'Batch', value: (it) => itemBatchLabel(it) },
     { label: 'Ngày tạo', value: (it) => formatDate(itemCreatedAt(it)) },
     { label: 'Trạng thái', value: (it) => statusLabel(it) },
+    // Có = mọi phần của sản phẩm đã nằm trong batch đủ link in + cắt (kể cả đã qua
+    // in/cắt). "Chưa" chỉ ghi cho dòng đang Chờ xử lý — hàng đã đi qua xưởng mà batch
+    // cũ không gắn link (dữ liệu trước khi có link batch) thì để trống, không nói sai.
+    {
+      label: 'File SX',
+      value: (it) => {
+        if (it.production_files_ready) return 'Có'
+        const s = itemStatus(it)
+        return s.kind === 'internal' && s.value === 'PENDING' ? 'Chưa' : ''
+      },
+    },
     { label: 'Mã vận đơn', value: (it) => it.order?.tracking_number ?? '' },
   ])
   toast.success(`Đã xuất ${rows.length} dòng CSV.`)
@@ -659,7 +695,16 @@ function exportItems() {
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell" :title="formatDateTime(itemCreatedAt(it))">{{ formatDate(itemCreatedAt(it)) }}</td>
                 <td class="table-td">
                   <div class="flex flex-wrap items-center gap-1.5">
-                    <UiStatusBadge :kind="itemStatus(it).kind" :value="itemStatus(it).value" />
+                    <!-- Đã có file SX: chip riêng thay "Chờ xử lý" (cùng màu/nhãn màn Batch), hiện cả trên điện thoại. -->
+                    <span
+                      v-if="itemFilesReady(it)"
+                      class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+                      :class="PRODUCTION_FILES_READY.classes"
+                      title="Mọi phần của sản phẩm đã nằm trong batch có đủ file in + file cắt — chờ xưởng in"
+                    >
+                      {{ PRODUCTION_FILES_READY.label }}
+                    </span>
+                    <UiStatusBadge v-else :kind="itemStatus(it).kind" :value="itemStatus(it).value" />
                     <span
                       v-if="it.order?.cancellation_status === 'REQUESTED'"
                       class="inline-flex items-center gap-0.5 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"

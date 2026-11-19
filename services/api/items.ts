@@ -8,6 +8,12 @@ export interface ItemListParams extends ListParams {
   // nhãn "Đã bàn giao" ở cột Trạng thái, đọc từ seller_status của đơn.
   handed_over?: boolean
   packed?: boolean
+  // Tách "Chờ xử lý" theo file sản xuất (backend tự kèm status=PENDING): ready =
+  // "Đã có file SX" (mọi phần còn sống nằm trong batch đã đủ link in + cắt),
+  // missing = phần Chờ xử lý còn lại. Cùng nghĩa ?files= của màn Batch.
+  files?: 'ready' | 'missing'
+  // Xin trả kèm cờ production_files_ready trên từng dòng (một câu lệnh nữa tới DB).
+  with_files?: boolean
   // Lọc bảo hành: eligible = có thể bảo hành, child = đơn bảo hành (-BH1…), root = đơn đã từng bảo hành.
   warranty?: 'eligible' | 'child' | 'root'
   design_status?: string

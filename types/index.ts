@@ -339,6 +339,9 @@ export interface OrderItem {
   store_order_dup?: boolean
   store_name?: string
   batch_items?: BatchItemRef[]
+  // "Đã có file SX": mọi phần sản xuất còn sống nằm trong batch đã đủ link in +
+  // cắt. Server tính, chỉ có khi danh sách xin ?with_files=1; thiếu = false.
+  production_files_ready?: boolean
   sku?: Sku
   order?: Order
   assets?: Record<string, unknown>
