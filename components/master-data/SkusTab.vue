@@ -74,6 +74,8 @@ function matches(s: Sku, q: string): boolean {
     s.code.toLowerCase().includes(q) ||
     s.name.toLowerCase().includes(q) ||
     (s.product_name ?? '').toLowerCase().includes(q) ||
+    // Tìm được theo mã HS của SKU (Nghĩa #6318: "tìm hs code mà không ra SKU nào").
+    (s.hs_code ?? '').toLowerCase().includes(q) ||
     materialChips(s).some((c) => c.label.toLowerCase().includes(q))
   )
 }
@@ -447,7 +449,7 @@ async function remove(s: Sku) {
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
         <div class="relative sm:w-80">
           <UiIcon name="search" :size="16" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input v-model="search" class="input pl-9" placeholder="Tìm theo SKU / tên / nguyên vật liệu…" />
+          <input v-model="search" class="input pl-9" placeholder="Tìm theo SKU / tên / nguyên vật liệu / mã HS…" />
         </div>
         <label class="flex items-center gap-2 text-sm text-muted-foreground">
           <input v-model="onlyParents" type="checkbox" class="h-4 w-4 rounded border-border text-primary focus:ring-ring" />
