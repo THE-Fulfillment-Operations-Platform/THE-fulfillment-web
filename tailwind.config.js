@@ -36,6 +36,13 @@ export default {
         success: { DEFAULT: token('success'), foreground: token('success-foreground') },
         warning: { DEFAULT: token('warning'), foreground: token('warning-foreground') },
         info: { DEFAULT: token('info'), foreground: token('info-foreground') },
+        // Bong bóng chat nội bộ (bg-chat-mine / text-chat-mine-foreground…).
+        chat: {
+          mine: token('chat-mine'),
+          'mine-foreground': token('chat-mine-foreground'),
+          other: token('chat-other'),
+          'other-foreground': token('chat-other-foreground'),
+        },
 
         // Soft-minimal accent scale, kept for fine-grained tints. `primary`
         // above is the themed entry point; prefer it for theme-aware UI.

@@ -113,72 +113,86 @@ async function toggleNotify() {
         class="h-full w-full flex-col border-r border-border md:flex md:w-80 lg:w-96"
         :class="activeId ? 'hidden' : 'flex'"
       >
-        <div class="flex h-14 shrink-0 items-center gap-1 px-4">
-          <h1 class="flex-1 text-lg font-semibold text-foreground">Tin nhắn</h1>
+        <div class="flex h-16 shrink-0 items-center gap-1 pl-4 pr-3">
+          <h1 class="flex-1 text-xl font-bold text-foreground">Tin nhắn</h1>
           <button
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted"
+            class="chat-icon-btn"
             :class="chat.notify ? 'text-primary' : 'text-muted-foreground'"
             :title="chat.notify ? 'Đang bật thông báo trình duyệt — bấm để tắt' : 'Bật thông báo trình duyệt khi có tin mới'"
+            :aria-label="chat.notify ? 'Tắt thông báo trình duyệt' : 'Bật thông báo trình duyệt'"
             data-chat-notify
             @click="toggleNotify"
           >
-            <UiIcon name="bell" :size="18" />
+            <UiIcon name="bell" :size="19" />
           </button>
           <button
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted"
+            class="chat-icon-btn"
             :class="chat.muted ? 'text-muted-foreground' : 'text-primary'"
             :title="chat.muted ? 'Đang tắt âm báo — bấm để bật' : 'Tắt âm báo tin mới'"
+            :aria-label="chat.muted ? 'Bật âm báo tin mới' : 'Tắt âm báo tin mới'"
             data-chat-mute
             @click="chat.toggleMute()"
           >
-            <UiIcon :name="chat.muted ? 'volume-off' : 'volume-on'" :size="18" />
+            <UiIcon :name="chat.muted ? 'volume-off' : 'volume-on'" :size="19" />
           </button>
           <button
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-muted text-foreground hover:bg-accent"
+            class="chat-icon-btn bg-muted text-foreground hover:bg-accent"
             title="Tạo nhóm"
+            aria-label="Tạo nhóm"
             data-chat-new-group
             @click="newChat('group')"
           >
-            <UiIcon name="users" :size="17" />
+            <UiIcon name="users" :size="18" />
           </button>
           <button
-            class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-muted text-foreground hover:bg-accent"
+            class="chat-icon-btn bg-muted text-foreground hover:bg-accent"
             title="Nhắn tin mới"
+            aria-label="Nhắn tin mới"
             data-chat-new
             @click="newChat('direct')"
           >
-            <UiIcon name="plus" :size="18" />
+            <UiIcon name="plus" :size="19" />
           </button>
         </div>
         <div class="shrink-0 px-3 pb-2">
-          <input v-model="q" class="input" placeholder="Tìm tin nhắn…" data-chat-search />
+          <div class="relative">
+            <UiIcon name="search" :size="17" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              v-model="q"
+              type="search"
+              class="block w-full rounded-full border border-transparent bg-muted py-2 pl-10 pr-4 text-base text-foreground placeholder-muted-foreground transition-colors focus:border-ring/60 focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30 [@media(min-width:640px)_and_(pointer:fine)]:text-[15px]"
+              placeholder="Tìm tin nhắn…"
+              aria-label="Tìm tin nhắn"
+              data-chat-search
+            />
+          </div>
         </div>
         <div v-if="searchingMode" class="min-h-0 flex-1 overflow-y-auto px-2 pb-2" data-chat-search-results>
-          <p v-if="searching" class="p-4 text-center text-sm text-muted-foreground">Đang tìm…</p>
-          <p v-else-if="searchErr" class="p-4 text-center text-sm text-destructive">{{ searchErr }}</p>
-          <p v-else-if="!results.length" class="p-4 text-center text-sm text-muted-foreground">Không thấy tin nào có “{{ q.trim() }}”.</p>
+          <p v-if="searching" class="p-4 text-center text-[15px] text-muted-foreground">Đang tìm…</p>
+          <p v-else-if="searchErr" class="p-4 text-center text-[15px] text-destructive">{{ searchErr }}</p>
+          <p v-else-if="!results.length" class="p-4 text-center text-[15px] text-muted-foreground">Không thấy tin nào có “{{ q.trim() }}”.</p>
           <button
             v-for="m in results"
             :key="m.id"
             type="button"
-            class="block w-full rounded-xl px-2 py-2 text-left hover:bg-muted"
+            class="chat-focus block w-full rounded-xl px-3 py-2.5 text-left hover:bg-muted"
             data-chat-search-hit
             @click="openResult(m)"
           >
             <span class="flex items-center gap-1 text-xs text-muted-foreground">
-              <span class="truncate font-semibold text-foreground">{{ convTitle(chat.byId(m.conversation_id)) || 'Cuộc trò chuyện' }}</span>
+              <span class="truncate text-sm font-semibold text-foreground">{{ convTitle(chat.byId(m.conversation_id)) || 'Cuộc trò chuyện' }}</span>
               <span class="shrink-0">· {{ m.sender_id === chat.me ? 'Bạn' : m.sender_name }} · {{ listTime(m.created_at) }}</span>
             </span>
-            <span class="line-clamp-2 text-sm text-foreground">{{ snippet(m) }}</span>
+            <span class="mt-0.5 line-clamp-2 text-sm leading-snug text-foreground">{{ snippet(m) }}</span>
           </button>
         </div>
         <ChatConversationList v-else :active-id="activeId" @open="open" />
       </aside>
 
       <ChatThread v-if="active" :key="active.id" :conv-id="active.id" @back="router.replace({ query: {} })" />
-      <div v-else class="hidden flex-1 items-center justify-center bg-background text-sm text-muted-foreground md:flex">
+      <div v-else class="hidden flex-1 items-center justify-center bg-background text-[15px] text-muted-foreground md:flex">
         <div class="text-center">
-          <UiIcon name="chat" :size="40" class="mx-auto mb-2 opacity-40" />
+          <UiIcon name="chat" :size="44" class="mx-auto mb-2 opacity-40" />
           <p>Chọn một cuộc trò chuyện, hoặc bấm <UiIcon name="plus" :size="14" class="inline" /> để nhắn tin mới.</p>
         </div>
       </div>

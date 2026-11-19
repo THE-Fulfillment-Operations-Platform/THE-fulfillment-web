@@ -4,7 +4,7 @@ import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
 import { ROLE_LABEL } from '~/utils/enums'
 import type { ChatAttachment, ChatMember, ChatMessage } from '~/types/chat'
-import { convTitle, dayLabel, presenceLabel, sameDay } from '~/utils/chat'
+import { convTitle, presenceLabel, sameDay, separatorLabel } from '~/utils/chat'
 
 // Khung nhắn của một cuộc: luồng tin + ô soạn. Dùng ở trang đầy đủ (có đầu khung)
 // và trong ô chat nhỏ (ô chat tự vẽ đầu khung của nó: header=false). Kéo thả
@@ -51,10 +51,21 @@ const typingText = computed(() => {
   const short = names.map((n) => n.split(' ').slice(-1)[0])
   return `${short.slice(0, 3).join(', ')}${short.length > 3 ? '…' : ''} đang soạn tin…`
 })
+/** Người đang soạn (để vẽ avatar cạnh bong bóng ba chấm). */
+const typingMember = computed<ChatMember | null>(() => {
+  const map = chat.typing[props.convId] || {}
+  const id = Object.entries(map).find(([, exp]) => exp > chat.tick)?.[0]
+  return id ? conv.value?.members.find((m) => m.id === Number(id)) || null : null
+})
 
+// Gom tin như Messenger: tin liền nhau của cùng người, cách nhau ≤ 2 phút là một
+// cụm (nối góc, avatar ở tin cuối, tên ở tin đầu). Cách > 10 phút hoặc sang ngày
+// thì chen mốc thời gian ("Hôm nay 14:05") — giờ từng tin xem khi rê chuột.
+const GROUP_GAP_MS = 2 * 60_000
+const SEPARATOR_GAP_MS = 10 * 60_000
 function gap(a: ChatMessage, b: ChatMessage) {
   return a.sender_id !== b.sender_id || a.kind === 'system' || b.kind === 'system' || !sameDay(a.created_at, b.created_at) ||
-    Math.abs(Date.parse(b.created_at) - Date.parse(a.created_at)) > 5 * 60_000
+    Math.abs(Date.parse(b.created_at) - Date.parse(a.created_at)) > GROUP_GAP_MS
 }
 function isFirst(i: number) {
   const p = messages.value[i - 1]
@@ -64,9 +75,10 @@ function isLast(i: number) {
   const n = messages.value[i + 1]
   return !n || gap(messages.value[i], n)
 }
-function showDay(i: number) {
+function showSeparator(i: number) {
   const p = messages.value[i - 1]
-  return !p || !sameDay(p.created_at, messages.value[i].created_at)
+  const m = messages.value[i]
+  return !p || !sameDay(p.created_at, m.created_at) || Date.parse(m.created_at) - Date.parse(p.created_at) > SEPARATOR_GAP_MS
 }
 
 // Đã xem: mỗi thành viên (trừ mình) hiện ở dưới tin mới nhất họ đã xem.
@@ -100,6 +112,10 @@ function scrollToBottom(smooth = false) {
   if (!el) return
   el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   newBelow.value = 0
+}
+// Ảnh chưa biết kích thước tải xong làm luồng cao thêm: đang ở đáy thì giữ đáy.
+function onMediaLoad(e: Event) {
+  if ((e.target as HTMLElement)?.tagName === 'IMG' && atBottom.value) scrollToBottom()
 }
 
 async function onScroll() {
@@ -198,8 +214,21 @@ async function open() {
   composer.value?.focus()
 }
 watch(() => props.convId, open)
-onMounted(open)
+// Khung tin bị thu thấp (ô soạn giãn thêm dòng, thanh trả lời / file chờ gửi hiện
+// ra, bàn phím điện thoại bật lên): đang ở đáy thì giữ đáy như Messenger.
+let resizeObs: ResizeObserver | null = null
+onMounted(() => {
+  void open()
+  if (scroller.value && typeof ResizeObserver !== 'undefined') {
+    resizeObs = new ResizeObserver(() => {
+      const el = scroller.value
+      if (el && atBottom.value) el.scrollTop = el.scrollHeight
+    })
+    resizeObs.observe(scroller.value)
+  }
+})
 onBeforeUnmount(() => {
+  resizeObs?.disconnect()
   if (chat.activeId === props.convId) chat.activeId = null
 })
 // Mình bị mời ra / rời nhóm ở tab khác: cuộc biến mất → quay về danh sách.
@@ -253,65 +282,75 @@ defineExpose({ openInfo: () => (infoOpen.value = true) })
     @dragleave="onDragLeave"
     @drop.prevent="onDrop"
   >
-    <header v-if="header && conv" class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-2 sm:px-3">
+    <header v-if="header && conv" class="flex h-16 shrink-0 items-center gap-2.5 border-b border-border px-2 sm:px-4">
       <button
-        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted md:hidden"
+        class="chat-icon-btn h-10 w-10 text-primary md:hidden"
         aria-label="Quay lại danh sách"
         @click="emit('back')"
       >
-        <UiIcon name="arrow-left" :size="20" />
+        <UiIcon name="arrow-left" :size="22" />
       </button>
       <ChatAvatar
         :id="conv.peer?.id || conv.id"
         :name="convTitle(conv)"
-        :size="38"
+        :size="40"
         :group="isGroup"
         :online="!isGroup && !!conv.peer && !!chat.online[conv.peer.id]"
       />
-      <button type="button" class="min-w-0 flex-1 text-left" :disabled="!isGroup" @click="infoOpen = true">
-        <p class="truncate text-sm font-semibold text-foreground" data-chat-title>{{ convTitle(conv) }}</p>
-        <p class="truncate text-xs" :class="typingText ? 'italic text-primary' : 'text-muted-foreground'" data-chat-subtitle>
+      <button type="button" class="chat-focus min-w-0 flex-1 rounded-lg text-left" :disabled="!isGroup" @click="infoOpen = true">
+        <p class="truncate text-base font-semibold leading-tight text-foreground" data-chat-title>{{ convTitle(conv) }}</p>
+        <p class="mt-0.5 truncate text-[13px]" :class="typingText ? 'italic text-primary' : 'text-muted-foreground'" data-chat-subtitle>
           {{ typingText || subtitle }}
         </p>
       </button>
       <span
         v-if="chat.wsState !== 'open'"
-        class="hidden rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 sm:inline"
+        class="hidden rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-500/20 dark:text-amber-300 sm:inline"
         title="Mất kết nối thời gian thực — đang tự nối lại, tin vẫn được tải bù"
       >
         Đang nối lại…
       </span>
       <button
         type="button"
-        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-muted"
+        class="chat-icon-btn h-10 w-10"
         :class="conv.pinned_at ? 'text-primary' : 'text-muted-foreground'"
         :title="conv.pinned_at ? 'Bỏ ghim' : 'Ghim lên đầu danh sách'"
+        :aria-label="conv.pinned_at ? 'Bỏ ghim' : 'Ghim lên đầu danh sách'"
         data-chat-thread-pin
         @click="togglePin"
       >
-        <UiIcon name="pin" :size="17" />
+        <UiIcon name="pin" :size="19" />
       </button>
       <button
         v-if="isGroup"
         type="button"
-        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+        class="chat-icon-btn h-10 w-10 text-muted-foreground"
         title="Thành viên, đổi tên, rời nhóm"
+        aria-label="Thông tin nhóm"
         data-chat-group-info-open
         @click="infoOpen = true"
       >
-        <UiIcon name="info" :size="18" />
+        <UiIcon name="info" :size="20" />
       </button>
     </header>
 
-    <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-2" data-chat-scroller @scroll.passive="onScroll">
+    <div
+      ref="scroller"
+      class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 sm:px-4"
+      data-chat-scroller
+      @scroll.passive="onScroll"
+      @load.capture="onMediaLoad"
+    >
       <div v-if="loadingOlder" class="flex justify-center py-2"><UiSpinner :size="18" /></div>
       <div v-if="!loaded && !messages.length" class="flex justify-center py-12"><UiSpinner :size="22" /></div>
-      <p v-else-if="!messages.length" class="px-6 py-12 text-center text-sm text-muted-foreground">
+      <p v-else-if="!messages.length" class="px-6 py-12 text-center text-[15px] text-muted-foreground">
         Chưa có tin nhắn. Gửi lời chào đầu tiên 👋
       </p>
       <template v-if="conv">
         <template v-for="(m, i) in messages" :key="m.id">
-          <div v-if="showDay(i)" class="my-3 text-center text-xs font-medium text-muted-foreground">{{ dayLabel(m.created_at) }}</div>
+          <div v-if="showSeparator(i)" class="mb-1 mt-5 text-center text-xs font-medium text-muted-foreground" data-chat-time-sep>
+            {{ separatorLabel(m.created_at, chat.tick) }}
+          </div>
           <ChatBubble
             :m="m"
             :conv="conv"
@@ -320,6 +359,7 @@ defineExpose({ openInfo: () => (infoOpen.value = true) })
             :readers="readers[m.id] || []"
             :is-tail="m.id === tailId"
             :highlight="flash === m.id"
+            :compact="!header"
             @reply="startReply"
             @edit="startEdit"
             @media="(items, index) => (media = { items, index })"
@@ -327,19 +367,23 @@ defineExpose({ openInfo: () => (infoOpen.value = true) })
           />
         </template>
       </template>
-      <div v-if="typingText" class="mt-2 flex items-center gap-2 px-1 text-xs italic text-muted-foreground" data-chat-typing>
-        <span class="inline-flex gap-0.5 rounded-2xl bg-muted px-3 py-2">
-          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.3s]" />
-          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.15s]" />
-          <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
+      <!-- Đang soạn: avatar + bong bóng ba chấm như Messenger -->
+      <div v-if="typingText" class="mt-3 flex items-end gap-2" data-chat-typing>
+        <span class="mb-0.5 w-7 shrink-0">
+          <ChatAvatar v-if="typingMember" :id="typingMember.id" :name="typingMember.full_name" :size="28" />
         </span>
-        {{ typingText }}
+        <span class="inline-flex items-center gap-1 rounded-[18px] bg-chat-other px-3.5 py-3" aria-hidden="true">
+          <span class="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.3s]" />
+          <span class="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.15s]" />
+          <span class="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70" />
+        </span>
+        <span class="mb-1 min-w-0 truncate text-xs italic text-muted-foreground" role="status">{{ typingText }}</span>
       </div>
     </div>
 
     <button
       v-if="newBelow > 0"
-      class="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-soft"
+      class="chat-focus absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-soft"
       @click="scrollToBottom(true)"
     >
       {{ newBelow }} tin mới ↓

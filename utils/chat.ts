@@ -39,17 +39,49 @@ export function clockTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: APP_TZ })
 }
 
-/** Nhãn ngăn ngày trong luồng tin. */
-export function dayLabel(iso: string, now = Date.now()): string {
-  const d = new Date(iso)
-  const k = dayKey(d)
-  if (k === dayKey(new Date(now))) return 'Hôm nay'
-  if (k === dayKey(new Date(now - 86400_000))) return 'Hôm qua'
-  return d.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: APP_TZ })
-}
-
 export function sameDay(a: string, b: string): boolean {
   return dayKey(new Date(a)) === dayKey(new Date(b))
+}
+
+/**
+ * Mốc thời gian chen giữa luồng tin (kiểu Messenger): "Hôm nay 14:05",
+ * "Hôm qua 09:12", "Thứ Hai 16:40" (trong tuần), "12/11 08:00", "12/11/2025 08:00".
+ */
+export function separatorLabel(iso: string, now = Date.now()): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const time = clockTime(iso)
+  const k = dayKey(d)
+  const today = dayKey(new Date(now))
+  if (k === today) return `Hôm nay ${time}`
+  if (k === dayKey(new Date(now - 86400_000))) return `Hôm qua ${time}`
+  if (now - d.getTime() < 6 * 86400_000) {
+    const wd = d.toLocaleDateString('vi-VN', { weekday: 'long', timeZone: APP_TZ })
+    return `${wd.charAt(0).toUpperCase()}${wd.slice(1)} ${time}`
+  }
+  const date = d.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    ...(k.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' }),
+    timeZone: APP_TZ,
+  })
+  return `${date} ${time}`
+}
+
+/** Ngày giờ đầy đủ cho chú thích khi rê chuột: "14:05, 19/11/2026". */
+export function fullTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: APP_TZ })
+  return `${clockTime(iso)}, ${date}`
+}
+
+// Tin chỉ có 1–3 emoji (không chữ, không số): hiện to, không bong bóng (như Messenger).
+const EMOJI_ONLY_RE = /^(?:\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}‍️⃣]|\s)+$/u
+export function isEmojiOnly(body: string): boolean {
+  const t = (body || '').trim()
+  if (!t || t.length > 24 || !EMOJI_ONLY_RE.test(t)) return false
+  return [...t.replace(/[\s‍️\u{1F3FB}-\u{1F3FF}]/gu, '')].length <= 3
 }
 
 /** Bỏ dấu tiếng Việt + chữ thường, để lọc tên. */

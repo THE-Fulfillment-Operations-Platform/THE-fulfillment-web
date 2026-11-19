@@ -83,6 +83,13 @@ html {
     --info: 14 165 233;
     --info-foreground: 255 255 255;
 
+    /* Bong bóng chat: tin của mình (chữ trắng trên chàm, tương phản 6:1) và
+       tin người khác (xám nhạt, chữ slate-800). */
+    --chat-mine: 78 95 168;
+    --chat-mine-foreground: 255 255 255;
+    --chat-other: 236 239 244;
+    --chat-other-foreground: 30 41 59;
+
     color-scheme: light;
   }
 
@@ -119,6 +126,13 @@ html {
     --warning-foreground: 17 20 27;
     --info: 56 189 248;
     --info-foreground: 17 20 27;
+
+    /* Tối: chàm đậm hơn primary (primary tối là chàm nhạt chữ đen, nhìn bệt) để
+       chữ trắng vẫn đạt 5:1; tin người khác là xám nổi hẳn trên nền card. */
+    --chat-mine: 88 104 190;
+    --chat-mine-foreground: 255 255 255;
+    --chat-other: 44 50 62;
+    --chat-other-foreground: 226 232 240;
 
     color-scheme: dark;
   }
@@ -194,5 +208,13 @@ html.theme-transition *::after {
      rows. Pair with a colour utility, e.g. `table-action text-primary`. */
   .table-action {
     @apply inline-flex items-center rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-muted;
+  }
+  /* Chat: vòng focus chỉ hiện khi dùng bàn phím (không hiện khi bấm chuột). */
+  .chat-focus {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card;
+  }
+  /* Nút tròn chỉ có biểu tượng ở đầu khung / danh sách chat (36px). */
+  .chat-icon-btn {
+    @apply chat-focus inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted;
   }
 }

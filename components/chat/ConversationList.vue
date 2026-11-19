@@ -31,8 +31,8 @@ async function pin(c: ChatConversation) {
 
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-    <p v-if="!chat.listLoaded" class="p-6 text-center text-sm text-muted-foreground">Đang tải…</p>
-    <p v-else-if="!chat.conversations.length" class="p-6 text-center text-sm text-muted-foreground">
+    <p v-if="!chat.listLoaded" class="p-6 text-center text-[15px] text-muted-foreground">Đang tải…</p>
+    <p v-else-if="!chat.conversations.length" class="p-6 text-center text-[15px] text-muted-foreground">
       Chưa có cuộc trò chuyện nào. Bấm <UiIcon name="plus" :size="14" class="inline" /> để nhắn tin hoặc tạo nhóm.
     </p>
     <div
@@ -41,26 +41,31 @@ async function pin(c: ChatConversation) {
       class="group relative flex w-full items-center rounded-xl transition-colors"
       :class="activeId === c.id ? 'bg-accent' : 'hover:bg-muted'"
     >
+      <!-- Kiểu Messenger: avatar 48, tên 15px, tin cuối 1 dòng 14px + giờ 12px;
+           chưa đọc thì tên + tin cuối in đậm và có chấm số đếm màu chủ đạo. -->
       <button
         type="button"
-        class="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
+        class="chat-focus flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left"
+        :aria-current="activeId === c.id ? 'true' : undefined"
         :data-chat-conv="c.kind === 'group' ? `group:${c.title}` : c.peer?.email || c.peer?.full_name"
         @click="emit('open', c.id)"
       >
-        <ChatAvatar :id="c.peer?.id || c.id" :name="convTitle(c)" :size="44" :group="c.kind === 'group'" :online="peerOnline(c)" />
+        <ChatAvatar :id="c.peer?.id || c.id" :name="convTitle(c)" :size="48" :group="c.kind === 'group'" :online="peerOnline(c)" />
         <span class="min-w-0 flex-1">
           <span class="flex items-center gap-1">
-            <span class="truncate text-sm text-foreground" :class="c.unread ? 'font-bold' : 'font-medium'">{{ convTitle(c) }}</span>
-            <UiIcon v-if="c.pinned_at" name="pin" :size="12" class="shrink-0 text-muted-foreground" data-chat-pinned />
+            <span class="truncate text-[15px] leading-5 text-foreground" :class="c.unread ? 'font-bold' : 'font-semibold'">{{ convTitle(c) }}</span>
+            <UiIcon v-if="c.pinned_at" name="pin" :size="13" class="shrink-0 text-muted-foreground" data-chat-pinned />
           </span>
-          <span class="flex items-center gap-1 text-xs" :class="c.unread ? 'font-semibold text-foreground' : 'text-muted-foreground'">
-            <span class="min-w-0 truncate" :class="chat.typingNames(c.id).length ? 'italic text-primary' : ''">{{ preview(c) }}</span>
-            <span class="shrink-0">· {{ listTime(c.last_message_at) }}</span>
+          <span class="mt-0.5 flex items-baseline gap-1" :class="c.unread ? 'font-semibold text-foreground' : 'text-muted-foreground'">
+            <span class="min-w-0 truncate text-sm" :class="chat.typingNames(c.id).length ? 'font-normal italic text-primary' : ''">{{ preview(c) }}</span>
+            <span class="shrink-0 text-xs" :class="c.unread ? 'text-primary' : ''">· {{ listTime(c.last_message_at) }}</span>
           </span>
         </span>
         <span
           v-if="c.unread"
-          class="inline-flex min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-rose-500 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white"
+          class="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold leading-none text-primary-foreground"
+          :title="`${c.unread} tin chưa đọc`"
+          :aria-label="`${c.unread} tin chưa đọc`"
           :data-chat-unread="c.unread"
         >
           {{ c.unread > 99 ? '99+' : c.unread }}
@@ -68,7 +73,7 @@ async function pin(c: ChatConversation) {
       </button>
       <button
         type="button"
-        class="mr-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground group-hover:inline-flex"
+        class="chat-focus mr-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground group-focus-within:inline-flex group-hover:inline-flex"
         :class="c.pinned_at ? '!inline-flex text-primary' : ''"
         :title="c.pinned_at ? 'Bỏ ghim' : 'Ghim lên đầu'"
         :aria-label="c.pinned_at ? 'Bỏ ghim' : 'Ghim lên đầu'"

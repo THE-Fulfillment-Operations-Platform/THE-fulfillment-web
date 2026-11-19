@@ -68,15 +68,16 @@ function onPick(u: ChatUser) {
         v-for="u in shown"
         :key="u.id"
         type="button"
-        class="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted"
+        class="chat-focus flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted"
         :class="multiple && selected.has(u.id) ? 'bg-accent' : ''"
+        :aria-pressed="multiple ? selected.has(u.id) : undefined"
         :data-chat-person="u.email || u.full_name"
         @click="onPick(u)"
       >
-        <ChatAvatar :id="u.id" :name="u.full_name" :size="36" :online="!!chat.online[u.id]" />
+        <ChatAvatar :id="u.id" :name="u.full_name" :size="40" :online="!!chat.online[u.id]" />
         <span class="min-w-0 flex-1">
-          <span class="block truncate text-sm font-medium text-foreground">{{ u.full_name }}</span>
-          <span class="block truncate text-xs text-muted-foreground">{{ ROLE_LABEL[u.role] || u.role }}</span>
+          <span class="block truncate text-[15px] font-medium text-foreground">{{ u.full_name }}</span>
+          <span class="block truncate text-[13px] text-muted-foreground">{{ ROLE_LABEL[u.role] || u.role }}</span>
         </span>
         <span
           v-if="multiple"

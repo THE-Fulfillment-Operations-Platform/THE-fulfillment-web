@@ -21,12 +21,21 @@ const MAX_FILES = 10
 
 const canSend = computed(() => !!text.value.trim() || (!props.editing && files.value.length > 0))
 
+/** Ô soạn tự giãn theo chữ, tối đa 5 dòng; dài hơn thì cuộn bên trong ô. */
+const MAX_LINES = 5
 function autosize() {
   const el = ta.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  const cs = getComputedStyle(el)
+  const line = parseFloat(cs.lineHeight) || 21
+  const border = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth)
+  const max = Math.round(line * MAX_LINES + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + border)
+  const want = el.scrollHeight + border
+  el.style.height = `${Math.min(want, max)}px`
+  el.style.overflowY = want > max ? 'auto' : 'hidden'
 }
+watch(text, () => nextTick(autosize))
 
 function addFiles(list: FileList | File[] | null | undefined) {
   if (!list || props.editing) return
@@ -106,10 +115,13 @@ async function submit() {
   }
 }
 
+// Bộ gõ có khung soạn (Telex/VNI của macOS, bộ gõ điện thoại): đang soạn thì
+// Enter là chốt chữ. Safari bắn keydown Enter SAU compositionend với
+// isComposing=false nhưng keyCode 229 — chặn cả hai đường.
+const composing = ref(false)
 function onKeydown(e: KeyboardEvent) {
-  // Enter gửi, Shift+Enter xuống dòng. Đang gõ bộ gõ tiếng Việt (IME) thì Enter
-  // là chốt chữ, không phải gửi.
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  // Enter gửi, Shift+Enter xuống dòng.
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !composing.value && e.keyCode !== 229) {
     e.preventDefault()
     void submit()
   } else if (e.key === 'Escape') {
@@ -154,57 +166,64 @@ onBeforeUnmount(clearFiles)
 </script>
 
 <template>
-  <div class="shrink-0 border-t border-border pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+  <div class="shrink-0 border-t border-border bg-card pb-[max(0.5rem,env(safe-area-inset-bottom))]">
     <!-- Đang trả lời / đang sửa -->
-    <div v-if="editing || replyTo" class="flex items-center gap-2 px-3 pt-2 text-xs" data-chat-compose-bar>
-      <UiIcon :name="editing ? 'pencil' : 'reply'" :size="14" class="shrink-0 text-primary" />
-      <span class="min-w-0 flex-1 truncate text-muted-foreground">
-        <template v-if="editing">Đang sửa tin · Enter để lưu, Esc để huỷ</template>
+    <div v-if="editing || replyTo" class="flex items-center gap-2 border-b border-border/70 px-3 py-2 sm:px-4" data-chat-compose-bar>
+      <UiIcon :name="editing ? 'pencil' : 'reply'" :size="16" class="shrink-0 text-primary" />
+      <span class="min-w-0 flex-1">
+        <template v-if="editing">
+          <span class="block text-sm font-semibold text-foreground">Đang sửa tin</span>
+          <span class="block truncate text-xs text-muted-foreground">Enter để lưu, Esc để huỷ</span>
+        </template>
         <template v-else-if="replyTo">
-          Trả lời <b class="text-foreground">{{ replyTo.sender_id === chat.me ? 'chính bạn' : replyTo.sender_name }}</b>:
-          {{ replyTo.body || (replyTo.attachments?.length ? (replyTo.attachments[0].is_image ? '📷 Ảnh' : `📎 ${replyTo.attachments[0].name}`) : '') }}
+          <span class="block truncate text-sm text-foreground">
+            Đang trả lời <b>{{ replyTo.sender_id === chat.me ? 'chính bạn' : replyTo.sender_name }}</b>
+          </span>
+          <span class="block truncate text-xs text-muted-foreground">
+            {{ replyTo.body || (replyTo.attachments?.length ? (replyTo.attachments[0].is_image ? '📷 Ảnh' : `📎 ${replyTo.attachments[0].name}`) : '') }}
+          </span>
         </template>
       </span>
       <button
         type="button"
-        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+        class="chat-icon-btn h-8 w-8 text-muted-foreground"
         aria-label="Huỷ"
         @click="editing ? (text = '', emit('cancel-edit')) : emit('cancel-reply')"
       >
-        <UiIcon name="close" :size="14" />
+        <UiIcon name="close" :size="16" />
       </button>
     </div>
 
     <!-- File chờ gửi -->
-    <div v-if="files.length" class="flex gap-2 overflow-x-auto px-3 pt-2" data-chat-pending-files>
+    <div v-if="files.length" class="flex gap-2 overflow-x-auto px-3 pt-3 sm:px-4" data-chat-pending-files>
       <div v-for="(x, i) in files" :key="i" class="relative shrink-0">
-        <img v-if="x.url" :src="x.url" :alt="x.file.name" class="h-16 w-16 rounded-lg border border-border object-cover" />
-        <div v-else class="flex h-16 w-32 flex-col justify-center rounded-lg border border-border bg-muted px-2 text-xs">
-          <span class="truncate font-medium text-foreground" :title="x.file.name">{{ x.file.name }}</span>
+        <img v-if="x.url" :src="x.url" :alt="x.file.name" class="h-16 w-16 rounded-xl border border-border object-cover" />
+        <div v-else class="flex h-16 w-36 flex-col justify-center rounded-xl border border-border bg-muted px-2.5 text-xs">
+          <span class="truncate text-sm font-medium text-foreground" :title="x.file.name">{{ x.file.name }}</span>
           <span class="text-muted-foreground">{{ fileSize(x.file.size) }}</span>
         </div>
         <button
           type="button"
-          class="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background"
-          aria-label="Bỏ file"
+          class="chat-focus absolute -right-1.5 -top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-background"
+          :aria-label="`Bỏ file ${x.file.name}`"
           @click="removeFile(i)"
         >
-          <UiIcon name="close" :size="11" />
+          <UiIcon name="close" :size="12" />
         </button>
       </div>
     </div>
 
-    <div class="flex items-end gap-1.5 px-2 pt-2">
+    <div class="flex items-end gap-1 px-2 pt-2 sm:px-3">
       <button
         v-if="!editing && chat.filesEnabled"
         type="button"
-        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted"
+        class="chat-icon-btn h-10 w-10 text-primary"
         title="Gửi ảnh / file (tối đa 20 MB mỗi file) — hoặc dán ảnh, kéo thả vào khung"
         aria-label="Gửi ảnh hoặc file"
         data-chat-attach
         @click="picker?.click()"
       >
-        <UiIcon name="paperclip" :size="20" />
+        <UiIcon name="paperclip" :size="22" />
       </button>
       <input
         ref="picker"
@@ -219,23 +238,29 @@ onBeforeUnmount(clearFiles)
         v-model="text"
         rows="1"
         maxlength="4000"
-        class="max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-2xl border border-input bg-muted/50 px-3.5 py-2 text-base text-foreground placeholder-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30 sm:text-sm"
+        enterkeyhint="send"
+        :aria-label="editing ? 'Sửa tin nhắn' : 'Nhắn tin'"
+        class="min-h-[2.5rem] flex-1 resize-none overflow-y-hidden rounded-[20px] border border-transparent bg-muted px-4 py-2 text-base leading-[1.4] text-foreground placeholder-muted-foreground transition-colors focus:border-ring/60 focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30 [@media(min-width:640px)_and_(pointer:fine)]:text-[15px]"
         :placeholder="editing ? 'Sửa tin…' : 'Nhắn tin…'"
         title="Enter để gửi, Shift+Enter xuống dòng. Gõ mã đơn (106788, 106788_1/2) hoặc mã batch (#101558) là tự thành link."
         data-chat-input
         @input="onInput"
         @keydown="onKeydown"
         @paste="onPaste"
+        @compositionstart="composing = true"
+        @compositionend="composing = false"
       />
       <button
         type="button"
-        class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-primary hover:bg-muted disabled:opacity-40"
+        class="chat-focus inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors disabled:cursor-default"
+        :class="canSend ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'text-muted-foreground'"
         :disabled="!canSend"
         :title="editing ? 'Lưu (Enter)' : 'Gửi (Enter)'"
+        :aria-label="editing ? 'Lưu tin đã sửa' : 'Gửi tin nhắn'"
         data-chat-send
         @click="submit"
       >
-        <UiIcon :name="editing ? 'check' : 'send'" :size="20" :class="editing ? '' : 'rotate-90'" />
+        <UiIcon :name="editing ? 'check' : 'send'" :size="19" :class="editing ? '' : 'translate-x-px rotate-90'" />
       </button>
     </div>
   </div>
