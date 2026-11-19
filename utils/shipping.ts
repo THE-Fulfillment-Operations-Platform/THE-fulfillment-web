@@ -26,19 +26,21 @@ export function effectiveShipping(sku: Sku, parent?: Sku | null): ShippingSpec {
 }
 
 /**
- * Phần XƯỞNG còn phải khai để gửi THE: cân nặng và kích thước hộp. Mã HS và giá
- * trị khai báo là việc bên THE — có mặc định trong Cài đặt → Kết nối THE, SKU
- * chỉ khai khi cần khác — nên không tính là "thiếu" ở đây (khớp
- * ShippingSpec.MissingPhysical ở máy chủ). Rỗng = đủ.
+ * Phần còn phải khai để gửi THE: cân nặng, kích thước hộp và MÃ HS. Từ 19/11/2026
+ * (#6312) mã HS bắt buộc ở SKU hoặc SKU cha — "Mã HS mặc định" ở Cài đặt → Kết
+ * nối THE không còn điền thay, SKU thiếu mã HS thì đơn bị giữ lại không gửi THE.
+ * Giá trị khai báo vẫn có mặc định bên THE nên không tính là thiếu. Khớp
+ * MissingPhysical + kiểm mã HS ở máy chủ. Rỗng = đủ.
  */
 export function missingShipping(s: ShippingSpec): string[] {
   const out: string[] = []
   if (s.weight_g == null) out.push('cân nặng')
   if (s.length_cm == null || s.width_cm == null || s.height_cm == null) out.push('kích thước hộp')
+  if (!s.hs_code) out.push('mã HS')
   return out
 }
 
-/** "120 g · 20×15×2 cm · $5" — dòng tóm tắt trong bảng SKU. */
+/** "120 g · 20×15×2 cm · $5" — dòng tóm tắt trong bảng SKU (mã HS ở tooltip). */
 export function formatShipping(s: ShippingSpec): string {
   const parts: string[] = []
   if (s.weight_g != null) parts.push(`${s.weight_g} g`)

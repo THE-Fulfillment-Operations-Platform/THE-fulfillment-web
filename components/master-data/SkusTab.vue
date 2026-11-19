@@ -63,7 +63,9 @@ function shippingOf(s: Sku) {
   return { spec, missing: missingShipping(spec), summary: formatShipping(spec) }
 }
 
-const search = ref('')
+// ?q=… điền sẵn ô tìm — màn Chờ gửi hàng trỏ thẳng tới SKU thiếu mã HS (#6312).
+const initialQ = useRoute().query.q
+const search = ref(typeof initialQ === 'string' ? initialQ : '')
 // Chỉ hiện các SKU cha — nhìn một lượt xem mỗi cha đang chứa bao nhiêu con.
 const onlyParents = ref(false)
 
@@ -459,7 +461,7 @@ async function remove(s: Sku) {
         <button
           v-if="canManage"
           class="btn-secondary"
-          title="Khai cân nặng + kích thước hộp cho nhiều SKU bằng Excel — cần để tạo đơn THE"
+          title="Khai cân nặng + kích thước hộp + mã HS cho nhiều SKU bằng Excel — cần để tạo đơn THE"
           @click="shippingImportOpen = true"
         >
           <UiIcon name="shipping" :size="16" /> Vận chuyển (Excel)
@@ -583,7 +585,7 @@ async function remove(s: Sku) {
                 <span
                   v-else
                   class="tabular-nums text-muted-foreground"
-                  :title="shippingOf(r.sku).spec.hs_code ? `Mã HS ${shippingOf(r.sku).spec.hs_code}` : 'Mã HS, giá trị: theo mặc định bên THE'"
+                  :title="`Mã HS ${shippingOf(r.sku).spec.hs_code}`"
                 >
                   {{ shippingOf(r.sku).summary }}
                 </span>
@@ -749,7 +751,7 @@ async function remove(s: Sku) {
               <label class="label">Mã HS</label>
               <input
                 v-model="ship.hs" class="input font-mono"
-                :placeholder="inheritedHint(resolvedParent?.hs_code) || 'Theo mặc định bên THE'"
+                :placeholder="inheritedHint(resolvedParent?.hs_code) || 'Bắt buộc — VD 4909002000347'"
               />
             </div>
             <div>
@@ -777,7 +779,8 @@ async function remove(s: Sku) {
           <p class="mt-2 text-[11px] text-muted-foreground">
             Xưởng khai <b class="text-foreground">cân nặng</b> và <b class="text-foreground">kích thước hộp</b> cho MỘT sản phẩm đã đóng gói.
             Ô để trống ở SKU con lấy theo SKU cha — khai một lần ở SKU cha, SKU con chỉ điền chỗ khác.
-            Giá trị khai báo và mã HS do bên THE đặt mặc định; chỉ điền khi sản phẩm này cần khác.
+            <b class="text-foreground">Mã HS bắt buộc</b> (ở SKU này hoặc SKU cha): thiếu thì đơn bị giữ lại, không gửi THE — điền mã hệ thống THE
+            (mã HS + 3 số đuôi, vd bưu thiếp <span class="font-mono">4909002000347</span>). Giá trị khai báo có mặc định bên THE; chỉ điền khi sản phẩm này cần khác.
           </p>
         </div>
 

@@ -170,8 +170,8 @@ async function downloadTemplate() {
         <span class="font-medium text-foreground">Giá trị khai báo (USD)</span>,
         <span class="font-medium text-foreground">Mã HS</span>). Các cột khác được bỏ qua.
         Cột vận chuyển là của MỘT sản phẩm đã đóng gói — để trống thì giữ số đã khai;
-        <span class="font-medium text-foreground">Giá trị khai báo</span> và
-        <span class="font-medium text-foreground">Mã HS</span> thường bỏ trống (THE có mặc định ở Cài đặt).
+        <span class="font-medium text-foreground">Giá trị khai báo</span> thường bỏ trống (THE có mặc định ở Cài đặt);
+        <span class="font-medium text-foreground">Mã HS</span> bắt buộc ở SKU hoặc SKU cha — thiếu thì đơn không gửi THE được.
         <span class="font-medium text-foreground">Định mức</span> là số sản phẩm một tấm Loại VL trên cùng dòng
         làm ra (từ file layout của xưởng); để trống thì giữ số đã khai, chưa khai thì hệ thống ước tính theo
         kích thước (hiện dấu ~).

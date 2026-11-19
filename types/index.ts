@@ -1027,6 +1027,9 @@ export interface QcResultOrder {
   the_last_mile?: string
   // Mã label cũ THE đã huỷ: đơn phải tạo label mới rồi mới xuất kho được.
   the_cancelled?: string
+  // SKU của đơn chưa có mã HS (cả SKU lẫn SKU cha đều trống): "Tạo label THE" sẽ
+  // từ chối đơn tới khi khai (#6312). Chỉ có ở đơn chưa có label THE.
+  missing_hs?: string[]
 }
 
 // Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn

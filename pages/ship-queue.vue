@@ -17,6 +17,8 @@ import { useAuthStore } from '~/stores/auth'
 const canShip = computed(() => useAuthStore().can('ship_queue.manage'))
 // Chỉ Owner/Admin được "Vẫn xuất kho" khi đơn chưa QC đạt; API kiểm lại vai trò.
 const canForceExport = computed(() => ['OWNER', 'ADMIN'].includes(useAuthStore().user?.role ?? ''))
+// Nhãn "Thiếu mã HS" thành link sang Master Data khi người xem vào được màn đó.
+const canSeeMaster = computed(() => useAuthStore().can('master_data.view'))
 
 // Chờ gửi hàng — điểm nối giữa hai nửa vòng đời của đơn.
 //
@@ -50,6 +52,17 @@ const { data, meta, loading, error, reload } = useApiResource(() =>
   }),
 )
 const orders = computed<QcResultOrder[]>(() => data.value?.orders ?? [])
+// #6312: đơn có SKU chưa có mã HS (cả SKU lẫn SKU cha) — "Tạo label THE" sẽ giữ lại.
+// Đánh dấu sẵn trên danh sách để sửa trước khi bấm, khỏi đợi tới lúc bị bỏ qua.
+const missingHSCount = computed(() => orders.value.filter((o) => o.missing_hs?.length).length)
+function missingHSTitle(o: QcResultOrder): string {
+  return `Chưa có mã HS cho SKU ${(o.missing_hs ?? []).join(', ')} (cả SKU lẫn SKU cha đều trống) — ` +
+    '"Tạo label THE" sẽ giữ đơn lại. Khai mã HS ở Master Data → SKU (Vận chuyển / Import) rồi gửi.'
+}
+function missingHSLabel(o: QcResultOrder): string {
+  const codes = o.missing_hs ?? []
+  return `Thiếu mã HS: ${codes.slice(0, 2).join(', ')}${codes.length > 2 ? ` +${codes.length - 2}` : ''}`
+}
 
 // "QC xong lúc" = lần QC muộn nhất trong các sản phẩm của đơn: màn này chỉ liệt kê
 // đơn đã đạt hết, nên lần kiểm cuối cùng chính là lúc đơn QC xong. Bản cũ hiện
@@ -467,7 +480,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
         </template>
         <template v-else>
           <b class="text-foreground">Gửi cho THE:</b> quét là tạo + chốt đơn THE (trừ ví) và có label — chỉ vậy thôi, đơn CHƯA ra khỏi kho.
-          Hàng đi thì quét lại ở chế độ <b class="text-foreground">Xuất kho</b>. Cần đơn đã QC đủ và mọi SKU đã khai cân nặng + hộp.
+          Hàng đi thì quét lại ở chế độ <b class="text-foreground">Xuất kho</b>. Cần đơn đã QC đủ và mọi SKU đã khai cân nặng + hộp + <b class="text-foreground">mã HS</b>.
         </template>
       </p>
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="submitScan">
@@ -610,6 +623,14 @@ function runScan(value: string, scanOpts: ShipOptions) {
         empty-text="Không có đơn nào chờ gửi. Đơn sẽ xuất hiện ở đây ngay khi QC đủ sản phẩm."
         @retry="reload"
       >
+        <p
+          v-if="missingHSCount"
+          class="flex items-center gap-1.5 border-b border-border bg-rose-50 px-4 py-2 text-xs text-rose-800 dark:bg-rose-500/10 dark:text-rose-200"
+        >
+          <UiIcon name="alert" :size="14" class="shrink-0" />
+          {{ missingHSCount }} đơn trong trang có SKU chưa có mã HS (nhãn đỏ "Thiếu mã HS") — "Tạo label THE" sẽ bỏ qua các đơn này
+          cho tới khi khai mã HS ở Master Data → SKU (cho SKU hoặc SKU cha).
+        </p>
         <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">
           <table class="min-w-full divide-y divide-border">
             <thead class="sticky top-0 z-10 bg-muted">
@@ -671,6 +692,21 @@ function runScan(value: string, scanOpts: ShipOptions) {
                     class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
                     :title="`THE đã huỷ label ${o.the_cancelled} — bấm 1. Tạo label THE, dán đè label cũ rồi mới Xuất kho`"
                   >THE đã huỷ label — tạo lại</span>
+                  <!-- #6312: SKU chưa có mã HS — "Tạo label THE" sẽ giữ đơn lại tới khi khai. -->
+                  <template v-if="o.missing_hs?.length">
+                    <NuxtLink
+                      v-if="canSeeMaster"
+                      :to="{ path: '/master-data', query: { tab: 'skus', q: o.missing_hs[0] } }"
+                      class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 hover:underline dark:bg-rose-500/20 dark:text-rose-200"
+                      :title="missingHSTitle(o)"
+                      @click.stop
+                    >{{ missingHSLabel(o) }}</NuxtLink>
+                    <span
+                      v-else
+                      class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
+                      :title="missingHSTitle(o)"
+                    >{{ missingHSLabel(o) }}</span>
+                  </template>
                 </td>
                 <td class="table-td hidden text-muted-foreground md:table-cell">{{ o.seller_name || '—' }}</td>
                 <td class="table-td">

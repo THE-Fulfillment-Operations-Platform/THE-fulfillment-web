@@ -18,15 +18,15 @@ const saving = ref(false)
 const checking = ref(false)
 const check = ref<CarrierCheck | null>(null)
 
-// Mở sẵn khối hải quan khi chưa đặt — bắt buộc để tạo đơn, không được giấu.
-const advancedOpen = computed(() => !!cfg.value && (!cfg.value.default_hs_code || !cfg.value.default_declared_value))
+// Mở sẵn khối hải quan khi chưa đặt giá trị khai báo — bắt buộc để tạo đơn, không được giấu.
+// Mã HS mặc định không còn tính (#6312): mã HS khai ở từng SKU / SKU cha.
+const advancedOpen = computed(() => !!cfg.value && !cfg.value.default_declared_value)
 
 const form = reactive({
   token: '',
   service: '',
   phone: '',
   packaging: '' as string | number,
-  hs: '',
   value: '' as string | number,
 })
 
@@ -36,7 +36,6 @@ function fill(c: CarrierConfig) {
   form.service = c.service_code
   form.phone = c.default_phone
   form.packaging = c.packaging_weight_g || ''
-  form.hs = c.default_hs_code
   form.value = c.default_declared_value || ''
 }
 
@@ -66,7 +65,7 @@ async function save(extra: { enabled?: boolean } = {}) {
       service_code: form.service.trim(),
       default_phone: form.phone.trim(),
       packaging_weight_g: num(form.packaging),
-      default_hs_code: form.hs.trim(),
+      // default_hs_code không gửi nữa: máy chủ giữ nguyên giá trị cũ, không dùng (#6312).
       default_declared_value: num(form.value),
       ...extra,
     })
@@ -181,16 +180,23 @@ const serviceOptions = computed(() => {
         <details class="rounded-md border border-border" :open="advancedOpen">
           <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground">
             Khai báo hải quan &amp; tuỳ chọn
-            <span v-if="!form.hs || !form.value" class="ml-1 text-amber-700 dark:text-amber-300">· chưa đặt mã HS / giá trị</span>
+            <span v-if="!form.value" class="ml-1 text-amber-700 dark:text-amber-300">· chưa đặt giá trị khai báo</span>
           </summary>
           <div class="grid grid-cols-1 gap-3 border-t border-border p-3 sm:grid-cols-2">
+            <!-- #6312: mã HS mặc định từng là mã bưu thiếp, điền thay cho SKU chưa khai → hàng
+                 khác cũng đi THE thành "bưu thiếp" (sai hải quan, THE lại tự mua label cho mã
+                 bưu thiếp). Giờ chỉ hiện giá trị cũ cho biết, không sửa, không dùng. -->
             <div>
-              <label class="label">Mã HS mặc định</label>
-              <input v-model="form.hs" class="input font-mono" placeholder="VD bưu thiếp: 4909002000347" />
-              <!-- THE tra mã theo MÃ HỆ THỐNG của THE (mã HS + 3 số đuôi), không phải mã HS 10 số:
-                   điền 4909002000 là bị THE trả "Hs Code does not exist". -->
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                Điền <b>mã hệ thống THE</b> (mã HS + 3 số đuôi, cột D Sheet2 file mẫu THE) — vd bưu thiếp <span class="font-mono">4909002000347</span>, không phải <span class="font-mono">4909002000</span>.
+              <label class="label">Mã HS mặc định <span class="font-normal text-muted-foreground">(không còn dùng)</span></label>
+              <input
+                :value="cfg?.default_hs_code || '—'"
+                class="input cursor-not-allowed font-mono opacity-60"
+                disabled
+                aria-describedby="hs-default-note"
+              />
+              <p id="hs-default-note" class="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
+                Không còn dùng để điền thay. Mỗi SKU phải có <b>mã HS</b> riêng (ở SKU hoặc SKU cha, Master Data → SKU) —
+                đơn có SKU chưa có mã HS bị giữ lại, không gửi THE.
               </p>
             </div>
             <div>
@@ -206,7 +212,7 @@ const serviceOptions = computed(() => {
               <input v-model="form.phone" class="input" placeholder="Dùng khi đơn không có SĐT" />
             </div>
             <p class="text-[11px] text-muted-foreground sm:col-span-2">
-              Áp cho mọi SKU không khai riêng. Xưởng chỉ cần khai cân nặng + kích thước hộp ở Master Data → SKU.
+              Giá trị khai báo áp cho mọi SKU không khai riêng. Cân nặng, kích thước hộp và mã HS khai ở Master Data → SKU.
             </p>
           </div>
         </details>

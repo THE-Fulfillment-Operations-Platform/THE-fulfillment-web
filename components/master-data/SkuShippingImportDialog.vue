@@ -108,7 +108,9 @@ const COLUMN_LABEL: Record<string, string> = {
           </li>
           <li>
             Điền <b class="text-foreground">Cân nặng (g)</b> và <b class="text-foreground">Dài / Rộng / Cao hộp (cm)</b> cho MỘT sản phẩm đã đóng gói.
-            Cột <b class="text-foreground">Giá trị khai báo</b> và <b class="text-foreground">Mã HS</b> để trống — bên THE đặt mặc định; chỉ điền khi sản phẩm cần khác.
+            Cột <b class="text-foreground">Mã HS</b> BẮT BUỘC (ở dòng SKU hoặc SKU cha) — thiếu thì đơn bị giữ lại, không gửi THE; điền mã hệ thống THE
+            (mã HS + 3 số đuôi, vd bưu thiếp <span class="font-mono">4909002000347</span>).
+            Cột <b class="text-foreground">Giá trị khai báo</b> để trống được — bên THE đặt mặc định; chỉ điền khi sản phẩm cần khác.
           </li>
           <li>
             Khai ở dòng <b class="text-foreground">SKU cha</b> là đủ cho cả họ; dòng SKU con để trống ô nào thì lấy theo cha ô đó,
