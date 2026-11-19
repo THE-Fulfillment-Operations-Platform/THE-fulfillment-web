@@ -26,8 +26,13 @@ export const masterDataApi = {
   // JSON rows — used by the paste flow / tests.
   previewRows: (rows: LegacyRowInput[], filename?: string) =>
     apiPost<MasterImportPreview>('/api/master-data/import/preview', { filename, rows }),
-  commit: (importJobId: number) =>
-    apiPost<MasterImportPreview>('/api/master-data/import/commit', { import_job_id: importJobId }),
+  // confirmMaterialChange: đã xem cảnh báo đổi NVL (409 SKU_MATERIAL_CHANGE_CONFIRM)
+  // và vẫn áp dụng (#6380).
+  commit: (importJobId: number, confirmMaterialChange = false) =>
+    apiPost<MasterImportPreview>('/api/master-data/import/commit', {
+      import_job_id: importJobId,
+      confirm_material_change: confirmMaterialChange || undefined,
+    }),
   jobs: () => apiGet<MasterImportJob[]>('/api/master-data/import-jobs'),
   job: (id: number | string) => apiGet<MasterImportPreview>(`/api/master-data/import-jobs/${id}`),
   // Download the sample template as a real .xlsx workbook (SKU + Loại VL columns

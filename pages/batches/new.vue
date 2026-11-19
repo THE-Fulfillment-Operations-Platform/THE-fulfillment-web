@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { designApi, batchesApi, materialsApi } from '~/services/api'
-import type { Material, MaterialBucket, OrderItem, Priority } from '~/types'
+import type { BatchItemRef, Material, MaterialBucket, OrderItem, Priority } from '~/types'
 import { formatDimMM } from '~/utils/format'
-import { PRIORITY_OPTIONS, PRIORITY } from '~/utils/enums'
+import { PRIORITY_OPTIONS, PRIORITY, INTERNAL_STATUS } from '~/utils/enums'
 import { errorMessage } from '~/utils/api-error'
 import { itemStoreOrderId } from '~/utils/item'
 import { planBatchSplitByQuota, productCount } from '~/utils/batch'
@@ -142,16 +142,43 @@ function toggle(id: number) {
   selectedIds.value = s
 }
 
+// ---- Sản phẩm đã có phần ở NVL KHÁC (#6380) ----
+// Hàng chờ của NVL X chỉ có sản phẩm chưa có phần sống trên X, nên phần nào API
+// gửi kèm (batch_items) cũng nằm ở NVL khác. Combo thật đang dở trông y như vậy,
+// nhưng SKU bị đổi / thêm NVL sau khi gom cũng thế: 19/11 thêm Basswood 5 ly vào
+// SKU 3 ly làm 23 sản phẩm đã cắt trên 3 ly hiện ở đây và bị gom 8 batch trùng.
+// Vẫn hiện (không che combo thật) nhưng gắn nhãn, "chọn tất cả" bỏ qua, và hộp
+// xác nhận kể tên từng sản phẩm khi người dùng tick tay.
+function otherParts(it: OrderItem): BatchItemRef[] {
+  const mid = activeMaterial.value?.material_id
+  return (it.batch_items ?? []).filter((p) => p.material_id == null || p.material_id !== mid)
+}
+function partLabel(p: BatchItemRef): string {
+  const mat = p.material?.name || p.material?.code || p.material_code || 'NVL khác'
+  const code = p.batch?.code || p.batch_code || ''
+  const status = p.status ? INTERNAL_STATUS[p.status]?.label ?? p.status : ''
+  return `Đã có phần trên ${mat}${code ? ` · ${code}` : ''}${status ? ` (${status})` : ''}`
+}
+const crossIds = computed(() => new Set(items.value.filter((it) => otherParts(it).length > 0).map((it) => it.id)))
+const plainItems = computed(() => items.value.filter((it) => !crossIds.value.has(it.id)))
+const selectedCross = computed(() => selectedItems.value.filter((it) => crossIds.value.has(it.id)))
+
+// "Chọn tất cả" = mọi sản phẩm KHÔNG có phần ở NVL khác (sản phẩm có nhãn đã tick
+// tay thì giữ nguyên); bấm lại khi đã đủ = bỏ chọn hết.
 function toggleAll() {
-  if (selectedIds.value.size === items.value.length) {
+  if (allItemsSelected.value) {
     selectedIds.value = new Set()
   } else {
-    selectedIds.value = new Set(items.value.map((i) => i.id))
+    const s = new Set(selectedIds.value)
+    for (const it of plainItems.value) s.add(it.id)
+    selectedIds.value = s
   }
 }
 
 const selectedCount = computed(() => selectedIds.value.size)
-const allItemsSelected = computed(() => items.value.length > 0 && selectedIds.value.size === items.value.length)
+const allItemsSelected = computed(
+  () => plainItems.value.length > 0 && plainItems.value.every((it) => selectedIds.value.has(it.id)),
+)
 const someItemsSelected = computed(() => selectedIds.value.size > 0 && !allItemsSelected.value)
 
 const priorityOptions = PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label }))
@@ -171,12 +198,28 @@ async function createBatch() {
     `SKU: ${skuSummary}` +
     (willSplit.value ? `\nSẽ tạo ${splitGroups.value.length} batch (mỗi tấm một batch).` : '')
 
-  const ok = await useConfirm().confirm({
-    title: 'Tạo Batch',
-    message,
-    tone: 'primary',
-    confirmText: 'Tạo Batch',
-  })
+  // Có sản phẩm đã có phần ở NVL khác → kể tên từng cái, hộp đỏ (#6380).
+  const cross = selectedCross.value
+  const ok = await useConfirm().confirm(
+    cross.length
+      ? {
+          title: `${cross.length} sản phẩm đã có phần ở NVL khác`,
+          message:
+            message +
+            `\n\n${cross.length} sản phẩm dưới đây đã nằm trong batch của NVL khác. Chỉ tạo tiếp nếu đúng là combo nhiều tấm — ` +
+            'nếu SKU vừa bị đổi / thêm NVL thì đây là gom trùng.',
+          items: cross.map((it) => `${it.internal_code} · ${it.sku_code} — ${otherParts(it).map(partLabel).join('; ')}`),
+          tone: 'danger',
+          confirmText: 'Vẫn tạo batch',
+          cancelText: 'Quay lại',
+        }
+      : {
+          title: 'Tạo Batch',
+          message,
+          tone: 'primary',
+          confirmText: 'Tạo Batch',
+        },
+  )
   if (!ok) return
 
   creating.value = true
@@ -250,6 +293,13 @@ onMounted(() => {
           </h3>
           <span class="text-xs text-muted-foreground">Đã chọn {{ selectedIds.size }}/{{ items.length }}</span>
         </div>
+        <p
+          v-if="!itemsLoading && crossIds.size"
+          class="border-b border-border bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
+        >
+          {{ crossIds.size }} sản phẩm đã có phần trong batch của NVL khác (nhãn vàng) — "chọn tất cả" bỏ qua chúng.
+          Chỉ tick tay khi đúng là combo nhiều tấm; nếu SKU vừa bị đổi / thêm NVL thì gom vào đây là làm trùng.
+        </p>
         <UiStateBlock
           :loading="itemsLoading"
           :error="itemsError"
@@ -262,13 +312,20 @@ onMounted(() => {
               <thead class="bg-card">
                 <tr>
                   <th class="table-th w-10">
-                    <!-- Tick ô này = chọn tất cả item trong danh sách; tick lại = bỏ chọn. -->
+                    <!-- Tick ô này = chọn tất cả item KHÔNG có phần ở NVL khác; tick lại = bỏ chọn. -->
                     <input
                       type="checkbox"
-                      class="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+                      class="h-4 w-4 cursor-pointer rounded border-border accent-primary disabled:cursor-not-allowed"
                       :checked="allItemsSelected"
                       :indeterminate.prop="someItemsSelected"
-                      :disabled="items.length === 0"
+                      :disabled="plainItems.length === 0"
+                      :title="
+                        items.length && !plainItems.length
+                          ? 'Mọi sản phẩm ở đây đã có phần ở NVL khác — tick tay từng dòng nếu đúng là combo'
+                          : crossIds.size
+                            ? 'Chọn tất cả (bỏ qua sản phẩm đã có phần ở NVL khác)'
+                            : 'Chọn tất cả'
+                      "
                       aria-label="Chọn tất cả item"
                       @change="toggleAll"
                     />
@@ -304,6 +361,15 @@ onMounted(() => {
                       :title="`Đã QC fail ${it.rework_count} lần — đây là lần sản xuất thứ ${(it.rework_count ?? 0) + 1}`"
                     >
                       Làm lại · lần {{ (it.rework_count ?? 0) + 1 }}
+                    </span>
+                    <!-- Đã có phần ở NVL khác: combo đang dở, hoặc SKU bị đổi NVL sau khi gom (#6380). -->
+                    <span
+                      v-for="p in otherParts(it)"
+                      :key="p.id ?? `${p.batch_id}-${p.material_id}`"
+                      class="mt-1 block w-fit rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+                      title="Sản phẩm này đã nằm trong batch của NVL khác. Chỉ gom tiếp nếu SKU đúng là combo nhiều tấm."
+                    >
+                      {{ partLabel(p) }}
                     </span>
                   </td>
                   <td class="table-td">{{ itemStoreOrderId(it) }}</td>

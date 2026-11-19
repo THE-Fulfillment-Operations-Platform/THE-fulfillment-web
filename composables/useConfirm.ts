@@ -17,6 +17,10 @@ export interface ConfirmOptions {
   confirmText?: string
   cancelText?: string
   tone?: ConfirmTone
+  /** Danh sách chi tiết (mỗi phần tử một dòng), hiện căn trái trong khung cuộn
+   *  dưới `message` — cho hộp xác nhận phải kể ra từng sản phẩm / SKU. Có nó thì
+   *  hộp rộng hơn. */
+  items?: string[]
 }
 
 interface ConfirmState {
@@ -26,6 +30,7 @@ interface ConfirmState {
   confirmText: string
   cancelText: string
   tone: ConfirmTone
+  items: string[]
 }
 
 const state = ref<ConfirmState>({
@@ -35,6 +40,7 @@ const state = ref<ConfirmState>({
   confirmText: 'Xác nhận',
   cancelText: 'Huỷ',
   tone: 'primary',
+  items: [],
 })
 let resolver: ((v: boolean) => void) | null = null
 
@@ -50,6 +56,7 @@ export function useConfirm() {
       confirmText: o.confirmText ?? 'Xác nhận',
       cancelText: o.cancelText ?? 'Huỷ',
       tone: o.tone ?? 'primary',
+      items: o.items ?? [],
     }
     return new Promise<boolean>((resolve) => {
       resolver = resolve

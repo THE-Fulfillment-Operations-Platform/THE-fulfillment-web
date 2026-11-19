@@ -21,7 +21,7 @@ const CODES_WITH_BETTER_VI = new Set(['NETWORK', 'NO_CLIENT', 'UNAUTHORIZED', 'F
 
 // Mã lỗi mà `details` là dữ liệu cho một UI riêng (vd. bảng từng link design
 // hỏng), không phải câu chữ: nối nó vào toast chỉ ra một mớ JSON dài.
-const CODES_WITH_STRUCTURED_DETAILS = new Set(['DESIGN_DOWNLOAD_FAILED'])
+const CODES_WITH_STRUCTURED_DETAILS = new Set(['DESIGN_DOWNLOAD_FAILED', 'SKU_MATERIAL_CHANGE_CONFIRM'])
 
 // Vietnamese messages for error codes the app / backend commonly returns.
 const VI_BY_CODE: Record<string, string> = {

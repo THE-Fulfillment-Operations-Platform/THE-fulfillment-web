@@ -9,6 +9,7 @@ import { errorMessage } from '~/utils/api-error'
 import { formatDimMM } from '~/utils/format'
 import { useToastStore } from '~/stores/toast'
 import { useSpreadsheetFile } from '~/composables/useSpreadsheetFile'
+import { confirmMaterialChange, impactReasons, materialNames, saveWithMaterialConfirm } from '~/utils/skuMaterialConfirm'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void; (e: 'imported'): void }>()
@@ -75,9 +76,20 @@ async function runPreview() {
 
 async function commit() {
   if (!preview.value) return
+  const jobId = preview.value.import_job_id
+  // Import chỉ THÊM NVL: SKU đang 3 ly mà file ghi 5 ly thành combo 3+5 (vụ
+  // 19/11, #6380). Bản xem trước đã báo → hỏi trước khi gửi. Bản xem trước cũ
+  // (hàng vừa vào sản xuất sau đó) thì API vẫn trả 409 → hỏi lúc đó.
+  const warnings = materialWarnings.value
+  if (warnings.length && !(await confirmMaterialChange(warnings, 'áp dụng'))) return
   committing.value = true
   try {
-    const { data } = await masterDataApi.commit(preview.value.import_job_id)
+    const res = await saveWithMaterialConfirm(
+      (confirm) => masterDataApi.commit(jobId, confirm || warnings.length > 0),
+      'áp dụng',
+    )
+    if (!res) return
+    const { data } = res
     preview.value = data
     committed.value = true
     const a = data.applied
@@ -102,6 +114,8 @@ const canCommit = computed(
 const s = computed(() => preview.value?.summary)
 const newMaterials = computed(() => preview.value?.materials.filter((m) => !m.exists) ?? [])
 const missingMaterial = computed(() => preview.value?.skus.filter((k) => k.status === 'MISSING_MATERIAL') ?? [])
+// SKU mà lần import này đổi NVL theo kiểu phải xác nhận (#6380).
+const materialWarnings = computed(() => (committed.value ? [] : preview.value?.material_warnings ?? []))
 
 const STATUS_BADGE: Record<MasterSkuStatus, string> = {
   OK: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
@@ -317,6 +331,28 @@ async function downloadTemplate() {
           <span class="font-medium text-foreground">{{ s.shipping_skus }}</span> SKU được khai cân nặng / kích thước hộp
           (để gửi THE) — ô trống không xoá số đã có.
         </p>
+
+        <!-- Đổi NVL cần xác nhận (#6380): import chỉ THÊM, không thay -->
+        <div v-if="materialWarnings.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
+          <div class="border-b border-border bg-rose-50 px-3 py-2 dark:bg-rose-500/10">
+            <p class="text-xs font-semibold text-rose-700 dark:text-rose-300">
+              Đổi nguyên vật liệu cần xác nhận ({{ materialWarnings.length }} SKU)
+            </p>
+            <p class="text-[11px] text-rose-700/80 dark:text-rose-300/80">
+              Import chỉ THÊM NVL, không bỏ NVL cũ. Đổi tấm thì sửa ở tab SKU (bỏ NVL cũ), đừng để 2 tấm nếu
+              không phải combo. Bấm Áp dụng sẽ hỏi lại một lần nữa.
+            </p>
+          </div>
+          <ul class="max-h-48 space-y-2 overflow-auto p-2.5 text-xs">
+            <li v-for="w in materialWarnings" :key="w.sku_code">
+              <p class="text-foreground">
+                <span class="font-mono font-medium">{{ w.sku_code }}</span>
+                <span class="ml-1 text-muted-foreground">{{ materialNames(w.before) }} → {{ materialNames(w.after) }}</span>
+              </p>
+              <p v-for="(r, i) in impactReasons(w)" :key="i" class="mt-0.5 text-rose-700 dark:text-rose-300">• {{ r }}</p>
+            </li>
+          </ul>
+        </div>
 
         <!-- Thiếu NVL -->
         <div v-if="missingMaterial.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">

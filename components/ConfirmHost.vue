@@ -68,7 +68,8 @@ watch(
 
         <!-- Bubble card -->
         <div
-          class="confirm-card relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-white/60 bg-card/85 p-6 text-center shadow-2xl backdrop-blur-2xl dark:border-white/10"
+          class="confirm-card relative w-full overflow-hidden rounded-[1.75rem] border border-white/60 bg-card/85 p-6 text-center shadow-2xl backdrop-blur-2xl dark:border-white/10"
+          :class="state.items.length ? 'max-w-lg' : 'max-w-sm'"
         >
           <!-- Ethereal glow behind the icon -->
           <div
@@ -87,9 +88,19 @@ watch(
           </div>
 
           <h3 id="confirm-title" class="relative text-lg font-semibold text-foreground">{{ state.title }}</h3>
-          <p class="relative mx-auto mt-2 max-w-xs whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+          <p
+            class="relative mx-auto mt-2 whitespace-pre-line text-sm leading-relaxed text-muted-foreground"
+            :class="state.items.length ? 'max-w-md' : 'max-w-xs'"
+          >
             {{ state.message }}
           </p>
+          <!-- Danh sách chi tiết: căn trái, cuộn được khi dài. -->
+          <ul
+            v-if="state.items.length"
+            class="relative mt-3 max-h-60 space-y-1.5 overflow-auto rounded-xl border border-border bg-muted/60 p-3 text-left text-xs leading-relaxed text-foreground"
+          >
+            <li v-for="(line, i) in state.items" :key="i" class="whitespace-pre-line">{{ line }}</li>
+          </ul>
 
           <div class="relative mt-6 flex gap-2.5">
             <button class="btn-secondary flex-1 justify-center rounded-xl py-2.5" @click="cancel">

@@ -62,6 +62,8 @@ export interface SkuInput {
   hs_code?: string
   // Optional: a SKU may be created unmapped and get its material(s) later.
   materials?: SkuMaterialInput[]
+  // Đã xem cảnh báo 409 SKU_MATERIAL_CHANGE_CONFIRM và vẫn lưu (#6380).
+  confirm_material_change?: boolean
 }
 
 // ---- Sellers ---------------------------------------------------------------

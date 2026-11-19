@@ -12,6 +12,7 @@ import { useConfirm } from '~/composables/useConfirm'
 import { useSelection } from '~/composables/useSelection'
 import { useClientPager } from '~/composables/useClientPager'
 import { effectiveShipping, missingShipping, formatShipping } from '~/utils/shipping'
+import { saveWithMaterialConfirm } from '~/utils/skuMaterialConfirm'
 import SkuImportDialog from './SkuImportDialog.vue'
 import ParentSkuImportDialog from './ParentSkuImportDialog.vue'
 import SkuShippingImportDialog from './SkuShippingImportDialog.vue'
@@ -307,10 +308,13 @@ async function submit() {
   saving.value = true
   const parent = parentId.value || null
   try {
+    // Đổi bộ NVL của SKU còn hàng trong xưởng / thêm 2 NVL cùng loại: API trả
+    // 409 kèm chi tiết → hộp xác nhận → gửi lại với confirm (#6380).
     if (editing.value) {
+      const id = editing.value.id
       // Luôn gửi đủ: 0 = xoá (tách khỏi cha / bỏ kích thước), vì form đang hiện
       // đúng giá trị hiện tại nên ô trống nghĩa là người dùng muốn bỏ.
-      await skusApi.update(editing.value.id, {
+      const body = {
         name: form.name.trim(),
         product_name: form.product_name.trim(),
         description: form.description.trim(),
@@ -320,10 +324,14 @@ async function submit() {
         width_mm: parseDim(widthMM.value) ?? 0,
         ...shipPayload(true),
         materials: buildMaterials(),
-      })
+      }
+      const saved = await saveWithMaterialConfirm((confirm) =>
+        skusApi.update(id, { ...body, confirm_material_change: confirm || undefined }),
+      )
+      if (!saved) return
       toast.success('Đã cập nhật SKU')
     } else {
-      await skusApi.create({
+      const body = {
         code: normalizeCode(form.code),
         name: form.name.trim(),
         product_name: form.product_name.trim(),
@@ -334,7 +342,12 @@ async function submit() {
         width_mm: parseDim(widthMM.value),
         ...shipPayload(false),
         materials: buildMaterials(),
-      })
+      }
+      const saved = await saveWithMaterialConfirm(
+        (confirm) => skusApi.create({ ...body, confirm_material_change: confirm || undefined }),
+        'tạo',
+      )
+      if (!saved) return
       toast.success('Đã tạo SKU')
     }
     open.value = false

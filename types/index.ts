@@ -288,6 +288,9 @@ export interface Sku {
 // ---- Orders & items --------------------------------------------------------
 
 export interface BatchItemRef {
+  // `id` / `material_id`: phần sản xuất thô (BatchItem) như hàng chờ Tạo batch trả.
+  id?: number
+  material_id?: number
   batch_item_id?: number
   batch_id?: number
   batch_code?: string
@@ -654,6 +657,33 @@ export interface MasterImportSummary {
   child_skus?: number // số SKU file xếp vào dưới một SKU cha
   parent_groups?: number // … thuộc bao nhiêu SKU cha khác nhau
   shipping_skus?: number // số SKU file khai cân nặng / hộp / giá trị / mã HS
+  material_warnings?: number // số SKU đổi NVL cần xác nhận trước khi áp dụng (#6380)
+}
+
+// ---- Cửa xác nhận đổi NVL của SKU (409 SKU_MATERIAL_CHANGE_CONFIRM, #6380) --
+
+export interface MaterialRef {
+  id: number // 0 = NVL file import sắp tạo
+  code: string
+  name: string
+}
+
+export interface SkuMaterialImpact {
+  sku_id: number
+  sku_code: string
+  before: MaterialRef[]
+  after: MaterialRef[]
+  added: MaterialRef[]
+  removed: MaterialRef[]
+  // Chỉ import: NVL SKU đang có mà file không ghi — import chỉ THÊM nên chúng ở lại.
+  kept_not_in_file?: MaterialRef[]
+  // Hai NVL cùng loại khác độ dày (vd Basswood 3 ly + 5 ly) — gần như chắc là nhầm.
+  same_family?: { a: MaterialRef; b: MaterialRef }[]
+  // Sản phẩm của SKU còn trong xưởng đã vào batch, tách theo NVL của phần.
+  in_production: number
+  in_production_by?: { material: MaterialRef; items: number; batches: string[]; more_batches: number }[]
+  // Bộ mới nhiều NVL hơn: hàng đang làm sẽ hiện lại ở màn Tạo batch của NVL mới.
+  grows: boolean
 }
 
 export interface MasterImportApplied {
@@ -674,6 +704,8 @@ export interface MasterImportPreview {
   errors: MasterImportRowError[]
   summary: MasterImportSummary
   applied?: MasterImportApplied
+  // SKU mà lần import này đổi NVL theo kiểu phải xác nhận (xem SkuMaterialImpact).
+  material_warnings?: SkuMaterialImpact[]
 }
 
 // ---- Import SKU cha (bước 1 của thiết lập cha → con) -----------------------

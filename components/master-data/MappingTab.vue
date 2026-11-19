@@ -2,6 +2,7 @@
 import { skusApi } from '~/services/api'
 import type { Material, Sku } from '~/types'
 import { errorMessage } from '~/utils/api-error'
+import { saveWithMaterialConfirm } from '~/utils/skuMaterialConfirm'
 import { parentSkuIds } from '~/utils/sku'
 import { quotaInfo, quotaLabel, QUOTA_TITLE, type QuotaSource } from '~/utils/quota'
 import { useToastStore } from '~/stores/toast'
@@ -79,10 +80,14 @@ function toggleMat(id: number) {
 async function save() {
   if (!editing.value || saving.value) return
   saving.value = true
+  const id = editing.value.id
+  const materials = selectedMats.value.map((mid) => ({ material_id: mid, quantity_per_unit: 1 }))
   try {
-    await skusApi.update(editing.value.id, {
-      materials: selectedMats.value.map((id) => ({ material_id: id, quantity_per_unit: 1 })),
-    })
+    // SKU còn hàng trong xưởng / thêm 2 NVL cùng loại: hộp xác nhận rồi mới lưu (#6380).
+    const saved = await saveWithMaterialConfirm((confirm) =>
+      skusApi.update(id, { materials, confirm_material_change: confirm || undefined }),
+    )
+    if (!saved) return
     toast.success('Đã cập nhật mapping nguyên vật liệu')
     open.value = false
     emit('changed')
