@@ -64,9 +64,12 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
   }),
 )
 
+// value là CHUỖI (như ô Seller): filters.material_id mặc định '' và
+// usePersistedFilters chỉ khôi phục khi cùng kiểu — để số thì vào chi tiết rồi
+// quay lại (hay F5) là mất lọc Material (anh Kiên 20/11).
 const materialOptions = computed(() => [
   { value: '', label: 'Tất cả' },
-  ...materials.value.map((m) => ({ value: m.id, label: m.name })),
+  ...materials.value.map((m) => ({ value: String(m.id), label: m.name })),
 ])
 // "Đã có file SX" không phải status lưu trong DB — là PENDING đã đủ link in +
 // cắt (xem batchStatusBadge). Lọc vẫn chạy ở backend (?files=) để phân trang và
