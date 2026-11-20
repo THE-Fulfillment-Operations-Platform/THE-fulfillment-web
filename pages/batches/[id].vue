@@ -1030,12 +1030,10 @@ async function printLabels() {
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th hidden sm:table-cell">SKU</th>
                   <th class="table-th hidden md:table-cell">Loại VL</th>
-                  <th class="table-th hidden lg:table-cell">Mô tả QC</th>
                   <th class="table-th hidden lg:table-cell">Mã ảnh</th>
                   <th class="table-th hidden sm:table-cell">SL</th>
                   <th class="table-th hidden lg:table-cell">Link ảnh</th>
                   <th class="table-th hidden md:table-cell">Mockup</th>
-                  <th class="table-th hidden lg:table-cell">Tên file</th>
                   <th class="table-th hidden md:table-cell">Link in</th>
                   <th class="table-th hidden md:table-cell">Link cắt</th>
                   <th class="table-th">Trạng thái</th>
@@ -1043,7 +1041,7 @@ async function printLabels() {
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-if="!tableRows.length">
-                  <td colspan="15" class="table-td py-6 text-center text-sm text-muted-foreground">Không có item nào ở nhóm này.</td>
+                  <td colspan="13" class="table-td py-6 text-center text-sm text-muted-foreground">Không có item nào ở nhóm này.</td>
                 </tr>
                 <tr v-for="(r, idx) in tableRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.display_code }}</td>
@@ -1061,9 +1059,6 @@ async function printLabels() {
                   </td>
                   <td class="table-td hidden sm:table-cell">{{ r.sku_code }}</td>
                   <td class="table-td hidden md:table-cell">{{ r.material }}</td>
-                  <td class="table-td hidden max-w-[16rem] truncate text-xs text-muted-foreground lg:table-cell" :title="r.qc_description">
-                    {{ r.qc_description || '—' }}
-                  </td>
                   <td class="table-td hidden text-xs lg:table-cell">{{ r.image_code || '—' }}</td>
                   <td class="table-td hidden text-xs sm:table-cell">{{ r.quantity === '' ? '—' : r.quantity }}</td>
                   <td class="table-td hidden lg:table-cell">
@@ -1071,9 +1066,6 @@ async function printLabels() {
                     <span v-else class="text-xs text-muted-foreground">—</span>
                   </td>
                   <td class="table-td hidden md:table-cell"><UiMockupLink :url="r.mockup_url" small label="Mockup" /></td>
-                  <td class="table-td hidden max-w-[10rem] truncate text-xs text-muted-foreground lg:table-cell" :title="r.production_file_name">
-                    {{ r.production_file_name || '—' }}
-                  </td>
                   <td class="table-td hidden md:table-cell">
                     <a v-if="r.print_file_url" :href="r.print_file_url" target="_blank" class="text-primary hover:underline"><UiIcon name="link" :size="14" /></a>
                     <span v-else class="text-xs text-muted-foreground">—</span>
