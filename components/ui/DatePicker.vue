@@ -21,8 +21,13 @@ const props = withDefaults(
     min?: string | null
     max?: string | null
     clearable?: boolean
+    /**
+     * Cho chọn thêm giờ:phút (anh Kiên 21/11, lọc đơn/batch theo giờ). Model khi có
+     * giờ là `yyyy-mm-ddTHH:MM` (giờ máy), chưa chọn giờ vẫn là `yyyy-mm-dd`.
+     */
+    withTime?: boolean
   }>(),
-  { placeholder: 'dd/mm/yyyy', disabled: false, clearable: true },
+  { placeholder: 'dd/mm/yyyy', disabled: false, clearable: true, withTime: false },
 )
 
 const emit = defineEmits<{
@@ -65,7 +70,11 @@ function outOfRange(d: Date): boolean {
   return false
 }
 
-const displayText = computed(() => (selected.value ? toVN(selected.value) : ''))
+const TIME_RE = /T(\d{2}:\d{2})/
+const timePart = computed(() => (props.withTime ? (props.modelValue?.match(TIME_RE)?.[1] ?? '') : ''))
+const displayText = computed(() =>
+  selected.value ? toVN(selected.value) + (timePart.value ? ` ${timePart.value}` : '') : '',
+)
 
 // ---- Panel state -----------------------------------------------------------
 const open = ref(false)
@@ -166,10 +175,20 @@ function onDocMouseDown(e: MouseEvent) {
 // ---- Selection -------------------------------------------------------------
 function pick(d: Date) {
   if (outOfRange(d)) return
-  const iso = toISO(d)
+  const iso = toISO(d) + (timePart.value ? `T${timePart.value}` : '')
   emit('update:modelValue', iso)
   emit('change', iso)
-  closePanel()
+  // Có ô giờ thì để panel mở cho chọn tiếp giờ; bấm "Xong" hoặc ra ngoài là đóng.
+  if (!props.withTime) closePanel()
+}
+
+// Ô giờ: chưa chọn ngày thì lấy hôm nay. Xoá giờ thì về lọc cả ngày.
+function onTime(e: Event) {
+  const t = (e.target as HTMLInputElement).value
+  const base = toISO(selected.value ?? today)
+  const v = /^\d{2}:\d{2}$/.test(t) ? `${base}T${t}` : base
+  emit('update:modelValue', v)
+  emit('change', v)
 }
 
 function clear() {
@@ -400,6 +419,24 @@ onBeforeUnmount(detach)
             </button>
           </div>
 
+          <div v-if="withTime" class="mt-2 flex items-center gap-2 border-t border-border pt-2">
+            <label class="text-xs font-medium text-muted-foreground" :for="id ? `${id}-time` : undefined">Giờ</label>
+            <input
+              :id="id ? `${id}-time` : undefined"
+              type="time"
+              class="input h-8 flex-1 px-2 py-1 text-xs"
+              :value="timePart"
+              aria-label="Giờ"
+              @change="onTime"
+            />
+            <button
+              type="button"
+              class="rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent"
+              @click="closePanel()"
+            >
+              Xong
+            </button>
+          </div>
           <div class="mt-2 flex items-center justify-between border-t border-border pt-2">
             <button
               type="button"

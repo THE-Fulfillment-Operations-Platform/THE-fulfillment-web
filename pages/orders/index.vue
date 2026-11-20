@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiDateFrom, apiDateTo } from '~/utils/dateRange'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { itemsApi, materialsApi, ordersApi, sellersApi } from '~/services/api'
 import type { Material, OrderItem, Seller } from '~/types'
@@ -80,19 +81,6 @@ const filters = reactive({
 })
 usePersistedFilters('orders', filters)
 
-// The backend filters created_at <= date_to; to make "Đến ngày" INCLUSIVE of the
-// whole selected day (so from=to=today still matches today's items), send the
-// start of the next day. Anchored at noon so the local→date conversion can't slip
-// a day across timezones.
-function inclusiveEnd(d: string): string | undefined {
-  if (!d) return undefined
-  const dt = new Date(d + 'T12:00:00')
-  dt.setDate(dt.getDate() + 1)
-  const y = dt.getFullYear()
-  const m = String(dt.getMonth() + 1).padStart(2, '0')
-  const day = String(dt.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
 
 // Server-side sort. Empty `by` = backend default (newest first). Sorting SKU/date/
 // quantity runs in the backend so it covers the whole dataset, not just this
@@ -116,8 +104,8 @@ function filterParams() {
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
-    date_from: filters.date_from || undefined,
-    date_to: inclusiveEnd(filters.date_to),
+    date_from: apiDateFrom(filters.date_from),
+    date_to: apiDateTo(filters.date_to),
   }
 }
 
@@ -522,11 +510,11 @@ function exportItems() {
         <div>
           <label class="label">Từ ngày</label>
           <!-- Hai đầu khoá lẫn nhau: không chọn được khoảng ngược. -->
-          <UiDatePicker v-model="filters.date_from" :max="filters.date_to" aria-label="Từ ngày" />
+          <UiDatePicker v-model="filters.date_from" with-time :max="filters.date_to" aria-label="Từ ngày" />
         </div>
         <div>
           <label class="label">Đến ngày</label>
-          <UiDatePicker v-model="filters.date_to" :min="filters.date_from" aria-label="Đến ngày" />
+          <UiDatePicker v-model="filters.date_to" with-time :min="filters.date_from" aria-label="Đến ngày" />
         </div>
         <div>
           <label class="label">Bảo hành</label>
