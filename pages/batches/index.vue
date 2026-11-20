@@ -45,6 +45,8 @@ const filters = reactive({
   seller_id: '', // server-side: batch chứa hàng của seller này
   store_order: '', // server-side: batch chứa đơn có mã đơn shop khớp
   overdue: false, // client-side refine
+  date_from: '', // server-side: batch tạo từ ngày (YYYY-MM-DD) — anh Kiên 20/11
+  date_to: '', // server-side: tới hết ngày này (gửi đầu ngày hôm sau, xem inclusiveEnd)
   page: 1,
   page_size: 20,
 })
@@ -59,6 +61,8 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
     store_order: filters.store_order.trim() || undefined,
     batch: filters.batch_id.trim().replace(/^#/, '') || undefined,
+    date_from: filters.date_from || undefined,
+    date_to: inclusiveEnd(filters.date_to),
     page: filters.page,
     page_size: filters.page_size,
   }),
@@ -153,6 +157,15 @@ const rows = computed(() => {
 })
 
 const overdueOnPage = computed(() => (data.value ?? []).filter(isBatchOverdue).length)
+
+// Backend lọc created_at <= date_to; muốn "Đến ngày" tính trọn ngày đã chọn thì gửi
+// đầu ngày hôm sau (giống màn Đơn hàng). Neo trưa để đổi ngày không trượt múi giờ.
+function inclusiveEnd(d: string): string | undefined {
+  if (!d) return undefined
+  const dt = new Date(d + 'T12:00:00')
+  dt.setDate(dt.getDate() + 1)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
 
 function applyFilters() {
   filters.page = 1
@@ -299,6 +312,15 @@ async function autoCreateBatches() {
         <div>
           <label class="label">Priority</label>
           <UiSelect v-model="filters.priority" :options="priorityOptions" aria-label="Priority" @change="applyFilters" />
+        </div>
+        <div>
+          <label class="label">Từ ngày</label>
+          <!-- Hai đầu khoá lẫn nhau: không chọn được khoảng ngược. -->
+          <UiDatePicker v-model="filters.date_from" :max="filters.date_to" aria-label="Từ ngày" @change="applyFilters" />
+        </div>
+        <div>
+          <label class="label">Đến ngày</label>
+          <UiDatePicker v-model="filters.date_to" :min="filters.date_from" aria-label="Đến ngày" @change="applyFilters" />
         </div>
         <div class="flex items-end">
           <button class="btn-secondary w-full" @click="applyFilters">
