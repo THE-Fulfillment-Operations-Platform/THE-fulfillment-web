@@ -72,9 +72,13 @@ function outOfRange(d: Date): boolean {
 
 const TIME_RE = /T(\d{2}:\d{2})/
 const timePart = computed(() => (props.withTime ? (props.modelValue?.match(TIME_RE)?.[1] ?? '') : ''))
-const displayText = computed(() =>
-  selected.value ? toVN(selected.value) + (timePart.value ? ` ${timePart.value}` : '') : '',
-)
+// Có giờ thì rút năm còn 2 số (21/11/26 08:30) để ô hẹp vẫn hiện đủ, không bị cắt "…".
+const displayText = computed(() => {
+  const d = selected.value
+  if (!d) return ''
+  if (!timePart.value) return toVN(d)
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)} ${timePart.value}`
+})
 
 // ---- Panel state -----------------------------------------------------------
 const open = ref(false)
@@ -182,13 +186,25 @@ function pick(d: Date) {
   if (!props.withTime) closePanel()
 }
 
-// Ô giờ: chưa chọn ngày thì lấy hôm nay. Xoá giờ thì về lọc cả ngày.
-function onTime(e: Event) {
-  const t = (e.target as HTMLInputElement).value
+// Bảng chọn giờ tự vẽ (Nghĩa 21/11: ô time của trình duyệt xấu). Giờ 00–23, phút
+// bước 5 + nút nhanh Đầu ngày / Cuối ngày (23:59) / Bây giờ. Chưa chọn ngày thì lấy
+// hôm nay; bỏ giờ thì về lọc cả ngày.
+const HOURS = Array.from({ length: 24 }, (_, i) => pad(i))
+const MINUTES = Array.from({ length: 12 }, (_, i) => pad(i * 5))
+const curHour = computed(() => timePart.value.slice(0, 2))
+const curMinute = computed(() => timePart.value.slice(3, 5))
+
+function setTime(t: string) {
   const base = toISO(selected.value ?? today)
   const v = /^\d{2}:\d{2}$/.test(t) ? `${base}T${t}` : base
   emit('update:modelValue', v)
   emit('change', v)
+}
+const pickHour = (h: string) => setTime(`${h}:${curMinute.value || '00'}`)
+const pickMinute = (m: string) => setTime(`${curHour.value || '00'}:${m}`)
+function nowTime() {
+  const n = new Date()
+  setTime(`${pad(n.getHours())}:${pad(n.getMinutes())}`)
 }
 
 function clear() {
@@ -293,6 +309,8 @@ onBeforeUnmount(detach)
           displayText ? 'text-foreground' : 'text-muted-foreground',
           // chừa chỗ cho nút xoá phủ lên, để ngày dài không chui xuống dưới nó
           clearable && displayText && !disabled ? 'mr-6' : '',
+          // có giờ: chữ nhỏ + sát lại để 21/11/26 08:30 vừa ô hẹp (5 cột lọc)
+          timePart ? 'text-sm tracking-tight' : '',
         ]"
       >
         {{ displayText || placeholder }}
@@ -419,23 +437,52 @@ onBeforeUnmount(detach)
             </button>
           </div>
 
-          <div v-if="withTime" class="mt-2 flex items-center gap-2 border-t border-border pt-2">
-            <label class="text-xs font-medium text-muted-foreground" :for="id ? `${id}-time` : undefined">Giờ</label>
-            <input
-              :id="id ? `${id}-time` : undefined"
-              type="time"
-              class="input h-8 flex-1 px-2 py-1 text-xs"
-              :value="timePart"
-              aria-label="Giờ"
-              @change="onTime"
-            />
-            <button
-              type="button"
-              class="rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent"
-              @click="closePanel()"
-            >
-              Xong
-            </button>
+          <div v-if="withTime && view === 'day'" class="mt-2 border-t border-border pt-2" role="group" aria-label="Chọn giờ">
+            <div class="mb-1.5 flex items-center justify-between">
+              <span class="text-xs font-medium text-muted-foreground">Giờ</span>
+              <span class="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-foreground">
+                {{ timePart || 'Cả ngày' }}
+              </span>
+            </div>
+            <div class="grid grid-cols-6 gap-1">
+              <button
+                v-for="h in HOURS"
+                :key="h"
+                type="button"
+                class="h-7 rounded-md text-xs tabular-nums transition-colors"
+                :class="h === curHour ? 'bg-primary font-semibold text-primary-foreground' : 'text-foreground hover:bg-muted'"
+                :aria-pressed="h === curHour"
+                @click="pickHour(h)"
+              >
+                {{ h }}
+              </button>
+            </div>
+            <div class="mt-1.5 grid grid-cols-6 gap-1 border-t border-dashed border-border pt-1.5">
+              <button
+                v-for="m in MINUTES"
+                :key="m"
+                type="button"
+                class="h-7 rounded-md text-xs tabular-nums transition-colors"
+                :class="m === curMinute ? 'bg-primary font-semibold text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'"
+                :aria-pressed="m === curMinute"
+                @click="pickMinute(m)"
+              >
+                :{{ m }}
+              </button>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-1">
+              <button type="button" class="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted" @click="setTime('00:00')">Đầu ngày</button>
+              <button type="button" class="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted" @click="setTime('23:59')">Cuối ngày</button>
+              <button type="button" class="rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted" @click="nowTime">Bây giờ</button>
+              <button v-if="timePart" type="button" class="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted" @click="setTime('')">Bỏ giờ</button>
+              <button
+                type="button"
+                class="ml-auto rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+                @click="closePanel()"
+              >
+                Xong
+              </button>
+            </div>
           </div>
           <div class="mt-2 flex items-center justify-between border-t border-border pt-2">
             <button
