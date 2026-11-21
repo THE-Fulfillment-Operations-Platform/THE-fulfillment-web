@@ -83,6 +83,8 @@ const displayText = computed(() => {
 // ---- Panel state -----------------------------------------------------------
 const open = ref(false)
 const view = ref<'day' | 'month' | 'year'>('day')
+// Có giờ: panel chia 2 trang Ngày / Giờ cho gọn (màn thấp không bị cắt nút) — Nghĩa 21/11.
+const timeMode = ref(false)
 // The keyboard/highlight cursor. It also decides which month the grid shows.
 const cursor = ref(selected.value ?? today)
 
@@ -124,15 +126,22 @@ function reposition() {
   const el = triggerRef.value
   if (!el) return
   const r = el.getBoundingClientRect()
-  const height = 340
+  // Có bảng giờ thì panel cao ~520px. Màn thấp (laptop, cửa sổ nhỏ) không đủ chỗ thì
+  // mở về phía nhiều chỗ hơn và giới hạn chiều cao + cuộn trong panel, để nút Xong
+  // không bao giờ bị cắt khỏi màn hình (Nghĩa 21/11).
+  const height = props.withTime ? 390 : 340
   const spaceBelow = window.innerHeight - r.bottom
-  const up = spaceBelow < height && r.top > spaceBelow
+  const spaceAbove = r.top
+  const up = spaceBelow < height && spaceAbove > spaceBelow
+  const maxH = Math.max(220, Math.floor((up ? spaceAbove : spaceBelow) - 12))
   // Keep the panel on screen when the field sits near the right edge.
   const left = Math.max(8, Math.min(r.left, window.innerWidth - PANEL_W - 8))
   panelStyle.value = {
     position: 'fixed',
     left: `${Math.round(left)}px`,
     width: `${PANEL_W}px`,
+    maxHeight: `${maxH}px`,
+    overflowY: 'auto',
     ...(up
       ? { bottom: `${Math.round(window.innerHeight - r.top + 4)}px` }
       : { top: `${Math.round(r.bottom + 4)}px` }),
@@ -144,6 +153,7 @@ function openPanel() {
   if (props.disabled || open.value) return
   open.value = true
   view.value = 'day'
+  timeMode.value = false
   cursor.value = selected.value ?? today
   nextTick(() => {
     reposition()
@@ -182,8 +192,9 @@ function pick(d: Date) {
   const iso = toISO(d) + (timePart.value ? `T${timePart.value}` : '')
   emit('update:modelValue', iso)
   emit('change', iso)
-  // Có ô giờ thì để panel mở cho chọn tiếp giờ; bấm "Xong" hoặc ra ngoài là đóng.
+  // Có giờ: chọn ngày xong tự sang trang Giờ; bấm "Xong" hoặc ra ngoài là đóng.
   if (!props.withTime) closePanel()
+  else timeMode.value = true
 }
 
 // Bảng chọn giờ tự vẽ (Nghĩa 21/11: ô time của trình duyệt xấu). Giờ 00–23, phút
@@ -341,6 +352,27 @@ onBeforeUnmount(detach)
           class="z-[60] rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-soft"
           :style="panelStyle"
         >
+          <!-- Có giờ: 2 tab Ngày / Giờ -->
+          <div v-if="withTime" class="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-xs">
+            <button
+              type="button"
+              class="flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium transition-colors"
+              :class="!timeMode ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="timeMode = false"
+            >
+              <UiIcon name="calendar" :size="13" /> {{ selected ? toVN(selected) : 'Ngày' }}
+            </button>
+            <button
+              type="button"
+              class="flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium tabular-nums transition-colors"
+              :class="timeMode ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="timeMode = true"
+            >
+              🕐 {{ timePart || 'Cả ngày' }}
+            </button>
+          </div>
+
+          <template v-if="!timeMode">
           <!-- Header: tháng/năm bấm được để thu nhỏ về lưới tháng rồi lưới năm -->
           <div class="mb-2 flex items-center gap-1">
             <button
@@ -437,13 +469,10 @@ onBeforeUnmount(detach)
             </button>
           </div>
 
-          <div v-if="withTime && view === 'day'" class="mt-2 border-t border-border pt-2" role="group" aria-label="Chọn giờ">
-            <div class="mb-1.5 flex items-center justify-between">
-              <span class="text-xs font-medium text-muted-foreground">Giờ</span>
-              <span class="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-foreground">
-                {{ timePart || 'Cả ngày' }}
-              </span>
-            </div>
+          </template>
+
+          <div v-if="withTime && timeMode" role="group" aria-label="Chọn giờ">
+            <div class="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Giờ</div>
             <div class="grid grid-cols-6 gap-1">
               <button
                 v-for="h in HOURS"
@@ -457,7 +486,8 @@ onBeforeUnmount(detach)
                 {{ h }}
               </button>
             </div>
-            <div class="mt-1.5 grid grid-cols-6 gap-1 border-t border-dashed border-border pt-1.5">
+            <div class="mb-1 mt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Phút</div>
+            <div class="grid grid-cols-6 gap-1">
               <button
                 v-for="m in MINUTES"
                 :key="m"
@@ -484,7 +514,7 @@ onBeforeUnmount(detach)
               </button>
             </div>
           </div>
-          <div class="mt-2 flex items-center justify-between border-t border-border pt-2">
+          <div v-if="!timeMode" class="mt-2 flex items-center justify-between border-t border-border pt-2">
             <button
               type="button"
               class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
