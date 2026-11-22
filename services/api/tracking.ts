@@ -42,6 +42,8 @@ export type TrackingImportIssueCode =
   | 'CONFLICT'
   | 'SHARED_TRACKING'
   | 'TAKEN_TRACKING'
+  /** Excel đã đổi mã thành số mũ (9.4E+21) — mất chữ số, không gắn. */
+  | 'EXCEL_NUMBER'
 
 /** Một dòng file sẽ KHÔNG được ghi, kèm lý do tiếng Việt. */
 export interface TrackingImportIssue {
@@ -70,7 +72,24 @@ export interface TrackingImportSummary {
   /** -1 = không so sánh (không gửi khoảng ngày xuất xưởng kèm file). */
   scope_total: number
   scope_missing: number
+  /**
+   * Số dòng của file "Xuất Excel" (chính màn này) để trống cột Mã vận đơn — bỏ
+   * qua, không phải lỗi, không tính trong total_rows. Luôn 0 với file khác.
+   */
+  skipped_blank?: number
 }
+
+/** Bộ lọc của màn Hành trình (không gồm trang) — cùng tham số với GET /api/orders. */
+export interface JourneyExportParams {
+  handed_over?: boolean
+  has_tracking?: boolean
+  handed_over_from?: string
+  handed_over_to?: string
+  search?: string
+}
+
+/** Backend giới hạn mỗi lần commit (MaxTrackingCommitBatch) — dialog chia lô theo số này. */
+export const TRACKING_COMMIT_BATCH = 500
 
 export interface TrackingImportPreview {
   summary: TrackingImportSummary
@@ -99,6 +118,21 @@ export const trackingApi = {
   /** File mẫu 2 cột (OrderID, Mã vận đơn) — .xlsx thật từ backend. */
   downloadImportTemplate: () =>
     apiDownload('/api/orders/tracking/import/template.xlsx', 'tracking-import-template.xlsx'),
+  /**
+   * Xuất Excel màn Hành trình: TOÀN BỘ đơn khớp bộ lọc (không chỉ trang đang
+   * xem), tối đa 5000 — vượt thì backend báo lỗi kèm số đơn. File này điền cột
+   * "Mã vận đơn" rồi đưa lại vào "Gắn mã từ Excel" được, không phải sửa cột.
+   */
+  downloadJourneyExport: (params: JourneyExportParams) => {
+    const q = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') q.set(k, String(v))
+    }
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
+    return apiDownload(`/api/orders/tracking/export.xlsx?${q.toString()}`, `hanh-trinh-don-${stamp}.xlsx`)
+  },
   /**
    * Preview gắn mã hàng loạt: backend parse file và đối chiếu, KHÔNG ghi gì.
    * Gửi kèm khoảng ngày xuất xưởng đang lọc để nhận cảnh báo "file thiếu N đơn".

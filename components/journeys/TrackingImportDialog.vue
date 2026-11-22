@@ -8,7 +8,7 @@
 //      Lệch số lượng giữa file và hệ thống hiện thành alert rõ ràng ở đây.
 //   3. "Gắn N mã": chỉ ghi các dòng đã duyệt; đơn ĐÃ có mã khác chỉ bị ghi đè
 //      khi CS tick ô đồng ý riêng.
-import { trackingApi } from '~/services/api'
+import { trackingApi, TRACKING_COMMIT_BATCH } from '~/services/api'
 import type {
   TrackingImportPreview,
   TrackingImportCommitResult,
@@ -142,6 +142,7 @@ const commitCount = computed(() => assigns.value.length + (includeOverwrite.valu
 // So khớp hai chiều cho alert tổng: file thừa (dòng lỗi) / file thiếu (đơn trong
 // khoảng ngày chưa được phủ). Chỉ "hoàn hảo" khi không lệch chiều nào.
 const scopeMissing = computed(() => (s.value && s.value.scope_missing > 0 ? s.value.scope_missing : 0))
+const skippedBlank = computed(() => s.value?.skipped_blank ?? 0)
 const perfect = computed(
   () => !!s.value && s.value.issues === 0 && scopeMissing.value === 0 && commitCount.value > 0,
 )
@@ -154,7 +155,26 @@ async function commit() {
       ...assigns.value,
       ...(includeOverwrite.value ? overwrites.value : []),
     ].map((m) => ({ order_id: m.order_id, tracking_number: m.tracking_number }))
-    const { data } = await trackingApi.commitImport(assignments)
+    // Backend nhận tối đa TRACKING_COMMIT_BATCH đơn mỗi lần — file "Xuất Excel"
+    // điền nhiều mã hơn thế thì gửi từng lô. Mỗi lô vốn đã là partial success
+    // (đơn lỗi không kéo cả lô), nên gộp kết quả các lô là đúng nghĩa cũ.
+    const data: TrackingImportCommitResult = { updated: 0, failed: [] }
+    let sent = 0
+    try {
+      for (let i = 0; i < assignments.length; i += TRACKING_COMMIT_BATCH) {
+        const chunk = assignments.slice(i, i + TRACKING_COMMIT_BATCH)
+        const { data: part } = await trackingApi.commitImport(chunk)
+        data.updated += part.updated ?? 0
+        data.failed.push(...(part.failed ?? []))
+        sent += chunk.length
+      }
+    } catch (e) {
+      // Lỗi ở lô đầu: chưa ghi gì, báo như cũ. Lỗi ở lô sau: các lô trước ĐÃ ghi
+      // — vẫn hiện kết quả thật và làm mới bảng, đơn chưa gửi ghi vào danh sách lỗi.
+      if (sent === 0) throw e
+      const reason = `Chưa gửi được (${errorMessage(e)}) — tải lại file để gắn tiếp`
+      for (const a of assignments.slice(sent)) data.failed.push({ order_id: a.order_id, reason })
+    }
     result.value = data
     if (data.failed?.length) {
       toast.info(`Đã gắn ${data.updated} mã — ${data.failed.length} đơn lỗi, xem chi tiết bên dưới`)
@@ -178,6 +198,7 @@ const ISSUE_LABEL: Record<string, string> = {
   CONFLICT: 'Nhiều mã cho 1 đơn',
   SHARED_TRACKING: '1 mã dán nhiều đơn',
   TAKEN_TRACKING: 'Mã đã gắn đơn khác',
+  EXCEL_NUMBER: 'Excel đổi thành số mũ',
 }
 
 // Lý do từ backend chỉ hiện khi nó nói thêm được gì so với nhãn — vài mã lỗi
@@ -200,6 +221,8 @@ function issueDetail(it: TrackingImportIssue): string {
           <span class="font-medium text-foreground">OrderID</span> (mã đơn shop hoặc mã nội bộ) và
           <span class="font-medium text-foreground">Mã vận đơn</span>. Hệ thống đối chiếu từng dòng
           và <span class="font-medium text-foreground">chưa ghi gì</span> cho tới khi bạn xác nhận.
+          Cũng nhận lại chính file <span class="font-medium text-foreground">Xuất Excel</span> của
+          trang này: điền cột Mã vận đơn, dòng để trống được bỏ qua.
         </p>
 
         <div
@@ -314,6 +337,18 @@ function issueDetail(it: TrackingImportIssue): string {
             </div>
           </div>
         </template>
+        <!-- File Xuất Excel quay lại: dòng chưa điền mã không phải lỗi, chỉ đếm.
+             Đặt SAU cả cặp v-if/v-else ở trên — chen vào giữa là bẻ gãy cặp đó. -->
+        <p
+          v-if="skippedBlank > 0"
+          class="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground"
+        >
+          <UiIcon name="info" :size="14" class="shrink-0" />
+          <span>
+            File xuất từ trang này: <span class="font-medium text-foreground">{{ skippedBlank }}</span>
+            dòng để trống mã vận đơn được bỏ qua, không gắn gì.
+          </span>
+        </p>
 
         <!-- Con số tổng quan -->
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" :class="s && s.scope_total >= 0 ? 'lg:grid-cols-6' : 'lg:grid-cols-5'">

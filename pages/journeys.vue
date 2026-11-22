@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { ordersApi, trackingApi } from '~/services/api'
-import type { UpdateTrackingInput } from '~/services/api'
+import type { UpdateTrackingInput, JourneyExportParams } from '~/services/api'
 import type { Order, OrderTrackingEvent } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useAuthStore } from '~/stores/auth'
@@ -58,19 +58,46 @@ function nextDayStartISO(d: string): string | undefined {
   return dt.toISOString()
 }
 
-const { data, meta, loading, error, reload } = useApiResource<Order[]>(() =>
-  ordersApi.list({
+// Bộ lọc (tab + ô tìm + khoảng ngày), không gồm trang — dùng chung cho danh sách
+// và nút Xuất Excel, để hai bên không bao giờ đọc bộ lọc khác nhau.
+function filterParams(): JourneyExportParams {
+  return {
     // Chỉ đơn đã bàn giao cho THE: trước đó chưa có gì để theo dõi.
     handed_over: true,
     has_tracking: hasTrackingParam.value,
     handed_over_from: dayStartISO(filters.date_from),
     handed_over_to: nextDayStartISO(filters.date_to),
     search: filters.q.trim() || undefined,
-    page: filters.page,
-    page_size: filters.page_size,
-  }),
-)
+  }
+}
+// Bộ lọc của LẦN TẢI GẦN NHẤT: file xuất phải đúng tập đang hiện trên bảng, kể
+// cả khi ô tìm đã gõ chữ mới mà chưa bấm Tìm.
+const appliedParams = ref<JourneyExportParams>(filterParams())
+
+const { data, meta, loading, error, reload } = useApiResource<Order[]>(() => {
+  const params = filterParams()
+  appliedParams.value = params
+  return ordersApi.list({ ...params, page: filters.page, page_size: filters.page_size })
+})
 const orders = computed<Order[]>(() => data.value ?? [])
+
+// ---- Xuất Excel ---------------------------------------------------------------
+// Toàn bộ kết quả lọc (mọi trang), không chỉ trang đang xem. Backend chặn ở 5000
+// đơn và trả lỗi kèm số đơn khớp — hiện nguyên câu đó cho người bấm.
+const exporting = ref(false)
+const exportTotal = computed(() => meta.value?.total ?? orders.value.length)
+async function exportExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    await trackingApi.downloadJourneyExport(appliedParams.value)
+    toast.success(`Đã xuất ${exportTotal.value} đơn ra Excel`)
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    exporting.value = false
+  }
+}
 
 function applyFilters() {
   filters.page = 1
@@ -327,6 +354,22 @@ async function copyAddress() {
         <button class="btn-secondary" :disabled="pulling" @click="refreshAll">
           <UiIcon name="refresh" :size="16" :class="pulling ? 'animate-spin' : ''" />
           {{ pulling ? 'Đang kéo mã từ THE…' : 'Làm mới' }}
+        </button>
+        <!-- Ai xem được màn này thì xuất được: file chỉ chứa thứ bảng đã hiện.
+             Khoá khi bảng đang tải để không xuất theo bộ lọc chưa kịp áp. -->
+        <button
+          class="btn-secondary"
+          :disabled="exporting || loading || exportTotal === 0"
+          :title="
+            exportTotal
+              ? `Xuất toàn bộ ${exportTotal} đơn đang lọc (mọi trang) — điền cột Mã vận đơn rồi dùng lại cho Gắn mã từ Excel`
+              : 'Không có đơn nào để xuất'
+          "
+          @click="exportExcel"
+        >
+          <UiSpinner v-if="exporting" :size="16" />
+          <UiIcon v-else name="download" :size="16" />
+          Xuất Excel
         </button>
         <template v-if="canEditTracking">
           <button
