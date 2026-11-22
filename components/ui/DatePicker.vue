@@ -300,7 +300,7 @@ onBeforeUnmount(detach)
 </script>
 
 <template>
-  <div class="relative">
+  <div class="uidate relative" :class="{ 'uidate-filled': clearable && displayText && !disabled }">
     <button
       :id="id"
       ref="triggerRef"
@@ -326,7 +326,7 @@ onBeforeUnmount(detach)
       >
         {{ displayText || placeholder }}
       </span>
-      <UiIcon name="calendar" :size="16" class="ml-auto shrink-0 text-muted-foreground" />
+      <UiIcon name="calendar" :size="16" class="uidate-cal ml-auto shrink-0 text-muted-foreground" />
     </button>
 
     <!-- Nút xoá nằm ngoài trigger (button lồng button là HTML không hợp lệ) và
@@ -336,7 +336,7 @@ onBeforeUnmount(detach)
       type="button"
       tabindex="-1"
       aria-label="Xoá ngày"
-      class="absolute right-9 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      class="uidate-clear absolute right-9 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       @click="clear"
     >
       <UiIcon name="close" :size="13" />
@@ -537,6 +537,22 @@ onBeforeUnmount(detach)
 </template>
 
 <style scoped>
+/* Ô hẹp (lưới 2 cột Từ/Đến trên điện thoại, ~160px): đã có giá trị thì nút ✕ thế
+   chỗ icon lịch, nhường ~24px để "21/11/26 08:30" hiện đủ thay vì bị cắt "…".
+   Ô rộng hơn 10.5rem giữ nguyên cả icon lẫn ✕. Mọi chỗ dùng ô này đều đặt nó trong
+   khối có bề rộng sẵn (ô lưới, div), nên inline-size containment không làm co ô. */
+.uidate {
+  container-type: inline-size;
+}
+@container (max-width: 10.5rem) {
+  .uidate-filled .uidate-cal {
+    display: none;
+  }
+  .uidate-filled .uidate-clear {
+    right: 0.5rem;
+  }
+}
+
 .uidate-enter-active,
 .uidate-leave-active {
   transition: opacity 0.12s ease, transform 0.12s ease;

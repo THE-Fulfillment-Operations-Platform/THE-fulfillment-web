@@ -8,6 +8,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime, formatDate, APP_TZ } from '~/utils/format'
+import { apiInstantFrom, apiInstantBefore } from '~/utils/dateRange'
 import { liveItemQty } from '~/utils/item'
 import { orderStatusBadge, orderInternalStatus } from '~/utils/enums'
 
@@ -31,8 +32,9 @@ type Scope = 'missing' | 'has' | 'all'
 const filters = reactive({
   q: '',
   scope: 'missing' as Scope,
-  // Khoảng ngày xuất xưởng (yyyy-mm-dd) — CS lọc "đơn đi ngày X" trước khi đối
-  // chiếu với file mã vận đơn của hãng.
+  // Khoảng xuất xưởng — CS lọc "đơn đi ngày X" (hoặc "từ 8h tới 17h30 ngày X")
+  // trước khi đối chiếu với file mã vận đơn của hãng. Giá trị ô ngày: `yyyy-mm-dd`
+  // hoặc `yyyy-mm-ddTHH:MM` khi chọn thêm giờ (giờ máy CS).
   date_from: '',
   date_to: '',
   page: 1,
@@ -44,29 +46,19 @@ const hasTrackingParam = computed(() =>
   filters.scope === 'missing' ? false : filters.scope === 'has' ? true : undefined,
 )
 
-// Ngày chọn là ngày theo giờ máy CS; đổi sang mốc thời gian thật (RFC3339) để
-// 00:00 nghĩa là 00:00 giờ Việt Nam, không phải 00:00 UTC (lệch 7 tiếng). Cận
-// trên gửi ĐẦU NGÀY KẾ TIẾP vì backend lọc nửa mở (<) — trọn ngày cuối vẫn tính.
-function dayStartISO(d: string): string | undefined {
-  if (!d) return undefined
-  return new Date(d + 'T00:00:00').toISOString()
-}
-function nextDayStartISO(d: string): string | undefined {
-  if (!d) return undefined
-  const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() + 1)
-  return dt.toISOString()
-}
-
 // Bộ lọc (tab + ô tìm + khoảng ngày), không gồm trang — dùng chung cho danh sách
 // và nút Xuất Excel, để hai bên không bao giờ đọc bộ lọc khác nhau.
+//
+// Ngày/giờ chọn là giờ máy CS; utils/dateRange đổi ra mốc thời gian thật
+// (RFC3339) để 00:00 là 00:00 giờ Việt Nam, không phải 00:00 UTC. Backend lọc nửa
+// mở (<) nên cận trên là đầu phút kế tiếp (có giờ) / đầu ngày kế tiếp (ngày trơn).
 function filterParams(): JourneyExportParams {
   return {
     // Chỉ đơn đã bàn giao cho THE: trước đó chưa có gì để theo dõi.
     handed_over: true,
     has_tracking: hasTrackingParam.value,
-    handed_over_from: dayStartISO(filters.date_from),
-    handed_over_to: nextDayStartISO(filters.date_to),
+    handed_over_from: apiInstantFrom(filters.date_from),
+    handed_over_to: apiInstantBefore(filters.date_to),
     search: filters.q.trim() || undefined,
   }
 }
@@ -121,6 +113,53 @@ function clearDates() {
   filters.date_to = ''
   applyFilters()
 }
+
+// Ba tab: nhãn đủ trên màn rộng, nhãn gọn trên điện thoại để 3 ô đều nhau nằm
+// một hàng. "Tất cả đơn đã gửi" đứng đầu vì nó là toàn bộ tập dữ liệu, hai cái
+// sau là lát cắt của nó; màn vẫn mở ở "Chưa có mã vận đơn" — việc CS cần làm.
+const SCOPES: { key: Scope; label: string; short: string }[] = [
+  { key: 'all', label: 'Tất cả đơn đã gửi', short: 'Tất cả' },
+  { key: 'missing', label: 'Chưa có mã vận đơn', short: 'Chưa có mã' },
+  { key: 'has', label: 'Đã có mã vận đơn', short: 'Đã có mã' },
+]
+
+// Chọn nhanh khoảng xuất xưởng: ngày trơn theo giờ máy, "Đến" tính trọn ngày.
+type DatePreset = 'today' | 'yesterday' | 'week'
+const DATE_PRESETS: { key: DatePreset; label: string; title: string }[] = [
+  { key: 'today', label: 'Hôm nay', title: 'Xuất xưởng hôm nay' },
+  { key: 'yesterday', label: 'Hôm qua', title: 'Xuất xưởng hôm qua' },
+  { key: 'week', label: '7 ngày', title: '7 ngày gần nhất, tính cả hôm nay' },
+]
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const localDay = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+function presetRange(key: DatePreset): [string, string] {
+  const now = new Date()
+  const day = (offset: number) => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset))
+  if (key === 'yesterday') return [day(-1), day(-1)]
+  if (key === 'week') return [day(-6), day(0)]
+  return [day(0), day(0)]
+}
+function presetActive(key: DatePreset): boolean {
+  const [from, to] = presetRange(key)
+  return filters.date_from === from && filters.date_to === to
+}
+function applyPreset(key: DatePreset) {
+  ;[filters.date_from, filters.date_to] = presetRange(key)
+  applyFilters()
+}
+// Lịch đã khoá chọn ngày ngược, nhưng cùng một ngày vẫn chọn được giờ "Từ" sau
+// giờ "Đến" — nói ra thay vì để bảng trống không lý do.
+const rangeReversed = computed(() => {
+  const from = apiInstantFrom(filters.date_from)
+  const to = apiInstantBefore(filters.date_to)
+  return !!from && !!to && from >= to
+})
+
+// Bảng 2 khổ: cột riêng chỉ hiện ở khung rộng (sm–lg, và từ xl khi panel phải
+// còn chừa đủ chỗ); khung hẹp gấp nội dung đó vào cột khác. Viết nguyên chữ để
+// Tailwind quét thấy lớp.
+const WIDE_ONLY = 'hidden sm:table-cell lg:hidden xl:table-cell'
+const NARROW_ONLY = 'sm:hidden lg:block xl:hidden'
 
 // Giờ xuất xưởng, tách khỏi ngày để cột hiển thị 2 tầng (ngày đậm, giờ mờ) —
 // cùng múi giờ nghiệp vụ với formatDate, không theo giờ máy người xem.
@@ -351,120 +390,176 @@ async function copyAddress() {
       subtitle="Đơn đã gửi cho THE — gắn mã vận đơn và theo dõi hành trình"
     >
       <template #actions>
-        <button class="btn-secondary" :disabled="pulling" @click="refreshAll">
-          <UiIcon name="refresh" :size="16" :class="pulling ? 'animate-spin' : ''" />
-          {{ pulling ? 'Đang kéo mã từ THE…' : 'Làm mới' }}
-        </button>
-        <!-- Ai xem được màn này thì xuất được: file chỉ chứa thứ bảng đã hiện.
-             Khoá khi bảng đang tải để không xuất theo bộ lọc chưa kịp áp. -->
-        <button
-          class="btn-secondary"
-          :disabled="exporting || loading || exportTotal === 0"
-          :title="
-            exportTotal
-              ? `Xuất toàn bộ ${exportTotal} đơn đang lọc (mọi trang) — điền cột Mã vận đơn rồi dùng lại cho Gắn mã từ Excel`
-              : 'Không có đơn nào để xuất'
-          "
-          @click="exportExcel"
-        >
-          <UiSpinner v-if="exporting" :size="16" />
-          <UiIcon v-else name="download" :size="16" />
-          Xuất Excel
-        </button>
-        <template v-if="canEditTracking">
+        <!-- Dưới xl: lưới 2 cột đều nhau — 4 nút thành 2 hàng ngay ngắn, không nút
+             nào rơi lẻ xuống dòng (cạnh tiêu đề không đủ chỗ cho cả 4 nút trên
+             một hàng). Từ xl mới xếp một hàng như cũ. -->
+        <div class="grid w-full grid-cols-2 gap-2 sm:w-auto xl:flex xl:flex-wrap xl:items-center xl:justify-end">
+          <button class="btn-secondary whitespace-nowrap px-2.5 sm:px-3.5" :disabled="pulling" @click="refreshAll">
+            <UiIcon name="refresh" :size="16" :class="pulling ? 'animate-spin' : ''" />
+            <template v-if="pulling">
+              <span class="sm:hidden">Đang kéo mã…</span>
+              <span class="hidden sm:inline">Đang kéo mã từ THE…</span>
+            </template>
+            <template v-else>Làm mới</template>
+          </button>
+          <!-- Ai xem được màn này thì xuất được: file chỉ chứa thứ bảng đã hiện.
+               Khoá khi bảng đang tải để không xuất theo bộ lọc chưa kịp áp. -->
           <button
-            class="btn-secondary"
-            :disabled="downloadingTemplate"
-            title="File mẫu 2 cột: OrderID + Mã vận đơn"
-            @click="downloadImportTemplate"
+            class="btn-secondary whitespace-nowrap px-2.5 sm:px-3.5"
+            :disabled="exporting || loading || exportTotal === 0"
+            :title="
+              exportTotal
+                ? `Xuất toàn bộ ${exportTotal} đơn đang lọc (mọi trang) — điền cột Mã vận đơn rồi dùng lại cho Gắn mã từ Excel`
+                : 'Không có đơn nào để xuất'
+            "
+            @click="exportExcel"
           >
-            <UiSpinner v-if="downloadingTemplate" :size="16" />
+            <UiSpinner v-if="exporting" :size="16" />
             <UiIcon v-else name="download" :size="16" />
-            Tải file mẫu
+            Xuất Excel
           </button>
-          <button class="btn-primary" @click="importOpen = true">
-            <UiIcon name="upload" :size="16" /> Gắn mã từ Excel
-          </button>
-        </template>
+          <template v-if="canEditTracking">
+            <button
+              class="btn-secondary whitespace-nowrap px-2.5 sm:px-3.5"
+              :disabled="downloadingTemplate"
+              title="File mẫu 2 cột: OrderID + Mã vận đơn"
+              @click="downloadImportTemplate"
+            >
+              <UiSpinner v-if="downloadingTemplate" :size="16" />
+              <UiIcon v-else name="download" :size="16" />
+              Tải file mẫu
+            </button>
+            <button class="btn-primary whitespace-nowrap px-2.5 sm:px-3.5" @click="importOpen = true">
+              <UiIcon name="upload" :size="16" /> Gắn mã từ Excel
+            </button>
+          </template>
+        </div>
       </template>
     </PageHeader>
 
+    <!-- Khối lọc. Điện thoại / màn vừa: xếp tầng — ô tìm, 3 tab đều nhau, nhãn
+         "Xuất xưởng" + 2 ô Từ/Đến chia đôi, rồi hàng chọn nhanh. Từ xl: lưới 2 cột
+         — hàng trên ô tìm | khoảng xuất xưởng (cùng chiều cao), hàng dưới tab |
+         chọn nhanh. Thứ tự DOM giữ đúng thứ tự đọc trên điện thoại. -->
     <div class="card mb-4 p-4">
-      <form class="flex flex-col gap-3 sm:flex-row sm:items-center" @submit.prevent="applyFilters">
-        <div class="relative flex-1">
-          <UiIcon
-            name="search"
-            :size="16"
-            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            v-model="filters.q"
-            class="input pl-9"
-            placeholder="Mã đơn shop, mã nội bộ, mã vận đơn hoặc tên người nhận…"
-          />
-        </div>
-        <button type="submit" class="btn-primary" :disabled="loading">
-          <UiSpinner v-if="loading" :size="16" />
-          <UiIcon v-else name="search" :size="16" />
-          Tìm
-        </button>
-      </form>
+      <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:gap-x-6">
+        <form class="flex gap-2 xl:col-start-1 xl:row-start-1" @submit.prevent="applyFilters">
+          <div class="relative min-w-0 flex-1">
+            <UiIcon
+              name="search"
+              :size="16"
+              class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              v-model="filters.q"
+              class="input pl-9"
+              aria-label="Tìm đơn"
+              placeholder="Mã đơn, mã vận đơn, tên người nhận…"
+              title="Tìm theo mã đơn shop, mã nội bộ, mã vận đơn hoặc tên người nhận"
+            />
+          </div>
+          <button type="submit" class="btn-primary shrink-0" :disabled="loading">
+            <UiSpinner v-if="loading" :size="16" />
+            <UiIcon v-else name="search" :size="16" />
+            Tìm
+          </button>
+        </form>
 
-      <!-- "Tất cả đơn đã gửi" đứng đầu vì nó là toàn bộ tập dữ liệu, hai cái sau
-           là lát cắt của nó. Vị trí không đổi mặc định: màn vẫn mở ở "Chưa có mã
-           vận đơn" — đó là việc CS cần làm. -->
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          v-for="opt in [
-            { key: 'all', label: 'Tất cả đơn đã gửi' },
-            { key: 'missing', label: 'Chưa có mã vận đơn' },
-            { key: 'has', label: 'Đã có mã vận đơn' },
-          ]"
-          :key="opt.key"
-          class="rounded-full px-3 py-1 text-xs font-medium transition-colors"
-          :class="
-            filters.scope === opt.key
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:text-foreground'
-          "
-          @click="pickScope(opt.key as Scope)"
+        <!-- Tab dạng segmented: 3 ô bằng nhau, một hàng, không xuống dòng. Là nhóm nút
+             bật/tắt (aria-pressed), không khai role tab vì không có tabpanel. -->
+        <div
+          role="group"
+          aria-label="Lọc theo mã vận đơn"
+          class="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1 sm:w-fit xl:col-start-1 xl:row-start-2"
         >
-          {{ opt.label }}
-        </button>
+          <button
+            v-for="opt in SCOPES"
+            :key="opt.key"
+            type="button"
+            :aria-pressed="filters.scope === opt.key"
+            :title="opt.label"
+            class="whitespace-nowrap rounded-md px-2 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm"
+            :class="
+              filters.scope === opt.key
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            "
+            @click="pickScope(opt.key)"
+          >
+            <span class="sm:hidden">{{ opt.short }}</span>
+            <span class="hidden sm:inline">{{ opt.label }}</span>
+          </button>
+        </div>
 
-        <!-- Lọc theo ngày xuất xưởng: "đơn đi ngày nào" là câu hỏi CS đặt trước
-             khi đối chiếu file mã vận đơn của hãng. -->
-        <div class="ml-auto flex flex-wrap items-center gap-2">
-          <span class="text-xs text-muted-foreground">Xuất xưởng</span>
-          <div class="w-36">
-            <UiDatePicker
-              v-model="filters.date_from"
-              aria-label="Xuất xưởng từ ngày"
-              :max="filters.date_to || undefined"
-              @change="applyFilters"
-            />
+        <!-- Lọc theo lúc xuất xưởng (ngày, thêm giờ nếu cần): "đơn đi lúc nào" là
+             câu hỏi CS đặt trước khi đối chiếu file mã vận đơn của hãng. -->
+        <div
+          role="group"
+          aria-labelledby="journeys-date-label"
+          class="min-w-0 xl:col-start-2 xl:row-start-1 xl:flex xl:items-center xl:gap-3"
+        >
+          <span
+            id="journeys-date-label"
+            class="mb-1.5 block text-xs font-semibold text-foreground xl:mb-0 xl:whitespace-nowrap"
+          >Xuất xưởng</span>
+          <div class="grid grid-cols-2 gap-2 sm:max-w-md xl:flex xl:max-w-none xl:items-center">
+            <div class="min-w-0 xl:w-[11.5rem]">
+              <UiDatePicker
+                v-model="filters.date_from"
+                with-time
+                placeholder="Từ ngày"
+                aria-label="Xuất xưởng từ"
+                :max="filters.date_to || undefined"
+                @change="applyFilters"
+              />
+            </div>
+            <span class="hidden text-muted-foreground xl:inline" aria-hidden="true">–</span>
+            <div class="min-w-0 xl:w-[11.5rem]">
+              <UiDatePicker
+                v-model="filters.date_to"
+                with-time
+                placeholder="Đến ngày"
+                aria-label="Xuất xưởng đến"
+                :min="filters.date_from || undefined"
+                @change="applyFilters"
+              />
+            </div>
           </div>
-          <span class="text-xs text-muted-foreground">–</span>
-          <div class="w-36">
-            <UiDatePicker
-              v-model="filters.date_to"
-              aria-label="Xuất xưởng đến ngày"
-              :min="filters.date_from || undefined"
-              @change="applyFilters"
-            />
-          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 sm:max-w-md xl:col-start-2 xl:row-start-2 xl:max-w-none xl:justify-end">
+          <p v-if="rangeReversed" class="basis-full text-xs text-amber-600 dark:text-amber-400 xl:text-right">
+            Giờ "Từ" đang sau giờ "Đến" nên không đơn nào khớp.
+          </p>
+          <button
+            v-for="p in DATE_PRESETS"
+            :key="p.key"
+            type="button"
+            :title="p.title"
+            :aria-pressed="presetActive(p.key)"
+            class="rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+            :class="
+              presetActive(p.key)
+                ? 'border-primary/40 bg-accent text-accent-foreground'
+                : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+            "
+            @click="applyPreset(p.key)"
+          >
+            {{ p.label }}
+          </button>
           <button
             v-if="filters.date_from || filters.date_to"
-            class="text-xs font-medium text-primary hover:underline"
+            type="button"
+            class="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-accent xl:ml-1"
             @click="clearDates"
           >
-            Bỏ lọc ngày
+            <UiIcon name="close" :size="12" /> Bỏ lọc ngày
           </button>
         </div>
       </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <div class="card overflow-hidden">
         <UiStateBlock
           :loading="loading"
@@ -477,29 +572,25 @@ async function copyAddress() {
           "
           @retry="reload"
         >
-          <!-- Bảng không cuộn ngang và không xén chữ. Panel phải chiếm 26rem nên
-               cột bảng chỉ còn ~800px, mà `.table-td` mặc định `whitespace-nowrap`
-               → hàng luôn rộng hơn khung, cột Trạng thái bị cắt. Ở đây khoá bề
-               rộng bằng table-fixed + tỉ lệ cột, và cho chữ xuống dòng: khung
-               chật thì ô cao thêm một dòng, không bao giờ mất thông tin.
-               min-w chỉ dành cho màn rất hẹp (mobile) — dưới ngưỡng đó 5 cột
-               không còn đọc được, thà cuộn còn hơn nát. -->
+          <!-- Bảng không xén chữ, không chồng chữ. table-fixed + tỉ lệ cột đặt trên
+               <th>, và cả tiêu đề lẫn ô đều được xuống dòng (`.table-th` mặc định
+               nowrap — đó là chỗ "XUẤT XƯỞNG" từng tràn đè sang "MÃ VẬN ĐƠN").
+               Khung hẹp (điện thoại; và lg–xl khi panel phải chiếm chỗ): như màn
+               Đơn hàng/Batch — ẩn bớt cột, gấp vào cột còn lại: Người nhận + lúc
+               xuất xưởng thành dòng nhỏ dưới mã đơn, Trạng thái nằm dưới mã vận
+               đơn. Còn 2 cột vừa khung, không phải kéo ngang. min-w chỉ là lưới an
+               toàn cho màn rất hẹp. -->
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[36rem] table-fixed divide-y divide-border">
-              <colgroup>
-                <col class="w-[25%]" />
-                <col class="w-[19%]" />
-                <col class="w-[14%]" />
-                <col class="w-[22%]" />
-                <col class="w-[20%]" />
-              </colgroup>
+            <table
+              class="w-full min-w-[18rem] table-fixed divide-y divide-border [&_.table-td]:px-2.5 [&_.table-th]:whitespace-normal [&_.table-th]:break-words [&_.table-th]:px-2.5 [&_.table-th]:align-bottom"
+            >
               <thead class="bg-muted">
                 <tr>
-                  <th class="table-th">Mã đơn shop</th>
-                  <th class="table-th">Người nhận</th>
-                  <th class="table-th">Xuất xưởng</th>
-                  <th class="table-th">Mã vận đơn</th>
-                  <th class="table-th">Trạng thái</th>
+                  <th class="table-th w-[52%] sm:w-[24%] lg:w-[52%] xl:w-[24%]">Mã đơn shop</th>
+                  <th class="table-th w-[18%]" :class="WIDE_ONLY">Người nhận</th>
+                  <th class="table-th w-[17%]" :class="WIDE_ONLY">Xuất xưởng</th>
+                  <th class="table-th w-[48%] sm:w-[21%] lg:w-[48%] xl:w-[21%]">Mã vận đơn</th>
+                  <th class="table-th w-[20%]" :class="WIDE_ONLY">Trạng thái</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
@@ -518,12 +609,19 @@ async function copyAddress() {
                            đóng thiếu, nhìn danh sách phải thấy được. -->
                       <span v-if="liveItemQty(o.items)"> · {{ liveItemQty(o.items) }} sp</span>
                     </div>
+                    <!-- Khung hẹp: Người nhận + lúc xuất xưởng gấp vào đây. -->
+                    <div class="mt-1 text-xs" :class="NARROW_ONLY">
+                      <div class="break-words text-foreground">{{ o.shipping_name || '—' }}</div>
+                      <div v-if="o.handed_over_at" class="text-muted-foreground">
+                        Xuất {{ formatDate(o.handed_over_at) }} {{ handedOverTime(o.handed_over_at) }}
+                      </div>
+                    </div>
                   </td>
-                  <td class="table-td whitespace-normal align-top">
+                  <td class="table-td whitespace-normal align-top" :class="WIDE_ONLY">
                     <div class="break-words text-foreground">{{ o.shipping_name || '—' }}</div>
                     <div class="break-words text-xs text-muted-foreground">{{ o.shipping_city || '' }}</div>
                   </td>
-                  <td class="table-td align-top">
+                  <td class="table-td whitespace-normal align-top" :class="WIDE_ONLY">
                     <template v-if="o.handed_over_at">
                       <div class="text-foreground">{{ formatDate(o.handed_over_at) }}</div>
                       <div class="text-xs text-muted-foreground">{{ handedOverTime(o.handed_over_at) }}</div>
@@ -543,20 +641,26 @@ async function copyAddress() {
                       v-else
                       class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
                     >chờ gắn mã</span>
+                    <!-- Khung hẹp: Trạng thái nằm ngay dưới mã vận đơn. -->
+                    <div class="mt-1.5" :class="NARROW_ONLY">
+                      <UiStatusBadge :kind="rowStatus(o).kind" :value="rowStatus(o).value" />
+                    </div>
                   </td>
-                  <td class="table-td whitespace-normal align-top">
+                  <td class="table-td whitespace-normal align-top" :class="WIDE_ONLY">
                     <UiStatusBadge :kind="rowStatus(o).kind" :value="rowStatus(o).value" />
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <UiPagination
-            :meta="meta"
-            :page-size="filters.page_size"
-            @change="changePage"
-            @update:page-size="changePageSize"
-          />
+          <div class="px-4">
+            <UiPagination
+              :meta="meta"
+              :page-size="filters.page_size"
+              @change="changePage"
+              @update:page-size="changePageSize"
+            />
+          </div>
         </UiStateBlock>
       </div>
 

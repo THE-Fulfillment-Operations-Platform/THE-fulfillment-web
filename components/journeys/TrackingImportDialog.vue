@@ -15,12 +15,16 @@ import type {
   TrackingImportIssue,
 } from '~/services/api'
 import { errorMessage } from '~/utils/api-error'
-import { formatDate, formatDateTime } from '~/utils/format'
+import { formatDateTime } from '~/utils/format'
+import { apiInstantFrom, apiInstantBefore, pickerValueLabel } from '~/utils/dateRange'
 import { useToastStore } from '~/stores/toast'
 
 const props = defineProps<{
   modelValue: boolean
-  /** Khoảng ngày xuất xưởng đang lọc trên trang (ISO yyyy-mm-dd), để so thiếu/đủ. */
+  /**
+   * Khoảng xuất xưởng đang lọc trên trang (`yyyy-mm-dd` hoặc `yyyy-mm-ddTHH:MM`,
+   * giờ máy), để so thiếu/đủ — cùng mốc với danh sách và nút Xuất Excel.
+   */
   dateFrom?: string
   dateTo?: string
 }>()
@@ -85,25 +89,14 @@ async function downloadTemplate() {
   }
 }
 
-// Ngày trên trang là yyyy-mm-dd theo giờ máy CS; đổi sang mốc thời gian thật
-// (RFC3339) để 00:00 là 00:00 giờ Việt Nam chứ không phải 07:00. Cận trên gửi
-// ĐẦU NGÀY KẾ TIẾP — backend lọc nửa mở (<) nên trọn ngày cuối vẫn được tính.
-function dayStartISO(d?: string): string | undefined {
-  if (!d) return undefined
-  return new Date(d + 'T00:00:00').toISOString()
-}
-function nextDayStartISO(d?: string): string | undefined {
-  if (!d) return undefined
-  const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() + 1)
-  return dt.toISOString()
-}
-
+// Mốc gửi backend: cùng hàm với danh sách + Xuất Excel của trang (utils/dateRange)
+// — giờ máy CS đổi ra RFC3339, cận trên nửa mở (đầu phút/ngày kế tiếp), để
+// "file thiếu đơn nào" so đúng tập đơn đang hiện trên bảng.
 const hasRange = computed(() => !!(props.dateFrom || props.dateTo))
 const rangeLabel = computed(() => {
   if (!hasRange.value) return ''
-  const from = props.dateFrom ? formatDate(props.dateFrom) : '…'
-  const to = props.dateTo ? formatDate(props.dateTo) : '…'
+  const from = props.dateFrom ? pickerValueLabel(props.dateFrom) : '…'
+  const to = props.dateTo ? pickerValueLabel(props.dateTo) : '…'
   return `${from} – ${to}`
 })
 
@@ -118,8 +111,8 @@ async function runPreview() {
   result.value = null
   try {
     const { data } = await trackingApi.previewImport(file.value, {
-      handed_over_from: dayStartISO(props.dateFrom),
-      handed_over_to: nextDayStartISO(props.dateTo),
+      handed_over_from: apiInstantFrom(props.dateFrom ?? ''),
+      handed_over_to: apiInstantBefore(props.dateTo ?? ''),
     })
     preview.value = data
   } catch (e) {
