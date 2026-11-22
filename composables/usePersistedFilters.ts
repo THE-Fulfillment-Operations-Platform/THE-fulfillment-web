@@ -33,6 +33,26 @@ function write(storageKey: string, saved: Saved) {
 }
 
 /**
+ * Giá trị lưu `saved` có dùng được cho khoá có mặc định `def` không; undefined =
+ * bỏ, giữ mặc định.
+ *   - Mặc định là MẢNG (ô chọn nhiều): nhận mảng — chỉ giữ phần tử chuỗi khác
+ *     rỗng, bỏ trùng; nhận cả CHUỖI ĐƠN của bản trước khi ô thành chọn nhiều (tab
+ *     đang mở lúc cập nhật): '' = "Tất cả" → [], 'X' → ['X']. Kiểu khác thì bỏ.
+ *   - Mặc định không phải mảng: phải cùng `typeof`, và không nhận mảng / null
+ *     (typeof cả hai là 'object') — bản cũ hơn gặp dữ liệu mảng của bản này (vd
+ *     quay về phiên bản trước) chỉ về "Tất cả", không vỡ màn.
+ */
+export function restorePersistedFilterValue(def: unknown, saved: unknown): unknown {
+  if (Array.isArray(def)) {
+    if (typeof saved === 'string') return saved ? [saved] : []
+    if (!Array.isArray(saved)) return undefined
+    return Array.from(new Set(saved.filter((x): x is string => typeof x === 'string' && x !== '')))
+  }
+  if (Array.isArray(saved) || (saved === null && def !== null)) return undefined
+  return typeof saved === typeof def ? saved : undefined
+}
+
+/**
  * Trang `to` có còn thuộc phạm vi của màn danh sách `listPath` không:
  *   - chính màn đó (đổi query, F5);
  *   - trang con của nó (/batches → /batches/new);
@@ -67,7 +87,8 @@ export function clearFiltersOutOfScope(to: RouteLocationNormalized) {
  *   usePersistedFilters('cs', filters)
  *
  * Chỉ khôi phục khoá còn tồn tại và cùng kiểu với giá trị mặc định — đổi cấu
- * trúc bộ lọc ở bản sau thì dữ liệu cũ không làm hỏng màn.
+ * trúc bộ lọc ở bản sau thì dữ liệu cũ không làm hỏng màn. Ô chọn nhiều (mặc
+ * định là mảng, vd `status: [] as string[]`): xem restorePersistedFilterValue.
  */
 export function usePersistedFilters<T extends object>(key: string, state: T): T {
   const router = useRouter()
@@ -78,7 +99,9 @@ export function usePersistedFilters<T extends object>(key: string, state: T): T 
   if (saved && saved.path === path) {
     const target = state as Record<string, unknown>
     for (const k of Object.keys(target)) {
-      if (k in saved.v && typeof saved.v[k] === typeof target[k]) target[k] = saved.v[k]
+      if (!(k in saved.v)) continue
+      const v = restorePersistedFilterValue(target[k], saved.v[k])
+      if (v !== undefined) target[k] = v
     }
   }
 

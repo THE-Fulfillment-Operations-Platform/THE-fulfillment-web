@@ -129,6 +129,10 @@ export interface BatchLinkImportCommitResult {
 
 export interface BatchListParams extends ListParams {
   material_id?: number
+  // Một hoặc nhiều giá trị, phẩy ngăn cách ("FILES_MISSING,FILES_READY,PRINTED"),
+  // OR với nhau. Một giá trị trạng thái thật = y như trước (PENDING = mọi batch
+  // PENDING). Token gộp chỉ dùng khi chọn nhiều: FILES_READY, FILES_MISSING,
+  // HANDED_OVER, HANDOVER_PENDING — xem statusQuery() ở pages/batches/index.vue.
   status?: string
   priority?: string
   date_from?: string
@@ -139,7 +143,8 @@ export interface BatchListParams extends ListParams {
   // batch đang sản xuất đơn đó.
   code?: string
   // Batch chứa hàng của seller này / của đơn có mã đơn shop chứa chuỗi này.
-  seller_id?: number
+  // seller_id nhận nhiều id phẩy ngăn cách ("3,7"): batch có hàng của BẤT KỲ seller nào.
+  seller_id?: number | string
   store_order?: string
   // Mã batch chứa chuỗi này ("101602" ra "#101602").
   batch?: string

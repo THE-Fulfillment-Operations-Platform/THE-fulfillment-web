@@ -46,29 +46,42 @@ const PACKED = 'PACKED'
 // thế chỉ còn sản phẩm chưa có file (?files=missing), khớp chip trên bảng.
 const FILES_READY = 'FILES_READY'
 
-// Giá trị ô "Trạng thái nội bộ" → tham số API. Dùng chung cho danh sách và các
-// nút xuất, để bộ lọc không bao giờ lệch giữa hai nơi.
-function statusParams(v: string): {
+// Giá trị ô "Trạng thái nội bộ" (chọn NHIỀU, chủ xưởng 22/11) → tham số API. Dùng
+// chung cho danh sách và các nút xuất, để bộ lọc không bao giờ lệch giữa hai nơi.
+//   - Chọn MỘT mục: đúng tham số kiểu cũ như trước (handed_over / packed / status +
+//     files) — y hệt bản trước, chạy được cả với API chưa cập nhật.
+//   - Chọn NHIỀU: ?status=a,b,c — mỗi mục một token, API OR với nhau (xem
+//     repositories/status_filter.go bên API): FILES_READY, PACKED, HANDED_OVER,
+//     QC_PASSED ("Đã QC" như chip: đơn còn trong xưởng), PRINTED, CUT giữ nguyên;
+//     "Chờ xử lý" đổi thành FILES_MISSING (PENDING trần là MỌI sản phẩm PENDING).
+function statusParams(list: string[]): {
   status?: string
   files?: 'ready' | 'missing'
   handed_over?: boolean
   packed?: boolean
 } {
-  if (v === HANDED_OVER) return { handed_over: true }
-  if (v === PACKED) return { packed: true }
-  if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
-  if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
-  return { status: v || undefined }
+  if (!list.length) return {}
+  if (list.length === 1) {
+    const v = list[0]
+    if (v === HANDED_OVER) return { handed_over: true }
+    if (v === PACKED) return { packed: true }
+    if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
+    if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
+    return { status: v }
+  }
+  return { status: list.map((v) => (v === 'PENDING' ? 'FILES_MISSING' : v)).join(',') }
 }
 
 // Item-level operational view (matches Wireframe 02). Filters map to the
 // /api/items query the backend actually supports.
 const filters = reactive({
-  seller_id: '',
+  // Ô Seller và ô Trạng thái chọn NHIỀU: mảng rỗng = Tất cả. Bản lưu cũ dạng chuỗi
+  // đơn tự thành mảng (usePersistedFilters).
+  seller_id: [] as string[],
   store_order_id: '',
   sku: '',
   internal_code: '',
-  status: '',
+  status: [] as string[],
   // NVL: sản phẩm có SKU gắn với vật liệu này (trước nằm ở màn Chờ thiết kế đã bỏ).
   material_id: '',
   review_status: '',
@@ -95,7 +108,7 @@ usePersistedFilters('orders-sort', sort)
 // và nút "Xuất theo mẫu import".
 function filterParams() {
   return {
-    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    seller_id: filters.seller_id.length ? filters.seller_id.join(',') : undefined,
     store_order_id: filters.store_order_id || undefined,
     sku: filters.sku.trim() || undefined,
     internal_code: filters.internal_code || undefined,
@@ -162,10 +175,14 @@ function sortIcon(col: string): string {
 // Danh sách seller cho bộ lọc. GET /api/sellers mở cho mọi vai trò đọc được
 // đơn (gồm cả CS), nên ai vào được màn này đều dựng được bộ lọc.
 const sellers = ref<Seller[]>([])
-const sellerOptions = computed(() => [
-  { value: '', label: 'Tất cả seller' },
-  ...sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code })),
-])
+// Không có dòng "Tất cả": UiMultiSelect tự có (bỏ chọn hết = Tất cả).
+const sellerOptions = computed(() =>
+  sellers.value.map((s) => ({
+    value: String(s.id),
+    label: s.name || s.code,
+    sublabel: s.name && s.code && s.name !== s.code ? s.code : undefined,
+  })),
+)
 // Danh sách NVL cho bộ lọc NVL.
 const materials = ref<Material[]>([])
 const materialOptions = computed(() => [
@@ -190,7 +207,6 @@ onMounted(async () => {
 })
 
 const statusOptions = computed(() => [
-  { value: '', label: 'Tất cả' },
   // "Đã có file SX" đứng ngay sau "Chờ xử lý" (đúng thứ tự xưởng: có file rồi mới in) — như màn Batch.
   ...INTERNAL_STATUS_ORDER.flatMap((s) =>
     s === 'PENDING'
@@ -260,11 +276,11 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  filters.seller_id = ''
+  filters.seller_id = []
   filters.store_order_id = ''
   filters.sku = ''
   filters.internal_code = ''
-  filters.status = ''
+  filters.status = []
   filters.review_status = ''
   filters.warranty = ''
   filters.material_id = ''
@@ -472,11 +488,15 @@ function exportItems() {
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
         <div>
           <label class="label">Seller</label>
-          <UiSelect
+          <!-- Chọn nhiều: tick xong, đóng bảng (bấm ra ngoài / Xong) mới lọc một lần. -->
+          <UiMultiSelect
             v-model="filters.seller_id"
             :options="sellerOptions"
+            all-label="Tất cả seller"
+            searchable
+            search-placeholder="Tìm seller…"
             aria-label="Seller"
-            @update:model-value="applyFilters"
+            @change="applyFilters"
           />
         </div>
         <div>
@@ -493,7 +513,8 @@ function exportItems() {
         </div>
         <div>
           <label class="label">Trạng thái nội bộ</label>
-          <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái nội bộ" />
+          <!-- Như trước: đổi trạng thái rồi bấm Lọc (không tự lọc). -->
+          <UiMultiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái nội bộ" />
         </div>
         <div>
           <label class="label">NVL</label>

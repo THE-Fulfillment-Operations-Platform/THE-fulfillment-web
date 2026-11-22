@@ -38,12 +38,14 @@ const canDesignOps = computed(() => auth.can('batches.manage'))
 
 const filters = reactive({
   material_id: '',
-  status: '',
+  // Ô Status và ô Seller chọn NHIỀU (chủ xưởng 22/11): mảng rỗng = Tất cả. Bản lưu
+  // cũ dạng chuỗi đơn tự thành mảng (usePersistedFilters).
+  status: [] as string[],
   priority: '',
   batch_id: '', // server-side: mã batch chứa chuỗi này
   sku: '', // client-side refine
   code: '', // server-side: mã nội bộ đơn / mã tem item → batch chứa đơn đó
-  seller_id: '', // server-side: batch chứa hàng của seller này
+  seller_id: [] as string[], // server-side: batch chứa hàng của (một trong) các seller này
   store_order: '', // server-side: batch chứa đơn có mã đơn shop khớp
   overdue: false, // client-side refine
   date_from: '', // server-side: batch tạo từ ngày (YYYY-MM-DD) — anh Kiên 20/11
@@ -59,7 +61,7 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     ...statusQuery(filters.status),
     priority: filters.priority || undefined,
     code: filters.code.trim() || undefined,
-    seller_id: filters.seller_id ? Number(filters.seller_id) : undefined,
+    seller_id: filters.seller_id.length ? filters.seller_id.join(',') : undefined,
     store_order: filters.store_order.trim() || undefined,
     batch: filters.batch_id.trim().replace(/^#/, '') || undefined,
     date_from: apiDateFrom(filters.date_from),
@@ -83,8 +85,8 @@ const FILES_READY = 'FILES_READY'
 // Tương tự: "Đã bàn giao" là QC_PASSED mà mọi đơn còn sống đã rời xưởng (?handover=).
 // "Đã QC" vì thế chỉ còn batch chưa bàn giao hết (bàn giao một phần vẫn ở đây).
 const HANDED_OVER = 'HANDED_OVER'
+// Không có dòng "Tất cả": UiMultiSelect tự có (bỏ chọn hết = Tất cả).
 const statusOptions = [
-  { value: '', label: 'Tất cả' },
   ...INTERNAL_STATUS_ORDER.flatMap((s) =>
     s === 'PENDING'
       ? [
@@ -99,12 +101,25 @@ const statusOptions = [
         : [{ value: s, label: INTERNAL_STATUS[s].label }],
   ),
 ]
-function statusQuery(v: string): { status?: string; files?: 'ready' | 'missing'; handover?: 'done' | 'pending' } {
-  if (v === HANDED_OVER) return { status: 'QC_PASSED', handover: 'done' }
-  if (v === 'QC_PASSED') return { status: 'QC_PASSED', handover: 'pending' }
-  if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
-  if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
-  return { status: v || undefined }
+// Giá trị ô Status → tham số API.
+//   - Chọn MỘT mục: gửi đúng tham số kiểu cũ như trước (status + files/handover) —
+//     y hệt bản trước, chạy được cả với API chưa cập nhật.
+//   - Chọn NHIỀU: ?status=a,b,c — mỗi mục một token, API OR với nhau (xem
+//     repositories/status_filter.go bên API). Mục gộp đổi sang token cùng nghĩa:
+//     "Chờ xử lý" = FILES_MISSING, "Đã QC" = HANDOVER_PENDING (vì PENDING/QC_PASSED
+//     trần là MỌI batch của trạng thái đó).
+function statusQuery(list: string[]): { status?: string; files?: 'ready' | 'missing'; handover?: 'done' | 'pending' } {
+  if (!list.length) return {}
+  if (list.length === 1) {
+    const v = list[0]
+    if (v === HANDED_OVER) return { status: 'QC_PASSED', handover: 'done' }
+    if (v === 'QC_PASSED') return { status: 'QC_PASSED', handover: 'pending' }
+    if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
+    if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
+    return { status: v }
+  }
+  const token = (v: string) => (v === 'PENDING' ? 'FILES_MISSING' : v === 'QC_PASSED' ? 'HANDOVER_PENDING' : v)
+  return { status: list.map(token).join(',') }
 }
 const priorityOptions = [
   { value: '', label: 'Tất cả' },
@@ -112,10 +127,9 @@ const priorityOptions = [
 ]
 
 const sellers = ref<Seller[]>([])
-const sellerOptions = computed(() => [
-  { value: '', label: 'Tất cả seller' },
-  ...sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code })),
-])
+const sellerOptions = computed(() =>
+  sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code, sublabel: s.name && s.code && s.name !== s.code ? s.code : undefined })),
+)
 onMounted(async () => {
   try {
     const { data: rows } = await sellersApi.list()
@@ -287,7 +301,16 @@ async function autoCreateBatches() {
         </div>
         <div>
           <label class="label">Seller</label>
-          <UiSelect v-model="filters.seller_id" :options="sellerOptions" aria-label="Seller" @change="applyFilters" />
+          <!-- Chọn nhiều: tick xong, đóng bảng (bấm ra ngoài / Xong) mới lọc một lần. -->
+          <UiMultiSelect
+            v-model="filters.seller_id"
+            :options="sellerOptions"
+            all-label="Tất cả seller"
+            searchable
+            search-placeholder="Tìm seller…"
+            aria-label="Seller"
+            @change="applyFilters"
+          />
         </div>
         <div>
           <label class="label">Material</label>
@@ -299,7 +322,7 @@ async function autoCreateBatches() {
         </div>
         <div>
           <label class="label">Status</label>
-          <UiSelect v-model="filters.status" :options="statusOptions" aria-label="Status" @change="applyFilters" />
+          <UiMultiSelect v-model="filters.status" :options="statusOptions" aria-label="Status" @change="applyFilters" />
         </div>
         <div>
           <label class="label">Priority</label>

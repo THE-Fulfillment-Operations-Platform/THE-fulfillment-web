@@ -3,7 +3,10 @@ import type { OrderItem, ListParams } from '~/types'
 
 export interface ItemListParams extends ListParams {
   sku?: string
-  status?: string // = internal_status
+  // = internal_status. Một hoặc nhiều giá trị phẩy ngăn cách, OR với nhau; khi chọn
+  // nhiều còn có token gộp FILES_READY / FILES_MISSING / PACKED / HANDED_OVER (xem
+  // statusParams() ở pages/orders/index.vue).
+  status?: string
   // Chỉ sản phẩm của đơn đã rời xưởng (bàn giao THE / đã gửi đi / đã giao) —
   // nhãn "Đã bàn giao" ở cột Trạng thái, đọc từ seller_status của đơn.
   handed_over?: boolean
@@ -28,7 +31,8 @@ export interface ItemListParams extends ListParams {
   batch_id?: number
   // Sản phẩm có SKU gắn với NVL này (theo mapping SKU → NVL, kể cả chưa vào batch).
   material_id?: number
-  seller_id?: number
+  // Một hoặc nhiều id phẩy ngăn cách ("3,7"): sản phẩm của đơn thuộc BẤT KỲ seller nào.
+  seller_id?: number | string
   // Xin trả kèm seller của đơn (order.seller). Tắt mặc định ở backend vì đó là
   // một round trip nữa tới DB; chỉ màn nào in tên seller mới bật.
   with_seller?: boolean
