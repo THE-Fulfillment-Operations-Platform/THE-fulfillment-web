@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { apiDateFrom, apiDateTo } from '~/utils/dateRange'
+import { apiInstantFrom, apiInstantBefore } from '~/utils/dateRange'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { batchesApi, materialsApi, sellersApi } from '~/services/api'
 import type { AutoCreateBatchesResult } from '~/services/api'
@@ -48,8 +48,8 @@ const filters = reactive({
   seller_id: [] as string[], // server-side: batch chứa hàng của (một trong) các seller này
   store_order: '', // server-side: batch chứa đơn có mã đơn shop khớp
   overdue: false, // client-side refine
-  date_from: '', // server-side: batch tạo từ ngày (YYYY-MM-DD) — anh Kiên 20/11
-  date_to: '', // server-side: tới hết ngày/phút này (utils/dateRange apiDateTo)
+  date_from: '', // server-side: batch tạo từ ngày/phút này, giờ máy (utils/dateRange apiInstantFrom) — anh Kiên 20/11
+  date_to: '', // server-side: tới HẾT ngày/phút này — gửi đầu ngày/phút kế tiếp, API lọc < (apiInstantBefore)
   page: 1,
   page_size: 20,
 })
@@ -64,8 +64,8 @@ const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
     seller_id: filters.seller_id.length ? filters.seller_id.join(',') : undefined,
     store_order: filters.store_order.trim() || undefined,
     batch: filters.batch_id.trim().replace(/^#/, '') || undefined,
-    date_from: apiDateFrom(filters.date_from),
-    date_to: apiDateTo(filters.date_to),
+    date_from: apiInstantFrom(filters.date_from),
+    date_to: apiInstantBefore(filters.date_to),
     page: filters.page,
     page_size: filters.page_size,
   }),

@@ -16,7 +16,8 @@
     "start": "node .output/server/index.mjs",
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
-    "test:diecut": "node scripts/test-diecut.mjs"
+    "test:diecut": "node scripts/test-diecut.mjs",
+    "test:date-range": "node scripts/test-date-range.mjs"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",

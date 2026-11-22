@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { apiDateFrom, apiDateTo } from '~/utils/dateRange'
+import { apiInstantFrom, apiInstantBefore } from '~/utils/dateRange'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { itemsApi, materialsApi, ordersApi, sellersApi } from '~/services/api'
 import type { Material, OrderItem, Seller } from '~/types'
@@ -117,8 +117,8 @@ function filterParams() {
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
     batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
-    date_from: apiDateFrom(filters.date_from),
-    date_to: apiDateTo(filters.date_to),
+    date_from: apiInstantFrom(filters.date_from),
+    date_to: apiInstantBefore(filters.date_to),
   }
 }
 
