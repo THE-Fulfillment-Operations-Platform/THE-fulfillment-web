@@ -707,6 +707,19 @@ function runScan(value: string, scanOpts: ShipOptions) {
             In {{ extOrders.length }} label ngoài
           </button>
         </p>
+        <p
+          v-else-if="orders.length"
+          class="flex flex-wrap items-center gap-1.5 border-b border-border bg-muted px-4 py-2 text-xs text-muted-foreground"
+        >
+          <!-- 23/11: anh Kiên vào đây tìm nút in khi chưa nhập link nào ("a hông thấy chỗ inlabel"),
+               nên nói rõ nút In label chỉ hiện sau khi nhập link label bằng Excel. -->
+          <UiIcon name="print" :size="14" class="shrink-0" />
+          <span>
+            Muốn in label mua ngoài (GKE, JFT…): vào
+            <NuxtLink to="/journeys" class="font-medium text-primary hover:underline">Hành trình đơn hàng</NuxtLink>
+            → "Gắn mã từ Excel", điền cột <b>Link label</b>. Đơn có link sẽ hiện nút "In label" ở đây.
+          </span>
+        </p>
         <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">
           <table class="min-w-full divide-y divide-border">
             <thead class="sticky top-0 z-10 bg-muted">
