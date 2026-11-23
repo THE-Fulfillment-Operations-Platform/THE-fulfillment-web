@@ -923,11 +923,14 @@ onMounted(focusScan)
             </p>
             <div class="flex flex-wrap gap-2">
               <!-- Phần đã huỷ: chip mờ, gạch tên, nói rõ "đã huỷ (lý do)" thay vì
-                   badge "Đã cắt" gây hiểu là hàng đang sẵn sàng. -->
+                   badge "Đã cắt" gây hiểu là hàng đang sẵn sàng.
+                   Link theo batch_id (route /batches/:id là id nội bộ). Trước 23/11
+                   link lấy mã bỏ "#" (/batches/102909) — một id không có thật. API
+                   cũ chưa trả batch_id thì '' (ở lại trang, không mở nhầm batch). -->
               <NuxtLink
                 v-for="b in parts"
                 :key="b.batch_item_id"
-                :to="`/batches/${b.batch_code.replace('#', '')}`"
+                :to="b.batch_id ? `/batches/${b.batch_id}` : ''"
                 class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
                 :class="b.scrapped
                   ? 'border-rose-300 bg-rose-50/60 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200'

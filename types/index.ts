@@ -990,6 +990,8 @@ export interface CreateBatchResult {
 
 export interface QcScanBatch {
   batch_item_id: number
+  /** Id nội bộ của batch — chỉ để dựng link /batches/:id; API cũ không có. */
+  batch_id?: number
   batch_code: string
   material_code: string
   status: InternalStatus
