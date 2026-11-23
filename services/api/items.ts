@@ -28,6 +28,10 @@ export interface ItemListParams extends ListParams {
   include_cancelled?: boolean
   store_order_id?: string // partial match on the parent order's store order id
   internal_code?: string // partial match on the item's internal (QR) code
+  // Mã batch người dùng thấy ("102909" / "#102909"): API khớp ĐÚNG mã. Ô Batch ID
+  // màn Đơn hàng gửi tham số này (utils/item itemBatchFilterParams).
+  batch?: string
+  // Id NỘI BỘ của batch (vd 1909) — chỉ khi người dùng gõ rõ "id 1909".
   batch_id?: number
   // Sản phẩm có SKU gắn với NVL này (theo mapping SKU → NVL, kể cả chưa vào batch).
   material_id?: number

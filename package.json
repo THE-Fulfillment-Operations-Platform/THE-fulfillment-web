@@ -17,7 +17,8 @@
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test:diecut": "node scripts/test-diecut.mjs",
-    "test:date-range": "node scripts/test-date-range.mjs"
+    "test:date-range": "node scripts/test-date-range.mjs",
+    "test:batch-code": "node scripts/test-batch-code.mjs"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",

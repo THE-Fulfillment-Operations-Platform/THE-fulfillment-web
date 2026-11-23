@@ -146,7 +146,8 @@ export interface BatchListParams extends ListParams {
   // seller_id nhận nhiều id phẩy ngăn cách ("3,7"): batch có hàng của BẤT KỲ seller nào.
   seller_id?: number | string
   store_order?: string
-  // Mã batch chứa chuỗi này ("101602" ra "#101602").
+  // ĐÚNG mã batch, có/không dấu # ("101602" ra "#101602"; từ 23/11/2026 "1602"
+  // không còn ra gì — trước đây khớp chuỗi con, "1909" ra nhầm #101909).
   batch?: string
   // Ô tìm chung: mã batch, mã đơn / mã tem, mã đơn shop hoặc tên seller.
   q?: string

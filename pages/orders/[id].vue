@@ -19,6 +19,7 @@ import {
   orderStatusBadge,
   orderInternalStatus,
 } from '~/utils/enums'
+import { batchRefLabel } from '~/utils/item'
 
 const route = useRoute()
 const id = route.params.id as string
@@ -574,11 +575,12 @@ async function syncTracking() {
               <div v-if="it.batch_items?.length" class="mt-3 flex flex-wrap gap-2">
                 <NuxtLink
                   v-for="b in it.batch_items"
-                  :key="b.batch_item_id ?? b.batch_id"
+                  :key="b.id ?? b.batch_item_id ?? b.batch_id"
                   :to="b.batch_id ? `/batches/${b.batch_id}` : ''"
                   class="inline-flex items-center gap-2 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-muted"
                 >
-                  <span class="font-medium text-foreground">{{ b.batch_code || ('#' + b.batch_id) }}</span>
+                  <!-- Mã batch (#102909); thiếu mã thì "id 1909" — không bao giờ "#" + id nội bộ. -->
+                  <span class="font-medium text-foreground">{{ batchRefLabel(b) }}</span>
                   <span class="text-muted-foreground">{{ b.material_code || b.material?.code }}</span>
                   <UiStatusBadge kind="internal" :value="b.status" />
                 </NuxtLink>

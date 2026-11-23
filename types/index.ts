@@ -292,12 +292,17 @@ export interface BatchItemRef {
   id?: number
   material_id?: number
   batch_item_id?: number
+  // batch_id = id NỘI BỘ (vd 1909) — chỉ để dựng link /batches/:id, KHÔNG để hiện.
+  // batch_code = mã người dùng thấy (vd "#102909"), API trả từ 23/11/2026; API cũ
+  // chỉ có batch.code. Hiện mã qua batchRefCode / itemBatches (utils/item.ts).
   batch_id?: number
   batch_code?: string
   material_code?: string
   material?: Material
   status?: InternalStatus
   batch?: Batch
+  // Phần đã bị huỷ (QC fail / huỷ batch) — vẫn trả về như lịch sử.
+  scrapped_at?: string | null
 }
 
 export interface OrderItem {

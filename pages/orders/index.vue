@@ -16,7 +16,16 @@ import {
   type StatusBadgeRef,
 } from '~/utils/enums'
 import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
-import { itemOrderId, itemStoreOrderId, itemStoreOrderDup, itemMaterial, itemBatchLabel } from '~/utils/item'
+import {
+  itemOrderId,
+  itemStoreOrderId,
+  itemStoreOrderDup,
+  itemMaterial,
+  itemBatches,
+  itemBatchesText,
+  itemBatchFilterParams,
+  type ItemBatch,
+} from '~/utils/item'
 import { PRODUCTION_FILES_READY } from '~/utils/batch'
 import { useApiResource } from '~/composables/useApiResource'
 import { exportCsv } from '~/utils/csv'
@@ -86,7 +95,10 @@ const filters = reactive({
   material_id: '',
   review_status: '',
   warranty: '',
-  batch_id: '',
+  // Ô Batch ID: MÃ batch như màn Batch hiện (#102909 / 102909), hoặc gõ rõ
+  // "id 1909" để lọc theo id nội bộ — xem itemBatchFilterParams. Đổi tên từ
+  // batch_id (23/11/2026): ô này từng gửi thẳng số gõ vào làm id nội bộ.
+  batch: '',
   date_from: '',
   date_to: '',
   page: 1,
@@ -116,7 +128,7 @@ function filterParams() {
     review_status: filters.review_status || undefined,
     warranty: (filters.warranty || undefined) as 'eligible' | 'child' | 'root' | undefined,
     material_id: filters.material_id ? Number(filters.material_id) : undefined,
-    batch_id: filters.batch_id ? Number(filters.batch_id) : undefined,
+    ...itemBatchFilterParams(filters.batch),
     date_from: apiInstantFrom(filters.date_from),
     date_to: apiInstantBefore(filters.date_to),
   }
@@ -284,7 +296,7 @@ function resetFilters() {
   filters.review_status = ''
   filters.warranty = ''
   filters.material_id = ''
-  filters.batch_id = ''
+  filters.batch = ''
   filters.date_from = ''
   filters.date_to = ''
   applyFilters()
@@ -304,6 +316,28 @@ function changePageSize(size: number) {
 }
 
 const items = computed(() => data.value ?? [])
+
+// Cột Batch: MÃ các batch chứa sản phẩm (#102909), không bao giờ id nội bộ —
+// xem utils/item itemBatches. Tính một lần cho cả trang thay vì gọi lại 3-4 lần
+// mỗi dòng trong template. Hiện tối đa BATCH_CELL_MAX mã, còn lại "+N", rê chuột
+// (title) thấy đủ; bấm mã mở chi tiết batch (route theo id).
+const BATCH_CELL_MAX = 2
+const batchesByItem = computed(() => {
+  const m = new Map<number, ItemBatch[]>()
+  for (const it of items.value) m.set(it.id, itemBatches(it))
+  return m
+})
+function rowBatches(it: OrderItem): ItemBatch[] {
+  return batchesByItem.value.get(it.id) ?? []
+}
+// Rỗng khi đang lọc theo mã batch: nói rõ ô Batch ID khớp ĐÚNG mã, và cách lọc theo
+// id nội bộ — người quen gõ id (cột Batch từng in "#1909") khỏi tưởng batch trống.
+const emptyText = computed(() => {
+  const code = itemBatchFilterParams(filters.batch).batch
+  return code
+    ? `Không có item nào khớp bộ lọc. Ô Batch ID khớp đúng mã batch như màn Batch (vd #102909); lọc theo id nội bộ thì gõ “id ${code}”.`
+    : 'Không có item nào khớp bộ lọc.'
+})
 
 // ---- Chọn nhiều + xoá đơn (Admin/Owner) --------------------------------------
 // Mỗi dòng là một SẢN PHẨM, nhưng xoá là xoá cả ĐƠN (như nút Xoá đơn ở chi tiết
@@ -433,7 +467,8 @@ function exportItems() {
     { label: 'Sản phẩm', value: (it) => it.product_name ?? '' },
     { label: 'Số lượng', value: 'quantity' },
     { label: 'NVL', value: (it) => itemMaterial(it) },
-    { label: 'Batch', value: (it) => itemBatchLabel(it) },
+    // Đủ mã mọi batch (không cắt "+N"), NVL đã có cột riêng.
+    { label: 'Batch', value: (it) => itemBatchesText(it, false) },
     { label: 'Ngày tạo', value: (it) => formatDate(itemCreatedAt(it)) },
     { label: 'Trạng thái', value: (it) => statusLabel(it) },
     // Có = mọi phần của sản phẩm đã nằm trong batch đủ link in + cắt (kể cả đã qua
@@ -526,7 +561,15 @@ function exportItems() {
         </div>
         <div>
           <label class="label">Batch ID</label>
-          <input v-model="filters.batch_id" class="input" placeholder="101001" @keyup.enter="applyFilters" />
+          <!-- Mã batch như màn Batch hiện (#102909 hoặc 102909), khớp đúng mã.
+               Lọc theo id nội bộ: gõ rõ "id 1909". -->
+          <input
+            v-model="filters.batch"
+            class="input"
+            placeholder="#101001"
+            title="Mã batch như ở màn Batch (#102909 hoặc 102909), khớp đúng mã. Lọc theo id nội bộ: gõ “id 1909”."
+            @keyup.enter="applyFilters"
+          />
         </div>
         <div>
           <label class="label">Từ ngày</label>
@@ -568,7 +611,7 @@ function exportItems() {
         :loading="loading"
         :error="error"
         :empty="!loading && !error && items.length === 0"
-        empty-text="Không có item nào khớp bộ lọc."
+        :empty-text="emptyText"
         skeleton
         :skeleton-rows="8"
         @retry="reload"
@@ -700,7 +743,31 @@ function exportItems() {
                   </div>
                 </td>
                 <td class="table-td hidden lg:table-cell"><UiMockupLink :url="it.mockup_url" small icon-only label="Mockup" /></td>
-                <td class="table-td hidden text-muted-foreground md:table-cell">{{ itemBatchLabel(it) }}</td>
+                <!-- Mã batch (#102909), không bao giờ id nội bộ. Bấm mã = mở chi tiết
+                     batch (link nằm trong dòng nên dòng không nhảy sang chi tiết đơn,
+                     xem useRowLink). Quá BATCH_CELL_MAX mã thì "+N", rê chuột thấy đủ. -->
+                <td class="table-td hidden md:table-cell">
+                  <div
+                    v-if="rowBatches(it).length"
+                    class="flex max-w-[9rem] flex-wrap items-center gap-x-1.5 gap-y-0.5"
+                    :title="itemBatchesText(it)"
+                  >
+                    <template v-for="b in rowBatches(it).slice(0, BATCH_CELL_MAX)" :key="b.key">
+                      <NuxtLink
+                        v-if="b.batchId"
+                        :to="`/batches/${b.batchId}`"
+                        class="whitespace-nowrap font-medium text-primary hover:underline"
+                        :class="b.scrapped ? 'line-through opacity-70' : ''"
+                      >{{ b.label }}</NuxtLink>
+                      <span v-else class="whitespace-nowrap text-muted-foreground">{{ b.label }}</span>
+                    </template>
+                    <span
+                      v-if="rowBatches(it).length > BATCH_CELL_MAX"
+                      class="whitespace-nowrap rounded bg-muted px-1 text-[10px] font-semibold text-muted-foreground"
+                    >+{{ rowBatches(it).length - BATCH_CELL_MAX }}</span>
+                  </div>
+                  <span v-else class="text-muted-foreground">—</span>
+                </td>
                 <td class="table-td hidden text-xs text-muted-foreground lg:table-cell" :title="formatDateTime(itemCreatedAt(it))">{{ formatDate(itemCreatedAt(it)) }}</td>
                 <td class="table-td">
                   <div class="flex flex-wrap items-center gap-1.5">
