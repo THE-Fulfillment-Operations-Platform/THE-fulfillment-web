@@ -356,8 +356,18 @@ function focusScan() {
   nextTick(() => scanInput.value?.focus())
 }
 function startScan() {
+  labelScanMode.value = false
   scanMode.value = true
   focusScan()
+}
+// "Quét in label": hộp quét riêng (components/ship/LabelScanBox.vue), chỉ đọc —
+// quét tem đơn là in label của đơn, không đổi trạng thái. Chỉ mở một hộp quét một lúc
+// để ô nhập nào giữ focus là rõ.
+const labelScanMode = ref(false)
+function startLabelScan() {
+  scanMode.value = false
+  code.value = ''
+  labelScanMode.value = true
 }
 // ---- Vượt chặn QC khi xuất kho (Owner/Admin) ----------------------------------
 const forceTarget = ref<string | null>(null)
@@ -481,7 +491,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
   <div>
     <PageHeader
       title="Chờ gửi hàng"
-      subtitle="Đơn đã QC đủ và chưa gửi — tick chọn rồi gửi hàng loạt, hoặc bấm Quét xuất kho để quét QR từng đơn ra khỏi kho"
+      subtitle="Đơn đã QC đủ và chưa gửi — tick chọn rồi gửi hàng loạt, bấm Quét xuất kho để quét QR từng đơn ra khỏi kho, hoặc Quét in label để in lại label mua ngoài của đơn"
     >
       <template #actions>
         <button class="btn-secondary" @click="reload">
@@ -493,8 +503,13 @@ function runScan(value: string, scanOpts: ShipOptions) {
         <button v-else class="btn-secondary" @click="stopScan">
           <UiIcon name="close" :size="16" /> Dừng quét
         </button>
+        <button v-if="!labelScanMode" class="btn-secondary" title="Quét tem QR của đơn là in ngay label mua ngoài — không đổi trạng thái đơn" @click="startLabelScan">
+          <UiIcon name="print" :size="16" /> Quét in label
+        </button>
       </template>
     </PageHeader>
+
+    <ShipLabelScanBox v-if="labelScanMode" @close="labelScanMode = false" />
 
     <!-- Trạm quét -->
     <div v-if="scanMode" class="card mb-4 border-primary/40 p-4 ring-1 ring-primary/30">
@@ -701,6 +716,9 @@ function runScan(value: string, scanOpts: ShipOptions) {
           <span>
             <b>{{ extOrders.length }}</b>/{{ orders.length }} đơn trong trang có label mua ngoài (nhập từ Excel)<template v-if="orders.length - extOrders.length > 0">
               — {{ orders.length - extOrders.length }} đơn còn lại chưa có label ngoài</template>.
+            Hoặc bấm
+            <button type="button" class="font-medium underline" @click="startLabelScan">Quét in label</button>
+            rồi quét tem QR của đơn là in luôn.
           </span>
           <button class="btn-primary px-2.5 py-1 text-xs" :disabled="printing" @click="printExternalPage">
             <UiSpinner v-if="printing" :size="13" />
@@ -717,7 +735,9 @@ function runScan(value: string, scanOpts: ShipOptions) {
           <span>
             Muốn in label mua ngoài (GKE, JFT…): vào
             <NuxtLink to="/journeys" class="font-medium text-primary hover:underline">Hành trình đơn hàng</NuxtLink>
-            → "Gắn mã từ Excel", điền cột <b>Link label</b>. Đơn có link sẽ hiện nút "In label" ở đây.
+            → "Gắn mã từ Excel", điền cột <b>Link label</b>. Đơn có link sẽ hiện nút "In label" ở đây, và nút
+            <button type="button" class="font-medium text-primary hover:underline" @click="startLabelScan">Quét in label</button>
+            (góc trên) cho phép quét tem QR của đơn là in luôn label của đơn đó.
           </span>
         </p>
         <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">

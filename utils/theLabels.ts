@@ -59,6 +59,33 @@ export function printTHELabels(orders: Array<{ id: number; code?: string }>): Pr
 }
 
 /**
+ * Mở cửa sổ in rỗng. PHẢI gọi đồng bộ trong handler của cú bấm / phím Enter của
+ * máy quét (trước mọi await) — mở sau await là trình duyệt coi như popup không do
+ * người dùng bấm và chặn. Mở xong mới tải label rồi đổ vào cửa sổ này bằng
+ * printTHELabelsInto / printExternalLabelsInto.
+ */
+export function openPrintWindow(): Window {
+  const w = window.open('', '_blank')
+  if (!w) throw new Error(POPUP_BLOCKED_MESSAGE)
+  w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px sans-serif;padding:24px">Đang tải label…</body>')
+  return w
+}
+
+export const POPUP_BLOCKED_MESSAGE =
+  'Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại: bấm biểu tượng "popup bị chặn" ở bên phải thanh địa chỉ → ' +
+  '"Luôn cho phép popup từ trang này" → Xong, rồi quét lại.'
+
+/** In label THE vào cửa sổ đã mở bằng openPrintWindow. */
+export function printTHELabelsInto(w: Window, orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
+  return printLabelPages(orders, carrierApi.labelBlob, 'Label THE', 1, false, w)
+}
+
+/** In label ngoài vào cửa sổ đã mở bằng openPrintWindow. */
+export function printExternalLabelsInto(w: Window, orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
+  return printLabelPages(orders, carrierApi.externalLabelBlob, 'Label ngoài', 1, true, w)
+}
+
+/**
  * Cùng cửa sổ in 4×6 như trên nhưng cho label MUA NGOÀI (link nhập từ Excel):
  * server tải PDF từ link (trình duyệt không tải thẳng được vì khác nguồn), mỗi
  * label một trang. Tải song song vài label một lúc để lô lớn không phải chờ nối
@@ -78,11 +105,11 @@ async function printLabelPages(
   concurrency: number,
   // Lô nhiều đơn: lý do lỗi kèm mã đơn để biết label nào hỏng (label THE giữ nguyên lời cũ).
   prefixCode: boolean,
+  // Cửa sổ đã mở sẵn (xem openPrintWindow); không truyền thì mở ngay ở đây.
+  openedWindow?: Window,
 ): Promise<LabelPrintResult> {
   const result: LabelPrintResult = { printed: 0, failed: [] }
-  const w = window.open('', '_blank')
-  if (!w) throw new Error('Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại.')
-  w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px sans-serif;padding:24px">Đang tải label…</body>')
+  const w = openedWindow ?? openPrintWindow()
 
   // Mỗi đơn ra một ô kết quả theo đúng vị trí của nó → thứ tự trang không phụ
   // thuộc đơn nào tải xong trước.

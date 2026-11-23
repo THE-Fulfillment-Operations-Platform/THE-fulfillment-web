@@ -111,7 +111,27 @@ export interface CreateWarrantyInput {
   }
 }
 
+/**
+ * Kết quả tra mã ở "Quét in label" (POST /api/orders/label-scan). Chỉ đọc: quét để in
+ * label không đổi trạng thái đơn, không bàn giao, không gọi THE.
+ */
+export interface LabelScanResult {
+  order_id: number
+  internal_code: string
+  store_order_id: string
+  /** Đơn có link label mua ngoài (orders.external_label_url). */
+  has_external_label: boolean
+  /** Mã label THE đã tạo cho đơn (rỗng = chưa có). */
+  the_tracking?: string
+  /** false = còn sản phẩm chưa QC đạt; vẫn in nhưng nhật ký ghi chú "đơn chưa QC xong". */
+  qc_done: boolean
+  unfinished_items?: number
+  total_items?: number
+}
+
 export const ordersApi = {
+  /** Quét mã đơn nội bộ hoặc tem sản phẩm (100048_1/3) → đơn + trạng thái label. Chỉ đọc. */
+  labelScan: (code: string) => apiPost<LabelScanResult>('/api/orders/label-scan', { code }),
   list: (params?: OrderListParams) => apiGet<Order[]>('/api/orders', params),
   get: (id: number | string) => apiGet<Order>(`/api/orders/${id}`),
   create: (body: DirectOrderInput) => apiPost<Order>('/api/orders', body),
