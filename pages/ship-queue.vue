@@ -3,7 +3,7 @@ import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { qcApi, handoffsApi, carrierApi } from '~/services/api'
 import type { ShipToCarrierResult, ShipOptions } from '~/services/api/handoffs'
 import type { THEPreflight } from '~/services/api/carrier'
-import { printTHELabels } from '~/utils/theLabels'
+import { printTHELabels, printExternalLabels } from '~/utils/theLabels'
 import type { QcResultOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
@@ -289,6 +289,46 @@ async function printLabels(orders: Array<{ id: number; code?: string }>) {
   }
 }
 
+// Label MUA NGOÀI (link nhập bằng Excel ở Hành trình đơn hàng). In qua server tải
+// PDF về — xem printExternalLabels. Không đụng label THE ở trên.
+const extOrders = computed(() => orders.value.filter((o) => !!o.external_label_url))
+// Trang trộn đơn có/không label ngoài mới cần chữ "chưa có label" — trang toàn đơn
+// THE thì chữ đó chỉ gây rối.
+const showNoLabel = computed(() => extOrders.value.length > 0)
+
+async function printExternal(list: Array<{ id: number; code?: string }>) {
+  if (!list.length || printing.value) return
+  printing.value = true
+  try {
+    const res = await printExternalLabels(list)
+    if (res.failed.length) {
+      const more = res.failed.length > 1 ? ` (+${res.failed.length - 1} label khác)` : ''
+      toast.error(`${res.failed.length}/${list.length} label ngoài chưa tải được — ${res.failed[0]!.reason}${more}. Mở link gốc ở chi tiết đơn để kiểm tra.`)
+    }
+  } catch (e) {
+    toast.error(errorMessage(e))
+  } finally {
+    printing.value = false
+  }
+}
+const toExt = (o: QcResultOrder) => ({ id: o.order_id, code: o.internal_code })
+function printExternalPage() {
+  printExternal(extOrders.value.map(toExt))
+}
+// In các đơn đang tick: đơn chưa có label ngoài được nêu đích danh, không im lặng bỏ qua.
+function printExternalSelected() {
+  const picked = orders.value.filter((o) => isSelected(o.order_id))
+  const have = picked.filter((o) => !!o.external_label_url)
+  const lack = picked.filter((o) => !o.external_label_url)
+  if (lack.length) {
+    const names = lack.slice(0, 5).map((o) => o.internal_code).join(', ')
+    toast.info(`${lack.length} đơn đã chọn chưa có label ngoài: ${names}${lack.length > 5 ? '…' : ''}`)
+  }
+  if (!have.length) return
+  printExternal(have.map(toExt))
+}
+const selectedExtCount = computed(() => orders.value.filter((o) => isSelected(o.order_id) && !!o.external_label_url).length)
+
 const SKIP_HINT: Record<string, string> = {
   DATA: 'Sửa dữ liệu đơn / SKU rồi gửi lại',
   ADDRESS: 'Kiểm tra địa chỉ, hoặc gửi bỏ qua kiểm tra',
@@ -361,6 +401,8 @@ interface ScanLogEntry {
   order_id?: number
   the_tracking?: string
   has_label?: boolean
+  /** Đơn vừa quét có label ngoài (link từ Excel) — nút "In label ngoài". */
+  ext_label?: boolean
   reason?: string
   /** Lượt xuất kho bị chặn vì chưa QC đạt: Owner/Admin có nút "Vẫn xuất kho". */
   qcBlocked?: boolean
@@ -401,6 +443,8 @@ function runScan(value: string, scanOpts: ShipOptions) {
         exported: res?.exported, unfinished: res?.unfinished_items, total: res?.total_items,
         the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
         label_only: res?.label_only, already_exported: res?.already_exported,
+        // Đọc từ danh sách ĐANG HIỆN (trước reload): đơn quét xong có thể rời trang.
+        ext_label: !!orders.value.find((o) => o.order_id === res?.order_id)?.external_label_url,
       })
       if (res?.exported) {
         const left = res.unfinished_items ?? 0
@@ -540,6 +584,14 @@ function runScan(value: string, scanOpts: ShipOptions) {
                   <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
                 </template>
                 <button
+                  v-if="entry.ext_label && entry.order_id"
+                  class="ml-2 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium text-emerald-800 hover:bg-white dark:bg-white/10 dark:text-emerald-200"
+                  :disabled="printing"
+                  @click="printExternal([{ id: entry.order_id, code: entry.internal_code }])"
+                >
+                  In label ngoài
+                </button>
+                <button
                   v-if="entry.has_label && entry.order_id"
                   class="ml-2 rounded bg-white/70 px-1.5 py-0.5 text-xs font-medium text-emerald-800 hover:bg-white dark:bg-white/10 dark:text-emerald-200"
                   :disabled="printing"
@@ -610,6 +662,16 @@ function runScan(value: string, scanOpts: ShipOptions) {
           <template v-if="progress">Đang xử lý {{ progress.done }}/{{ progress.total }}…</template>
           <template v-else>1. Tạo label THE ({{ count }})</template>
         </button>
+        <button
+          class="btn-secondary px-3 py-1.5 text-xs"
+          :disabled="printing"
+          title="In label mua ngoài (link nhập bằng Excel) của các đơn đã chọn — gộp một lần in"
+          @click="printExternalSelected"
+        >
+          <UiSpinner v-if="printing" :size="14" />
+          <UiIcon v-else name="print" :size="14" />
+          In label ngoài ({{ selectedExtCount }}/{{ count }})
+        </button>
         <button class="btn-primary px-3 py-1.5 text-xs" :disabled="shipping" @click="exportSelected">
           <UiIcon name="shipping" :size="14" />
           2. Xuất kho ({{ count }})
@@ -630,6 +692,20 @@ function runScan(value: string, scanOpts: ShipOptions) {
           <UiIcon name="alert" :size="14" class="shrink-0" />
           {{ missingHSCount }} đơn trong trang có SKU chưa có mã HS (nhãn đỏ "Thiếu mã HS") — "Tạo label THE" sẽ bỏ qua các đơn này
           cho tới khi khai mã HS ở Master Data → SKU (cho SKU hoặc SKU cha).
+        </p>
+        <p
+          v-if="extOrders.length"
+          class="flex flex-wrap items-center gap-2 border-b border-border bg-sky-50 px-4 py-2 text-xs text-sky-900 dark:bg-sky-500/10 dark:text-sky-200"
+        >
+          <UiIcon name="print" :size="14" class="shrink-0" />
+          <span>
+            <b>{{ extOrders.length }}</b>/{{ orders.length }} đơn trong trang có label mua ngoài (nhập từ Excel)<template v-if="orders.length - extOrders.length > 0">
+              — {{ orders.length - extOrders.length }} đơn còn lại chưa có label ngoài</template>.
+          </span>
+          <button class="btn-primary px-2.5 py-1 text-xs" :disabled="printing" @click="printExternalPage">
+            <UiSpinner v-if="printing" :size="13" />
+            In {{ extOrders.length }} label ngoài
+          </button>
         </p>
         <div class="overflow-x-auto lg:max-h-[calc(100dvh-14rem)] lg:min-h-[16rem] lg:overflow-y-auto">
           <table class="min-w-full divide-y divide-border">
@@ -686,6 +762,20 @@ function runScan(value: string, scanOpts: ShipOptions) {
                     class="ml-1 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200"
                     :title="`Đã tạo label THE ${o.the_tracking}${o.the_last_mile ? ' · mã chặng cuối ' + o.the_last_mile : ''} — chờ Xuất kho`"
                   >Đã có label THE</span>
+                  <!-- Label mua ngoài (link từ Excel): bấm là in; chưa có thì nói rõ. -->
+                  <button
+                    v-if="o.external_label_url"
+                    type="button"
+                    class="ml-1 inline-flex items-center gap-1 rounded-md bg-sky-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-sky-800 hover:bg-sky-200 disabled:opacity-60 dark:bg-sky-500/20 dark:text-sky-200"
+                    :disabled="printing"
+                    title="In label mua ngoài của đơn này"
+                    @click.stop="printExternal([toExt(o)])"
+                  ><UiIcon name="print" :size="11" /> In label</button>
+                  <span
+                    v-else-if="showNoLabel && !o.the_tracking"
+                    class="ml-1 inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 font-sans text-[11px] font-medium text-muted-foreground"
+                    title="Đơn này chưa có label ngoài — nhập link label bằng Excel ở Hành trình đơn hàng, hoặc tạo label THE"
+                  >Chưa có label</span>
                   <!-- THE đã huỷ label cũ: Xuất kho bị chặn tới khi có label mới. -->
                   <span
                     v-if="o.the_cancelled"

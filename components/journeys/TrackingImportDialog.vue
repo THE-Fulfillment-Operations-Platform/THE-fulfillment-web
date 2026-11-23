@@ -1,5 +1,9 @@
 <script setup lang="ts">
-// Gắn mã vận đơn hàng loạt từ file Excel/CSV của hãng vận chuyển.
+// Gắn mã vận đơn và/hoặc LABEL NGOÀI hàng loạt từ file Excel/CSV.
+//
+// Cột "Link label" (tuỳ chọn) là link PDF label mua ở hãng ngoài; kho in nó ở
+// màn Chờ gửi hàng. Cột Mã vận đơn cũng tuỳ chọn — file chỉ có link cũng được.
+// Một cú tick "ghi đè" chung cho cả mã vận đơn lẫn link đã có khác.
 //
 // Luồng 3 bước, không bước nào ghi dữ liệu cho tới khi CS bấm xác nhận:
 //   1. Chọn file (2 cột: OrderID + Mã vận đơn) — có nút tải file mẫu.
@@ -126,11 +130,40 @@ const s = computed(() => preview.value?.summary)
 // `?? []` trên CHÍNH mảng, không phải trên kết quả filter: Go trả mảng rỗng
 // thành JSON null, mà `null.filter(...)` là lỗi render — cả dialog (kể cả nút
 // xác nhận ở footer) biến mất, nhìn như bấm không ăn.
-const assigns = computed(() => (preview.value?.matches ?? []).filter((m) => m.action === 'ASSIGN'))
-const overwrites = computed(() => (preview.value?.matches ?? []).filter((m) => m.action === 'OVERWRITE'))
+const matchRows = computed(() => preview.value?.matches ?? [])
+// Dòng gắn mới: mã vận đơn mới HOẶC link label mới (không đụng gì đang có).
+const assigns = computed(() => matchRows.value.filter((m) => m.action === 'ASSIGN' || m.label_action === 'ASSIGN'))
+// Dòng sẽ ghi đè thứ đang có (mã vận đơn hoặc link khác) — chỉ ghi khi được tick.
+const overwrites = computed(() => matchRows.value.filter((m) => m.action === 'OVERWRITE' || m.label_action === 'OVERWRITE'))
 const issueRows = computed(() => preview.value?.issues ?? [])
 const scopeMissingRows = computed(() => preview.value?.scope_missing ?? [])
-const commitCount = computed(() => assigns.value.length + (includeOverwrite.value ? overwrites.value.length : 0))
+const hasLabels = computed(() => {
+  const x = s.value
+  return !!x && x.label_assign + x.label_overwrite + x.label_unchanged > 0
+})
+
+// Những gì thực sự gửi đi: từng đơn chỉ mang phần được phép ghi. Chưa tick ghi
+// đè thì phần ghi đè bị bỏ khỏi dòng (đơn vẫn gắn được phần mới còn lại).
+interface Assignment { order_id: number; tracking_number?: string; label_url?: string }
+const assignments = computed<Assignment[]>(() => {
+  const out: Assignment[] = []
+  for (const m of matchRows.value) {
+    const a: Assignment = { order_id: m.order_id }
+    if (m.tracking_number && (m.action === 'ASSIGN' || (m.action === 'OVERWRITE' && includeOverwrite.value))) {
+      a.tracking_number = m.tracking_number
+    }
+    if (m.label_url && (m.label_action === 'ASSIGN' || (m.label_action === 'OVERWRITE' && includeOverwrite.value))) {
+      a.label_url = m.label_url
+    }
+    if (a.tracking_number || a.label_url) out.push(a)
+  }
+  return out
+})
+const commitCount = computed(() => assignments.value.length)
+function shortLink(u?: string): string {
+  if (!u) return ''
+  return u.length > 48 ? `${u.slice(0, 30)}…${u.slice(-16)}` : u
+}
 
 // So khớp hai chiều cho alert tổng: file thừa (dòng lỗi) / file thiếu (đơn trong
 // khoảng ngày chưa được phủ). Chỉ "hoàn hảo" khi không lệch chiều nào.
@@ -144,18 +177,15 @@ async function commit() {
   if (!preview.value || committing.value || commitCount.value === 0) return
   committing.value = true
   try {
-    const assignments = [
-      ...assigns.value,
-      ...(includeOverwrite.value ? overwrites.value : []),
-    ].map((m) => ({ order_id: m.order_id, tracking_number: m.tracking_number }))
+    const list = assignments.value
     // Backend nhận tối đa TRACKING_COMMIT_BATCH đơn mỗi lần — file "Xuất Excel"
     // điền nhiều mã hơn thế thì gửi từng lô. Mỗi lô vốn đã là partial success
     // (đơn lỗi không kéo cả lô), nên gộp kết quả các lô là đúng nghĩa cũ.
     const data: TrackingImportCommitResult = { updated: 0, failed: [] }
     let sent = 0
     try {
-      for (let i = 0; i < assignments.length; i += TRACKING_COMMIT_BATCH) {
-        const chunk = assignments.slice(i, i + TRACKING_COMMIT_BATCH)
+      for (let i = 0; i < list.length; i += TRACKING_COMMIT_BATCH) {
+        const chunk = list.slice(i, i + TRACKING_COMMIT_BATCH)
         const { data: part } = await trackingApi.commitImport(chunk)
         data.updated += part.updated ?? 0
         data.failed.push(...(part.failed ?? []))
@@ -166,13 +196,13 @@ async function commit() {
       // — vẫn hiện kết quả thật và làm mới bảng, đơn chưa gửi ghi vào danh sách lỗi.
       if (sent === 0) throw e
       const reason = `Chưa gửi được (${errorMessage(e)}) — tải lại file để gắn tiếp`
-      for (const a of assignments.slice(sent)) data.failed.push({ order_id: a.order_id, reason })
+      for (const a of list.slice(sent)) data.failed.push({ order_id: a.order_id, reason })
     }
     result.value = data
     if (data.failed?.length) {
-      toast.info(`Đã gắn ${data.updated} mã — ${data.failed.length} đơn lỗi, xem chi tiết bên dưới`)
+      toast.info(`Đã cập nhật ${data.updated} đơn — ${data.failed.length} đơn lỗi, xem chi tiết bên dưới`)
     } else {
-      toast.success(`Đã gắn ${data.updated} mã vận đơn — hệ thống đang lấy hành trình`)
+      toast.success(`Đã cập nhật ${data.updated} đơn`)
     }
     emit('done')
   } catch (e) {
@@ -184,7 +214,7 @@ async function commit() {
 
 const ISSUE_LABEL: Record<string, string> = {
   EMPTY_ORDER: 'Thiếu mã đơn',
-  EMPTY_TRACKING: 'Thiếu mã vận đơn',
+  EMPTY_TRACKING: 'Thiếu mã vận đơn / link label',
   NOT_FOUND: 'Không có trong hệ thống',
   AMBIGUOUS: 'Trùng nhiều đơn',
   DUPLICATE: 'Dòng lặp lại',
@@ -192,6 +222,8 @@ const ISSUE_LABEL: Record<string, string> = {
   SHARED_TRACKING: '1 mã dán nhiều đơn',
   TAKEN_TRACKING: 'Mã đã gắn đơn khác',
   EXCEL_NUMBER: 'Excel đổi thành số mũ',
+  BAD_LABEL: 'Link label sai',
+  SHARED_LABEL: '1 link dán nhiều đơn',
 }
 
 // Lý do từ backend chỉ hiện khi nó nói thêm được gì so với nhãn — vài mã lỗi
@@ -205,14 +237,17 @@ function issueDetail(it: TrackingImportIssue): string {
 </script>
 
 <template>
-  <UiModal v-model="open" title="Gắn mã vận đơn từ file Excel" wide>
+  <UiModal v-model="open" title="Gắn mã vận đơn / label từ file Excel" wide>
     <div class="space-y-4">
       <!-- Bước 1: chọn file -->
       <template v-if="!result">
         <p class="text-xs text-muted-foreground">
-          File cần 2 cột:
-          <span class="font-medium text-foreground">OrderID</span> (mã đơn shop hoặc mã nội bộ) và
-          <span class="font-medium text-foreground">Mã vận đơn</span>. Hệ thống đối chiếu từng dòng
+          File cần cột
+          <span class="font-medium text-foreground">OrderID</span> (mã đơn shop hoặc mã nội bộ) cùng
+          <span class="font-medium text-foreground">Mã vận đơn</span> và/hoặc
+          <span class="font-medium text-foreground">Link label</span> (link PDF label mua ở hãng
+          ngoài — kho sẽ in từ màn Chờ gửi hàng; nhiều dòng cùng mã đơn dùng chung 1 link được).
+          Hệ thống đối chiếu từng dòng
           và <span class="font-medium text-foreground">chưa ghi gì</span> cho tới khi bạn xác nhận.
           Cũng nhận lại chính file <span class="font-medium text-foreground">Xuất Excel</span> của
           trang này: điền cột Mã vận đơn, dòng để trống được bỏ qua.
@@ -254,7 +289,7 @@ function issueDetail(it: TrackingImportIssue): string {
             <span class="text-sm text-foreground">
               {{ file?.name || (dragging ? 'Thả file vào đây…' : 'Kéo thả hoặc bấm chọn file') }}
             </span>
-            <span class="text-xs text-muted-foreground">File từ hãng vận chuyển · CSV / XLSX</span>
+            <span class="text-xs text-muted-foreground">File Excel / CSV · OrderID, Mã vận đơn, Link label</span>
           </div>
           <input type="file" accept=".csv,.xlsx,.xlsm" class="hidden" @change="onFile" />
         </label>
@@ -296,7 +331,7 @@ function issueDetail(it: TrackingImportIssue): string {
             <p class="text-xs opacity-90">
               Tất cả {{ s?.total_rows }} dòng trong file đều khớp đơn trong hệ thống<template v-if="hasRange">
                 và không đơn xuất xưởng nào trong khoảng {{ rangeLabel }} bị bỏ sót</template>.
-              Sẵn sàng gắn {{ commitCount }} mã.
+              Sẵn sàng gắn {{ commitCount }} đơn.
             </p>
           </div>
         </div>
@@ -371,6 +406,26 @@ function issueDetail(it: TrackingImportIssue): string {
           </div>
         </div>
 
+        <!-- Label ngoài: đếm riêng, chỉ hiện khi file có cột Link label -->
+        <div v-if="hasLabels" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div class="rounded-md bg-emerald-50 p-2 dark:bg-emerald-500/10">
+            <p class="text-lg font-semibold text-emerald-700 dark:text-emerald-300">{{ s?.label_assign }}</p>
+            <p class="text-[11px] text-muted-foreground">Label gắn mới</p>
+          </div>
+          <div class="rounded-md bg-amber-50 p-2 dark:bg-amber-500/10">
+            <p class="text-lg font-semibold text-amber-700 dark:text-amber-300">{{ s?.label_overwrite }}</p>
+            <p class="text-[11px] text-muted-foreground">Label ghi đè link cũ</p>
+          </div>
+          <div class="rounded-md bg-sky-50 p-2 dark:bg-sky-500/10">
+            <p class="text-lg font-semibold text-sky-700 dark:text-sky-300">{{ s?.label_unchanged }}</p>
+            <p class="text-[11px] text-muted-foreground">Label trùng, bỏ qua</p>
+          </div>
+          <div class="rounded-md bg-muted p-2">
+            <p class="text-lg font-semibold text-foreground">{{ s?.merged_rows }}</p>
+            <p class="text-[11px] text-muted-foreground">Dòng gộp (chung 1 đơn)</p>
+          </div>
+        </div>
+
         <!-- Dòng lỗi -->
         <div v-if="issueRows.length" class="rounded-md border border-rose-200/60 dark:border-rose-500/25">
           <p class="border-b border-border bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
@@ -386,7 +441,7 @@ function issueDetail(it: TrackingImportIssue): string {
                 <tr>
                   <th class="table-th">Dòng</th>
                   <th class="table-th">Mã đơn</th>
-                  <th class="table-th">Mã vận đơn</th>
+                  <th class="table-th">Mã vận đơn / link label</th>
                   <th class="table-th">Lý do</th>
                 </tr>
               </thead>
@@ -394,7 +449,7 @@ function issueDetail(it: TrackingImportIssue): string {
                 <tr v-for="(it, i) in issueRows" :key="i" class="bg-rose-50/50 dark:bg-rose-500/5">
                   <td class="table-td text-muted-foreground">{{ it.row }}</td>
                   <td class="table-td font-mono text-xs">{{ it.order_key || '—' }}</td>
-                  <td class="table-td font-mono text-xs">{{ it.tracking_number || '—' }}</td>
+                  <td class="table-td font-mono text-xs break-all">{{ it.tracking_number || shortLink(it.label_url) || '—' }}</td>
                   <td class="table-td whitespace-normal">
                     <span
                       class="inline-flex rounded-md bg-rose-100 px-1.5 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
@@ -452,9 +507,10 @@ function issueDetail(it: TrackingImportIssue): string {
           <label class="flex cursor-pointer items-start gap-2 bg-amber-50 px-3 py-2 dark:bg-amber-500/10">
             <input v-model="includeOverwrite" type="checkbox" class="mt-0.5" />
             <span class="text-xs text-amber-800 dark:text-amber-300">
-              <span class="font-semibold">Ghi đè {{ overwrites.length }} đơn đã có mã vận đơn khác.</span>
-              Kiện cũ sẽ bị bỏ theo dõi, hành trình chuyển sang kiện mới — seller cũng nhìn thấy thay
-              đổi này. Không tick thì các đơn dưới đây giữ nguyên mã cũ.
+              <span class="font-semibold">Ghi đè {{ overwrites.length }} đơn đã có mã vận đơn / link label khác.</span>
+              Mã vận đơn mới: kiện cũ bị bỏ theo dõi, hành trình chuyển sang kiện mới — seller cũng
+              nhìn thấy thay đổi này. Link label mới: kho sẽ in label mới thay label cũ. Không tick
+              thì các đơn dưới đây giữ nguyên mã / link cũ.
             </span>
           </label>
           <div class="max-h-36 overflow-auto">
@@ -466,8 +522,8 @@ function issueDetail(it: TrackingImportIssue): string {
               <thead class="sticky top-0 z-10 [&_th]:bg-card">
                 <tr>
                   <th class="table-th">Mã đơn</th>
-                  <th class="table-th">Mã đang có</th>
-                  <th class="table-th">Mã trong file</th>
+                  <th class="table-th">Đang có</th>
+                  <th class="table-th">Trong file</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
@@ -476,8 +532,14 @@ function issueDetail(it: TrackingImportIssue): string {
                     <span class="font-mono text-xs">{{ m.store_order_id }}</span>
                     <span class="ml-1 text-xs text-muted-foreground">{{ m.internal_code }}</span>
                   </td>
-                  <td class="table-td font-mono text-xs text-muted-foreground">{{ m.current_tracking }}</td>
-                  <td class="table-td font-mono text-xs text-foreground">{{ m.tracking_number }}</td>
+                  <td class="table-td font-mono text-xs text-muted-foreground">
+                    <div v-if="m.action === 'OVERWRITE'">Mã: {{ m.current_tracking }}</div>
+                    <div v-if="m.label_action === 'OVERWRITE'" class="break-all" :title="m.current_label">Label: {{ shortLink(m.current_label) }}</div>
+                  </td>
+                  <td class="table-td font-mono text-xs text-foreground">
+                    <div v-if="m.action === 'OVERWRITE'">Mã: {{ m.tracking_number }}</div>
+                    <div v-if="m.label_action === 'OVERWRITE'" class="break-all" :title="m.label_url">Label: {{ shortLink(m.label_url) }}</div>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -487,7 +549,7 @@ function issueDetail(it: TrackingImportIssue): string {
         <!-- Danh sách sẽ gắn -->
         <details v-if="assigns.length" class="rounded-md border border-border">
           <summary class="cursor-pointer select-none bg-muted px-3 py-2 text-xs font-semibold text-foreground">
-            Danh sách sẽ gắn mới ({{ assigns.length }})
+            Danh sách sẽ gắn mới ({{ assigns.length }} đơn)
           </summary>
           <div class="max-h-44 overflow-auto">
             <table class="min-w-full divide-y divide-border text-sm">
@@ -502,6 +564,7 @@ function issueDetail(it: TrackingImportIssue): string {
                   <th class="table-th">Mã nội bộ</th>
                   <th class="table-th">Người nhận</th>
                   <th class="table-th">Mã vận đơn</th>
+                  <th class="table-th">Link label</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
@@ -510,7 +573,8 @@ function issueDetail(it: TrackingImportIssue): string {
                   <td class="table-td font-mono text-xs">{{ m.store_order_id }}</td>
                   <td class="table-td font-mono text-xs text-muted-foreground">{{ m.internal_code }}</td>
                   <td class="table-td">{{ m.shipping_name || '—' }}</td>
-                  <td class="table-td font-mono text-xs">{{ m.tracking_number }}</td>
+                  <td class="table-td font-mono text-xs">{{ m.action === 'ASSIGN' ? m.tracking_number : '—' }}</td>
+                  <td class="table-td font-mono text-xs" :title="m.label_url">{{ m.label_action === 'ASSIGN' ? shortLink(m.label_url) : '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -531,11 +595,12 @@ function issueDetail(it: TrackingImportIssue): string {
           <UiIcon :name="result.failed?.length ? 'alert' : 'check'" :size="16" class="mt-0.5 shrink-0" />
           <div>
             <p class="font-semibold">
-              Đã gắn {{ result.updated }} mã vận đơn<template v-if="result.failed?.length">
+              Đã cập nhật {{ result.updated }} đơn<template v-if="result.failed?.length">
                 — {{ result.failed.length }} đơn lỗi</template>
             </p>
             <p class="text-xs opacity-90">
-              Hệ thống đang đăng ký 24hTrack và lấy hành trình cho các đơn vừa gắn.
+              Đơn mới gắn mã vận đơn được đăng ký 24hTrack để lấy hành trình; đơn mới gắn label thì
+              kho in ở màn Chờ gửi hàng.
             </p>
           </div>
         </div>
@@ -573,7 +638,7 @@ function issueDetail(it: TrackingImportIssue): string {
         @click="commit"
       >
         <UiSpinner v-if="committing" :size="16" />
-        Gắn {{ commitCount }} mã vận đơn
+        Gắn {{ commitCount }} đơn
       </button>
     </template>
   </UiModal>

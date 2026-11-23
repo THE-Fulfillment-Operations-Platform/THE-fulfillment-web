@@ -395,6 +395,8 @@ export interface Order {
   handed_over_at?: string | null
   // Tracking: entered at the shipping desk, then synced from 24hTrack.
   tracking_number?: string
+  // Link label mua ở hãng ngoài (nhập bằng Excel); chỉ màn nội bộ dùng.
+  external_label_url?: string
   tracking_status?: TrackingStatus
   // tracking_url là link NỘI BỘ tới nhà cung cấp tracking — không bao giờ đi ra
   // màn seller. Cũng không có trường "đơn vị vận chuyển": với seller thì chúng
@@ -1069,6 +1071,8 @@ export interface QcResultOrder {
   the_last_mile?: string
   // Mã label cũ THE đã huỷ: đơn phải tạo label mới rồi mới xuất kho được.
   the_cancelled?: string
+  // Label mua ở hãng ngoài, nhập bằng Excel ở Hành trình đơn hàng (rỗng = chưa có).
+  external_label_url?: string
   // SKU của đơn chưa có mã HS (cả SKU lẫn SKU cha đều trống): "Tạo label THE" sẽ
   // từ chối đơn tới khi khai (#6312). Chỉ có ở đơn chưa có label THE.
   missing_hs?: string[]

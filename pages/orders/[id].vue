@@ -10,6 +10,7 @@ import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
 import TheShipmentCard from '~/components/orders/TheShipmentCard.vue'
+import ExternalLabelCard from '~/components/orders/ExternalLabelCard.vue'
 import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
 import WarrantyCard from '~/components/orders/WarrantyCard.vue'
 import {
@@ -607,6 +608,7 @@ async function syncTracking() {
 
             <!-- Đơn THE: mã THE, label, huỷ — chỉ hiện khi đơn đã được tạo trên THE. -->
             <TheShipmentCard :order-id="Number(id)" :internal-code="order.internal_code" @changed="reload" />
+            <ExternalLabelCard :order-id="Number(id)" :internal-code="order.internal_code" :label-url="order.external_label_url" />
 
             <!-- Tracking (YC8) -->
             <div class="card p-4">

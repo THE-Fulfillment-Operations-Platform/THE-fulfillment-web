@@ -54,31 +54,65 @@ export interface LabelPrintResult {
  * Mở cửa sổ in label cho các đơn. Phải gọi TRỰC TIẾP trong handler của cú bấm
  * (trước mọi await) để trình duyệt không chặn popup.
  */
-export async function printTHELabels(orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
+export function printTHELabels(orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
+  return printLabelPages(orders, carrierApi.labelBlob, 'Label THE', 1, false)
+}
+
+/**
+ * Cùng cửa sổ in 4×6 như trên nhưng cho label MUA NGOÀI (link nhập từ Excel):
+ * server tải PDF từ link (trình duyệt không tải thẳng được vì khác nguồn), mỗi
+ * label một trang. Tải song song vài label một lúc để lô lớn không phải chờ nối
+ * đuôi nhau; thứ tự trang vẫn đúng thứ tự đơn. Label lỗi được bỏ qua và nêu rõ
+ * trong `failed`, các label còn lại vẫn in.
+ */
+export function printExternalLabels(orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
+  return printLabelPages(orders, carrierApi.externalLabelBlob, 'Label ngoài', EXTERNAL_FETCH_CONCURRENCY, true)
+}
+
+const EXTERNAL_FETCH_CONCURRENCY = 4
+
+async function printLabelPages(
+  orders: Array<{ id: number; code?: string }>,
+  fetchBlob: (orderId: number) => Promise<Blob>,
+  title: string,
+  concurrency: number,
+  // Lô nhiều đơn: lý do lỗi kèm mã đơn để biết label nào hỏng (label THE giữ nguyên lời cũ).
+  prefixCode: boolean,
+): Promise<LabelPrintResult> {
   const result: LabelPrintResult = { printed: 0, failed: [] }
   const w = window.open('', '_blank')
   if (!w) throw new Error('Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại.')
   w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px sans-serif;padding:24px">Đang tải label…</body>')
 
-  const pages: string[] = []
-  for (const o of orders) {
-    try {
-      const blob = await carrierApi.labelBlob(o.id)
-      const type = blob.type || ''
-      const src = type.includes('pdf') ? await pdfToImage(blob) : await blobToDataURL(blob)
-      pages.push(`<div class="page"><img src="${src}" alt="Label ${esc(o.code ?? String(o.id))}" /></div>`)
-      result.printed++
-    } catch (e) {
-      result.failed.push({ orderId: o.id, reason: errorMessage(e) })
+  // Mỗi đơn ra một ô kết quả theo đúng vị trí của nó → thứ tự trang không phụ
+  // thuộc đơn nào tải xong trước.
+  const slots: Array<string | undefined> = new Array(orders.length)
+  let next = 0
+  async function worker() {
+    for (;;) {
+      const i = next++
+      if (i >= orders.length) return
+      const o = orders[i]!
+      try {
+        const blob = await fetchBlob(o.id)
+        const type = blob.type || ''
+        const src = type.includes('pdf') ? await pdfToImage(blob) : await blobToDataURL(blob)
+        slots[i] = `<div class="page"><img src="${src}" alt="Label ${esc(o.code ?? String(o.id))}" /></div>`
+        result.printed++
+      } catch (e) {
+        result.failed.push({ orderId: o.id, reason: prefixCode ? `${o.code ?? o.id}: ${errorMessage(e)}` : errorMessage(e) })
+      }
     }
   }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, orders.length)) }, worker))
+  const pages = slots.filter((p): p is string => !!p)
   if (!pages.length) {
     w.document.body.innerHTML = `<p>Không tải được label nào.</p>${result.failed
       .map((f) => `<p>Đơn ${f.orderId}: ${esc(f.reason)}</p>`)
       .join('')}`
     return result
   }
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Label THE (${pages.length})</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title} (${pages.length})</title>
     <style>
       /* Khổ label vận chuyển 4×6 inch. In: khổ giấy 4x6 (100x150) trong driver,
          Lề = Không có, Tỉ lệ 100% / Fit. Ảnh label giữ đúng tỷ lệ, không bị kéo. */

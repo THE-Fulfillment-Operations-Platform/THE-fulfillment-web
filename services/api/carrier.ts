@@ -120,6 +120,9 @@ export const carrierApi = {
   /** Hỏi THE ngay: label THE đã huỷ thì FFM bỏ label + tracking cũ. Trả lại danh sách đơn THE. */
   checkOrder: (orderId: number | string) => apiPost<THEShipment[]>(`/api/orders/${orderId}/the/check`),
   labelBlob: (orderId: number | string) => apiBlob(`/api/orders/${orderId}/the/label`, 'Không tải được label'),
+  /** Label mua ngoài (link nhập từ Excel): server tải PDF/ảnh từ link rồi trả về để in. */
+  externalLabelBlob: (orderId: number | string) =>
+    apiBlob(`/api/orders/${orderId}/label/external`, 'Không tải được label ngoài'),
   cancel: (orderId: number | string, reason: string) =>
     apiPost<THEShipment>(`/api/orders/${orderId}/the/cancel`, { reason }),
 }

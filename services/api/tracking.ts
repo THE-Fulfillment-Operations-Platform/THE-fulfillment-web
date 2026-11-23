@@ -30,7 +30,12 @@ export interface TrackingImportMatch {
   tracking_number: string
   current_tracking?: string
   /** ASSIGN = chưa có mã; OVERWRITE = đã có mã khác (chỉ ghi khi được tick); UNCHANGED = trùng mã hiện tại. */
-  action: 'ASSIGN' | 'OVERWRITE' | 'UNCHANGED'
+  action: 'ASSIGN' | 'OVERWRITE' | 'UNCHANGED' | 'NONE'
+  /** Link label ngoài của dòng (rỗng = dòng không có link). */
+  label_url?: string
+  current_label?: string
+  /** Giống `action` nhưng cho link label; rỗng khi dòng không có link. */
+  label_action?: 'ASSIGN' | 'OVERWRITE' | 'UNCHANGED' | ''
 }
 
 export type TrackingImportIssueCode =
@@ -44,12 +49,17 @@ export type TrackingImportIssueCode =
   | 'TAKEN_TRACKING'
   /** Excel đã đổi mã thành số mũ (9.4E+21) — mất chữ số, không gắn. */
   | 'EXCEL_NUMBER'
+  /** Link label không phải http(s) hợp lệ. */
+  | 'BAD_LABEL'
+  /** Một link label dán ở nhiều đơn khác nhau. */
+  | 'SHARED_LABEL'
 
 /** Một dòng file sẽ KHÔNG được ghi, kèm lý do tiếng Việt. */
 export interface TrackingImportIssue {
   row: number
   order_key: string
   tracking_number?: string
+  label_url?: string
   code: TrackingImportIssueCode
   reason: string
 }
@@ -68,6 +78,12 @@ export interface TrackingImportSummary {
   assign: number
   overwrite: number
   unchanged: number
+  /** Đếm riêng cho link label (chỉ các dòng có link). */
+  label_assign: number
+  label_overwrite: number
+  label_unchanged: number
+  /** Dòng phụ của một đơn (label dùng chung nhiều dòng sản phẩm) đã gộp vào dòng đầu. */
+  merged_rows: number
   issues: number
   /** -1 = không so sánh (không gửi khoảng ngày xuất xưởng kèm file). */
   scope_total: number
@@ -115,7 +131,7 @@ export const trackingApi = {
   syncAll: (limit?: number) =>
     apiPost<TrackingSyncStats>(`/api/tracking/sync${limit ? `?limit=${limit}` : ''}`, {}),
 
-  /** File mẫu 2 cột (OrderID, Mã vận đơn) — .xlsx thật từ backend. */
+  /** File mẫu 3 cột (OrderID, Mã vận đơn, Link label) — .xlsx thật từ backend. */
   downloadImportTemplate: () =>
     apiDownload('/api/orders/tracking/import/template.xlsx', 'tracking-import-template.xlsx'),
   /**
@@ -145,6 +161,6 @@ export const trackingApi = {
     return apiPost<TrackingImportPreview>('/api/orders/tracking/import', fd)
   },
   /** Ghi các gán mã đã xác nhận từ preview. Partial success — xem `failed`. */
-  commitImport: (assignments: Array<{ order_id: number; tracking_number: string }>) =>
+  commitImport: (assignments: Array<{ order_id: number; tracking_number?: string; label_url?: string }>) =>
     apiPost<TrackingImportCommitResult>('/api/orders/tracking/import/commit', { assignments }),
 }
