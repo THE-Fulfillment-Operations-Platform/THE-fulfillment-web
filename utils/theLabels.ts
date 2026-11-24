@@ -11,8 +11,11 @@ import { errorMessage } from '~/utils/api-error'
 const PDF_DPI = 300
 
 async function pdfToImage(blob: Blob): Promise<string> {
-  const pdfjs = await import('pdfjs-dist')
-  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default as string
+  // Bản "legacy" của pdfjs: bản thường (v6) cần trình duyệt có `Iterator` (Chrome ≥ 122),
+  // máy kho chạy trình duyệt cũ hơn nên báo "Iterator is not defined" và không in được
+  // label PDF (anh Kiên 24/11, đơn 109714). Bản legacy tự kèm polyfill.
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default as string
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
   const task = pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) })
   try {

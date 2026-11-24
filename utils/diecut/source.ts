@@ -57,10 +57,10 @@ async function loadRaster(file: File): Promise<LoadedSource> {
 }
 
 async function loadPdf(file: File, targetDpi: number): Promise<LoadedSource> {
-  const pdfjs = await import('pdfjs-dist')
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs') // legacy: chạy được trên trình duyệt cũ (xem utils/theLabels.ts)
   // Vite trả về đường dẫn file worker đã bundle; không có worker thì pdf.js dựng
   // trang ngay trên luồng chính và treo giao diện với file nặng.
-  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default as string
+  const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default as string
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
   const buf = await file.arrayBuffer()
