@@ -3,7 +3,6 @@ import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { qcApi, handoffsApi, carrierApi } from '~/services/api'
 import type { ShipToCarrierResult, ShipOptions } from '~/services/api/handoffs'
 import type { THEPreflight } from '~/services/api/carrier'
-import { printTHELabels, printExternalLabels } from '~/utils/theLabels'
 import type { QcResultOrder } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { useSelection } from '~/composables/useSelection'
@@ -270,6 +269,7 @@ async function send(ids: number[], opts: ShipOptions, chunk: number) {
 }
 
 // ---- In label ------------------------------------------------------------------
+const { printTHELabels, printExternalLabels } = useLabelPrint()
 const printing = ref(false)
 const labelOrders = computed(() =>
   (lastResult.value?.shipped ?? []).filter((s) => s.the?.has_label).map((s) => ({ id: s.order_id, code: s.internal_code })),
@@ -280,8 +280,7 @@ async function printLabels(orders: Array<{ id: number; code?: string }>) {
   if (!orders.length || printing.value) return
   printing.value = true
   try {
-    const res = await printTHELabels(orders)
-    if (res.failed.length) toast.error(res.failed.length === 1 ? res.failed[0]!.reason : `${res.failed.length} label chưa tải được: ${res.failed[0]!.reason}`)
+    await printTHELabels(orders) // modal in label tự nêu đơn nào lỗi
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {
@@ -300,11 +299,7 @@ async function printExternal(list: Array<{ id: number; code?: string }>) {
   if (!list.length || printing.value) return
   printing.value = true
   try {
-    const res = await printExternalLabels(list)
-    if (res.failed.length) {
-      const more = res.failed.length > 1 ? ` (+${res.failed.length - 1} label khác)` : ''
-      toast.error(`${res.failed.length}/${list.length} label ngoài chưa tải được — ${res.failed[0]!.reason}${more}. Mở link gốc ở chi tiết đơn để kiểm tra.`)
-    }
+    await printExternalLabels(list) // modal in label tự nêu đơn nào lỗi
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {

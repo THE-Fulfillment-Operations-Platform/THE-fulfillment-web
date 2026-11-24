@@ -6,7 +6,6 @@ import { carrierApi } from '~/services/api'
 import type { THEShipment, THEShipmentStatus } from '~/services/api/carrier'
 import { errorMessage } from '~/utils/api-error'
 import { formatDateTime } from '~/utils/format'
-import { printTHELabels } from '~/utils/theLabels'
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
@@ -87,13 +86,13 @@ async function checkOnTHE() {
   }
 }
 
+const { printTHELabels } = useLabelPrint()
 const printing = ref(false)
 async function print() {
   if (printing.value) return
   printing.value = true
   try {
-    const res = await printTHELabels([{ id: props.orderId, code: props.internalCode }])
-    if (res.failed.length) toast.error(res.failed[0]!.reason)
+    await printTHELabels([{ id: props.orderId, code: props.internalCode }])
   } catch (e) {
     toast.error(errorMessage(e))
   } finally {

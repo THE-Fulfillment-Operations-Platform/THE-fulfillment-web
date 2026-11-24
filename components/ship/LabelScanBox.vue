@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ordersApi } from '~/services/api'
 import type { LabelScanResult } from '~/services/api/orders'
-import { openPrintWindow, printExternalLabelsInto, printTHELabelsInto } from '~/utils/theLabels'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 
@@ -9,13 +8,13 @@ import { useToastStore } from '~/stores/toast'
 // của đơn đó. CHỈ ĐỌC — không đổi trạng thái đơn, không bàn giao, không gọi THE
 // tạo label. Dùng sau khi QC + đóng hàng xong, khi cần in lại label mua ngoài.
 //
-// Trình duyệt chỉ cho window.open khi nó chạy ĐỒNG BỘ trong cú bấm / phím Enter
-// của người dùng. Nên cửa sổ in được mở NGAY trong handler Enter (submit), trước
-// mọi await; sau đó mới tra mã + tải label rồi đổ vào cửa sổ đó. Không có label
-// để in thì đóng cửa sổ lại.
+// Label hiện trong modal dùng chung (useLabelPrint) rồi tự mở hộp in. In xong thì
+// modal tự đóng và focus trả về ô quét để quét tiếp. Quét mã mới khi modal còn mở
+// thì label mới thay label cũ.
 
 const emit = defineEmits<{ close: [] }>()
 const toast = useToastStore()
+const { printTHELabels, printExternalLabels } = useLabelPrint()
 
 // Quét trùng một đơn trong khoảng này thì không in lần hai (máy quét hay bắn đúp,
 // hoặc thợ quét lại tờ vừa in).
@@ -40,7 +39,6 @@ interface LogEntry {
 const code = ref('')
 const input = ref<HTMLInputElement | null>(null)
 const log = ref<LogEntry[]>([])
-const popupBlocked = ref(false)
 const busy = ref(0)
 let logKey = 0
 /** Đơn vừa in: order_id → thời điểm. Đặt ngay khi tra xong mã (trước khi tải) để hai lần quét sát nhau không in đúp. */
@@ -67,7 +65,7 @@ function push(e: Omit<LogEntry, 'key' | 'time'>): LogEntry {
   return entry
 }
 
-/** Handler phím Enter của máy quét (và nút "In label"): window.open chạy ở đây, trước mọi await. */
+/** Handler phím Enter của máy quét (và nút "In label"). */
 function submit() {
   const value = code.value.trim()
   code.value = ''
@@ -81,23 +79,13 @@ function submit() {
   start(value, false)
 }
 
-/** Nút "In lại": cũng là cú bấm của người dùng nên mở được cửa sổ ngay tại đây. */
+/** Nút "In lại" trong nhật ký. */
 function reprint(entry: LogEntry) {
   start(entry.code, true)
 }
 
 function start(value: string, force: boolean) {
-  let w: Window
-  try {
-    w = openPrintWindow() // ĐỒNG BỘ — không đặt sau await
-  } catch {
-    popupBlocked.value = true
-    push({ code: value, outcome: 'error', reason: 'trình duyệt chặn cửa sổ in — cho phép popup (xem khung đỏ phía trên) rồi bấm In lại' })
-    toast.error('Trình duyệt chặn cửa sổ in — xem hướng dẫn cho phép popup trong hộp quét')
-    return
-  }
-  popupBlocked.value = false
-  void run(value, w, force)
+  void run(value, force)
 }
 
 function notifyRecent(value: string, order: Pick<LogEntry, 'order_id' | 'internal_code' | 'store_order_id' | 'kind'>) {
@@ -108,14 +96,13 @@ function notifyRecent(value: string, order: Pick<LogEntry, 'order_id' | 'interna
   toast.info(`Đơn ${order.internal_code ?? value} vừa in — không in lần hai`)
 }
 
-async function run(value: string, w: Window, force: boolean) {
+async function run(value: string, force: boolean) {
   busy.value++
   try {
     let res: LabelScanResult
     try {
       res = (await ordersApi.labelScan(value)).data
     } catch (e) {
-      w.close()
       push({ code: value, outcome: 'error', reason: errorMessage(e) })
       toast.error(`${value}: ${errorMessage(e)}`)
       return
@@ -125,7 +112,6 @@ async function run(value: string, w: Window, force: boolean) {
 
     const last = recentOrders.get(res.order_id)
     if (!force && last !== undefined && now - last < DUP_MS) {
-      w.close()
       notifyRecent(value, base)
       return
     }
@@ -136,7 +122,6 @@ async function run(value: string, w: Window, force: boolean) {
 
     const kind: 'ext' | 'the' | undefined = res.has_external_label ? 'ext' : res.the_tracking ? 'the' : undefined
     if (!kind) {
-      w.close()
       push({ ...base, outcome: 'no_label', notQc })
       toast.error(`Đơn ${res.internal_code} chưa có label ngoài`)
       return
@@ -146,14 +131,14 @@ async function run(value: string, w: Window, force: boolean) {
     const target = [{ id: res.order_id, code: res.internal_code }]
     let failure: string | undefined
     try {
-      const r = kind === 'ext' ? await printExternalLabelsInto(w, target) : await printTHELabelsInto(w, target)
+      const opts = { autoClose: true, onClosed: focusInput }
+      const r = kind === 'ext' ? await printExternalLabels(target, opts) : await printTHELabels(target, opts)
       if (r.failed.length || !r.printed) failure = r.failed[0]?.reason ?? 'Không tải được label'
     } catch (e) {
       failure = errorMessage(e)
     }
     if (failure) {
       recentOrders.delete(res.order_id) // lỗi tải thì cho quét lại ngay
-      w.close()
       push({ ...base, outcome: 'load_error', kind, notQc, reason: failure })
       toast.error(`Đơn ${res.internal_code}: không tải được label — ${failure}`)
       return
@@ -188,18 +173,6 @@ function lineClass(o: Outcome) {
         <b class="text-foreground">Quét in label:</b> quét tem QR nội bộ của đơn (hoặc tem sản phẩm) là in ngay label mua ngoài của đơn đó.
         Không đổi trạng thái đơn, không bàn giao, không gọi THE. Quét trùng một đơn trong 10 giây thì không in lần hai.
       </p>
-    </div>
-
-    <!-- Trình duyệt chặn popup: nói rõ cách mở. -->
-    <div
-      v-if="popupBlocked"
-      class="mb-3 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200"
-      role="alert"
-      data-testid="popup-blocked"
-    >
-      <b>Trình duyệt đang chặn cửa sổ in.</b>
-      Bấm biểu tượng "popup bị chặn" bên phải thanh địa chỉ → chọn <b>Luôn cho phép popup từ trang này</b> → Xong, rồi quét lại.
-      (Chrome: Cài đặt → Quyền riêng tư → Cài đặt trang web → Cửa sổ bật lên → Cho phép trang này.)
     </div>
 
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end">

@@ -1,8 +1,9 @@
-import { carrierApi } from '~/services/api'
 import { errorMessage } from '~/utils/api-error'
 
-// In label THE của nhiều đơn trong MỘT cửa sổ in, mỗi label một trang 4×6 inch
-// (100×150mm — khổ label vận chuyển chuẩn của máy in nhiệt).
+// Tải label của nhiều đơn rồi in bằng iframe ẩn ngay trong trang, mỗi label một
+// trang 4×6 inch (100×150mm — khổ label vận chuyển chuẩn của máy in nhiệt).
+// Không mở cửa sổ/tab mới: tab ẩn bị Chrome bóp timer/rAF nên việc vẽ PDF đứng.
+// Modal hiển thị + gọi in nằm ở composables/useLabelPrint.ts.
 //
 // THE trả label ở nhiều dạng: PNG (label của THE), PDF hoặc GIF (label của hãng
 // chặng cuối). Trình duyệt không in được nhiều PDF trong một lệnh, nên PDF được
@@ -48,101 +49,64 @@ function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 }
 
+export interface LabelImage {
+  orderId: number
+  code: string
+  src: string
+}
+
+export interface LabelFailure {
+  orderId: number
+  code: string
+  reason: string
+}
+
 export interface LabelPrintResult {
   printed: number
   failed: Array<{ orderId: number; reason: string }>
 }
 
 /**
- * Mở cửa sổ in label cho các đơn. Phải gọi TRỰC TIẾP trong handler của cú bấm
- * (trước mọi await) để trình duyệt không chặn popup.
+ * Tải label (song song `concurrency` cái một lúc) và đổi thành ảnh. Thứ tự kết quả
+ * đúng thứ tự đơn, không phụ thuộc đơn nào tải xong trước. Label lỗi vào `failures`.
  */
-export function printTHELabels(orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
-  return printLabelPages(orders, carrierApi.labelBlob, 'Label THE', 1, false)
-}
-
-/**
- * Mở cửa sổ in rỗng. PHẢI gọi đồng bộ trong handler của cú bấm / phím Enter của
- * máy quét (trước mọi await) — mở sau await là trình duyệt coi như popup không do
- * người dùng bấm và chặn. Mở xong mới tải label rồi đổ vào cửa sổ này bằng
- * printTHELabelsInto / printExternalLabelsInto.
- */
-export function openPrintWindow(): Window {
-  const w = window.open('', '_blank')
-  if (!w) throw new Error(POPUP_BLOCKED_MESSAGE)
-  w.document.write('<!doctype html><meta charset="utf-8"><body style="font:14px sans-serif;padding:24px">Đang tải label…</body>')
-  return w
-}
-
-export const POPUP_BLOCKED_MESSAGE =
-  'Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại: bấm biểu tượng "popup bị chặn" ở bên phải thanh địa chỉ → ' +
-  '"Luôn cho phép popup từ trang này" → Xong, rồi quét lại.'
-
-/** In label THE vào cửa sổ đã mở bằng openPrintWindow. */
-export function printTHELabelsInto(w: Window, orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
-  return printLabelPages(orders, carrierApi.labelBlob, 'Label THE', 1, false, w)
-}
-
-/** In label ngoài vào cửa sổ đã mở bằng openPrintWindow. */
-export function printExternalLabelsInto(w: Window, orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
-  return printLabelPages(orders, carrierApi.externalLabelBlob, 'Label ngoài', 1, true, w)
-}
-
-/**
- * Cùng cửa sổ in 4×6 như trên nhưng cho label MUA NGOÀI (link nhập từ Excel):
- * server tải PDF từ link (trình duyệt không tải thẳng được vì khác nguồn), mỗi
- * label một trang. Tải song song vài label một lúc để lô lớn không phải chờ nối
- * đuôi nhau; thứ tự trang vẫn đúng thứ tự đơn. Label lỗi được bỏ qua và nêu rõ
- * trong `failed`, các label còn lại vẫn in.
- */
-export function printExternalLabels(orders: Array<{ id: number; code?: string }>): Promise<LabelPrintResult> {
-  return printLabelPages(orders, carrierApi.externalLabelBlob, 'Label ngoài', EXTERNAL_FETCH_CONCURRENCY, true)
-}
-
-const EXTERNAL_FETCH_CONCURRENCY = 4
-
-async function printLabelPages(
+export async function loadLabelImages(
   orders: Array<{ id: number; code?: string }>,
   fetchBlob: (orderId: number) => Promise<Blob>,
-  title: string,
   concurrency: number,
-  // Lô nhiều đơn: lý do lỗi kèm mã đơn để biết label nào hỏng (label THE giữ nguyên lời cũ).
-  prefixCode: boolean,
-  // Cửa sổ đã mở sẵn (xem openPrintWindow); không truyền thì mở ngay ở đây.
-  openedWindow?: Window,
-): Promise<LabelPrintResult> {
-  const result: LabelPrintResult = { printed: 0, failed: [] }
-  const w = openedWindow ?? openPrintWindow()
-
-  // Mỗi đơn ra một ô kết quả theo đúng vị trí của nó → thứ tự trang không phụ
-  // thuộc đơn nào tải xong trước.
-  const slots: Array<string | undefined> = new Array(orders.length)
+  onProgress: (done: number) => void,
+  isCancelled: () => boolean,
+): Promise<{ images: LabelImage[]; failures: LabelFailure[] }> {
+  const slots: Array<LabelImage | undefined> = new Array(orders.length)
+  const failures: LabelFailure[] = []
   let next = 0
+  let done = 0
   async function worker() {
     for (;;) {
+      if (isCancelled()) return
       const i = next++
       if (i >= orders.length) return
       const o = orders[i]!
+      const code = o.code ?? String(o.id)
       try {
         const blob = await fetchBlob(o.id)
         const type = blob.type || ''
         const src = type.includes('pdf') ? await pdfToImage(blob) : await blobToDataURL(blob)
-        slots[i] = `<div class="page"><img src="${src}" alt="Label ${esc(o.code ?? String(o.id))}" /></div>`
-        result.printed++
+        slots[i] = { orderId: o.id, code, src }
       } catch (e) {
-        result.failed.push({ orderId: o.id, reason: prefixCode ? `${o.code ?? o.id}: ${errorMessage(e)}` : errorMessage(e) })
+        failures.push({ orderId: o.id, code, reason: errorMessage(e) })
       }
+      done++
+      onProgress(done)
     }
   }
   await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, orders.length)) }, worker))
-  const pages = slots.filter((p): p is string => !!p)
-  if (!pages.length) {
-    w.document.body.innerHTML = `<p>Không tải được label nào.</p>${result.failed
-      .map((f) => `<p>Đơn ${f.orderId}: ${esc(f.reason)}</p>`)
-      .join('')}`
-    return result
-  }
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${title} (${pages.length})</title>
+  return { images: slots.filter((x): x is LabelImage => !!x), failures }
+}
+
+function pagesHtml(images: LabelImage[], title: string): string {
+  const pages = images.map((im) => `<div class="page"><img src="${im.src}" alt="Label ${esc(im.code)}" /></div>`).join('')
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} (${images.length})</title>
     <style>
       /* Khổ label vận chuyển 4×6 inch. In: khổ giấy 4x6 (100x150) trong driver,
          Lề = Không có, Tỉ lệ 100% / Fit. Ảnh label giữ đúng tỷ lệ, không bị kéo. */
@@ -152,12 +116,74 @@ async function printLabelPages(
               page-break-after: always; break-after: page; overflow: hidden; }
       .page:last-child { page-break-after: auto; break-after: auto; }
       .page img { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated; }
-      @media screen { body { background: #eee; } .page { background: #fff; margin: 12px auto; box-shadow: 0 1px 4px rgba(0,0,0,.2); } }
-    </style></head><body>${pages.join('')}
-    <script>window.onload = function () { setTimeout(function () { window.print() }, 150) }<\/script>
-    </body></html>`
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
-  return result
+    </style></head><body>${pages}</body></html>`
+}
+
+const PRINT_FALLBACK_MS = 60_000
+
+/**
+ * In ảnh label bằng iframe ẩn trong chính trang. Resolve khi hộp in đã đóng (afterprint,
+ * hoặc print() chặn tới lúc đóng, hoặc quá thời gian chờ); iframe được gỡ trước khi resolve.
+ * `register` nhận hàm huỷ để người gọi gỡ iframe sớm khi bị thay bằng lượt in mới.
+ */
+export async function printImagesInIframe(
+  images: LabelImage[],
+  title: string,
+  register?: (cancel: () => void) => void,
+): Promise<void> {
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('aria-hidden', 'true')
+  iframe.tabIndex = -1
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:4in;height:6in;border:0;opacity:0;pointer-events:none;'
+  // Hộp in / iframe lấy mất focus; gỡ iframe xong trả focus về chỗ cũ (ô quét của máy quét).
+  const prevFocus = document.activeElement as HTMLElement | null
+  let removed = false
+  const remove = () => {
+    if (removed) return
+    removed = true
+    iframe.remove()
+    const cur = document.activeElement
+    if (prevFocus?.isConnected && (!cur || cur === document.body)) prevFocus.focus()
+  }
+  register?.(remove)
+  document.body.appendChild(iframe)
+  try {
+    await new Promise<void>((resolve) => {
+      iframe.onload = () => resolve()
+      iframe.srcdoc = pagesHtml(images, title)
+    })
+    if (removed) return
+    const win = iframe.contentWindow!
+    const imgs = Array.from(iframe.contentDocument!.images)
+    await Promise.all(
+      imgs.map((img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>((r) => {
+              img.onload = img.onerror = () => r()
+            }),
+      ),
+    )
+    if (removed) return
+    await new Promise<void>((resolve) => {
+      let timer: ReturnType<typeof setTimeout>
+      const finish = () => {
+        clearTimeout(timer)
+        win.removeEventListener('afterprint', finish)
+        resolve()
+      }
+      win.addEventListener('afterprint', finish)
+      timer = setTimeout(finish, PRINT_FALLBACK_MS)
+      win.focus()
+      const t0 = Date.now()
+      win.print()
+      // Chrome: print() chặn tới khi hộp in đóng → xong rồi (afterprint thường tới ngay sau).
+      if (Date.now() - t0 > 400) {
+        clearTimeout(timer)
+        timer = setTimeout(finish, 500)
+      }
+    })
+  } finally {
+    remove()
+  }
 }
