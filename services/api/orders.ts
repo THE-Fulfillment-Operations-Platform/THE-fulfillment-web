@@ -139,6 +139,9 @@ export const ordersApi = {
   cancel: (id: number | string, reason: string) =>
     apiPost<Order>(`/api/orders/${id}/cancel`, { reason }),
   remove: (id: number | string) => apiDelete<{ deleted: boolean; id: number }>(`/api/orders/${id}`),
+  // Gỡ link label mua ngoài (để đơn được tạo label THE). Cần quyền orders.manage.
+  clearExternalLabel: (id: number | string) =>
+    apiDelete<{ external_label_url: string }>(`/api/orders/${id}/label/external`),
   // Xoá nhiều đơn trong MỘT request. Đơn đã vào sản xuất nằm trong `skipped`
   // kèm lý do, không bị xoá.
   bulkRemove: (ids: number[]) => apiPost<OrderDeleteResult>('/api/orders/bulk-delete', { ids }),

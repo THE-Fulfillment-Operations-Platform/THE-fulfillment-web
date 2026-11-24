@@ -719,6 +719,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
             Hoặc bấm
             <button type="button" class="font-medium underline" @click="startLabelScan">Quét in label</button>
             rồi quét tem QR của đơn là in luôn.
+            "Tạo label THE" bỏ qua các đơn có label ngoài (tránh 2 label cho 1 kiện); muốn dùng label THE thì gỡ link label ở chi tiết đơn.
           </span>
           <button class="btn-primary px-2.5 py-1 text-xs" :disabled="printing" @click="printExternalPage">
             <UiSpinner v-if="printing" :size="13" />

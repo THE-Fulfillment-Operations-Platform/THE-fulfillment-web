@@ -608,7 +608,7 @@ async function syncTracking() {
 
             <!-- Đơn THE: mã THE, label, huỷ — chỉ hiện khi đơn đã được tạo trên THE. -->
             <TheShipmentCard :order-id="Number(id)" :internal-code="order.internal_code" @changed="reload" />
-            <ExternalLabelCard :order-id="Number(id)" :internal-code="order.internal_code" :label-url="order.external_label_url" />
+            <ExternalLabelCard :order-id="Number(id)" :internal-code="order.internal_code" :label-url="order.external_label_url" @changed="reload" />
 
             <!-- Tracking (YC8) -->
             <div class="card p-4">
