@@ -128,9 +128,9 @@ const previewRows = computed<PreviewRow[]>(() => {
 })
 
 const ACTION_BADGE: Record<ParentSkuImportAction, string> = {
-  CREATE: TONE.blue,
-  UPDATE: TONE.amber,
-  NOCHANGE: TONE.slate,
+  CREATE: TONE.printed,
+  UPDATE: TONE.cut,
+  NOCHANGE: TONE.pending,
 }
 const ACTION_LABEL: Record<ParentSkuImportAction, string> = {
   CREATE: 'Tạo mới',

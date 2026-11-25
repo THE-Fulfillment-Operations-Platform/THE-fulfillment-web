@@ -309,9 +309,9 @@ async function openItem(it: QcResultItem) {
 }
 
 const ITEM_QC: Record<string, { label: string; chip: string }> = {
-  PASSED: { label: 'Đã QC', chip: TONE.lime },
-  REWORK: { label: 'Đang làm lại', chip: TONE.redSolid },
-  WAITING: { label: 'Chờ QC', chip: TONE.slate },
+  PASSED: { label: 'Đã QC', chip: TONE.qc },
+  REWORK: { label: 'Đang làm lại', chip: TONE.rejected },
+  WAITING: { label: 'Chờ QC', chip: TONE.pending },
 }
 const itemQc = (it: QcResultItem) => ITEM_QC[it.qc_status] ?? ITEM_QC.WAITING
 const stageLabel = (it: QcResultItem) => INTERNAL_STATUS[it.internal_status]?.label ?? it.internal_status

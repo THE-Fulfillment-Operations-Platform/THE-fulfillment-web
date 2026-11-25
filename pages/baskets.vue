@@ -62,24 +62,24 @@ const FILTERS: { key: 'all' | BasketStatus; label: string }[] = [
 const STATUS: Record<BasketStatus, { label: string; chip: string; card: string }> = {
   OPEN: {
     label: 'Đang gom',
-    chip: TONE.blue,
+    chip: TONE.printed,
     card: 'border-amber-300 dark:border-amber-500/40',
   },
   FULL: {
     label: 'Đủ hàng',
-    chip: TONE.emerald,
+    chip: TONE.delivered,
     card: 'border-emerald-400 ring-2 ring-emerald-400/30 dark:border-emerald-500/60',
   },
   CANCELLED: {
     label: 'Đơn đã huỷ',
-    chip: TONE.red,
+    chip: TONE.cancelled,
     card: 'border-rose-300 dark:border-rose-500/40',
   },
 }
 const ITEM_QC: Record<string, { label: string; chip: string }> = {
-  PASSED: { label: 'Đã QC', chip: TONE.lime },
-  REWORK: { label: 'Đang làm lại', chip: TONE.redSolid },
-  WAITING: { label: 'Chưa QC', chip: TONE.slate },
+  PASSED: { label: 'Đã QC', chip: TONE.qc },
+  REWORK: { label: 'Đang làm lại', chip: TONE.rejected },
+  WAITING: { label: 'Chưa QC', chip: TONE.pending },
 }
 const itemQc = (it: QcResultItem) => ITEM_QC[it.qc_status] ?? ITEM_QC.WAITING
 const pct = (b: Basket) => (b.total_items ? Math.round((b.passed_items / b.total_items) * 100) : 0)

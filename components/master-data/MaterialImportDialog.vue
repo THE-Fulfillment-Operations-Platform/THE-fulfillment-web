@@ -178,9 +178,9 @@ function rowsLabel(rows: number[]): string {
 }
 
 const ACTION_BADGE: Record<MaterialImportAction, string> = {
-  CREATE: TONE.blue,
-  UPDATE: TONE.amber,
-  NOCHANGE: TONE.slate,
+  CREATE: TONE.printed,
+  UPDATE: TONE.cut,
+  NOCHANGE: TONE.pending,
 }
 const ACTION_LABEL: Record<MaterialImportAction, string> = {
   CREATE: 'Tạo mới',

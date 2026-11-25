@@ -45,17 +45,17 @@ const held = computed(() => live.value?.status === 'CREATED' && (live.value.erro
 const heldReason = computed(() => (held.value ? live.value!.error.slice(HELD_PREFIX.length) : ''))
 
 const STATUS_LABEL: Record<THEShipmentStatus, string> = {
-  CREATING: TONE.blue,
+  CREATING: TONE.printed,
   CREATED: 'Đã tạo, chưa chốt (chưa trừ tiền)',
-  LABELED: TONE.emerald,
+  LABELED: TONE.delivered,
   CANCELLED: 'Đã huỷ',
-  FAILED: TONE.redSolid,
+  FAILED: TONE.rejected,
 }
 const STATUS_CLASS: Record<THEShipmentStatus, string> = {
   CREATING: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
-  CREATED: TONE.amber,
+  CREATED: TONE.qc,
   LABELED: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  CANCELLED: TONE.slate,
+  CANCELLED: TONE.cancelled,
   FAILED: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
 }
 

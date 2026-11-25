@@ -189,7 +189,7 @@ export function missingBatchLinks(b: Pick<Batch, 'links'>): BatchLinkKind[] {
 
 export const PRODUCTION_FILES_READY: BadgeMeta = {
   label: 'Đã có file SX',
-  classes: TONE.violet,
+  classes: TONE.files,
 }
 
 /** Chip "Đã bàn giao" của batch — cùng màu với HANDED_OFF của đơn. */

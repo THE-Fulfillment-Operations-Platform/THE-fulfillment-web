@@ -75,11 +75,11 @@ function toggleBillableOnly() {
 function resolutionBadge(o: Order): { label: string; classes: string } {
   switch (o.cancellation_status) {
     case 'APPROVED':
-      return { label: 'Đã huỷ (duyệt)', classes: TONE.red }
+      return { label: 'Đã huỷ (duyệt)', classes: TONE.cancelled }
     case 'SELLER_CANCELLED':
-      return { label: 'Seller tự huỷ', classes: TONE.red }
+      return { label: 'Seller tự huỷ', classes: TONE.cancelled }
     case 'REJECTED':
-      return { label: 'Từ chối huỷ', classes: TONE.indigo }
+      return { label: 'Từ chối huỷ', classes: TONE.printed }
     default:
       return { label: o.cancellation_status ?? '—', classes: 'bg-muted text-muted-foreground' }
   }

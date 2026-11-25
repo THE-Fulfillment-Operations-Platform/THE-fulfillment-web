@@ -22,10 +22,10 @@ export interface BadgeMeta {
 
 // ---- Internal status (Pending / Đã in / Đã cắt / Đã QC) --------------------
 export const INTERNAL_STATUS: Record<InternalStatus, BadgeMeta> = {
-  PENDING: { label: 'Chờ xử lý', classes: TONE.slate },
-  PRINTED: { label: 'Đã in', classes: TONE.blue },
-  CUT: { label: 'Đã cắt', classes: TONE.orange },
-  QC_PASSED: { label: 'Đã QC', classes: TONE.lime },
+  PENDING: { label: 'Chờ xử lý', classes: TONE.pending },
+  PRINTED: { label: 'Đã in', classes: TONE.printed },
+  CUT: { label: 'Đã cắt', classes: TONE.cut },
+  QC_PASSED: { label: 'Đã QC', classes: TONE.qc },
 }
 
 export const INTERNAL_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 'CUT', 'QC_PASSED']
@@ -37,43 +37,43 @@ export const PRODUCTION_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 
 
 // ---- Seller status ---------------------------------------------------------
 export const SELLER_STATUS: Record<SellerStatus, BadgeMeta> = {
-  PRODUCTION: { label: 'Đang sản xuất', classes: TONE.blue },
-  PACKED: { label: 'Đã đóng gói', classes: TONE.cyan },
-  HANDED_OFF: { label: 'Đã bàn giao', classes: TONE.emerald },
-  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
+  PRODUCTION: { label: 'Đang sản xuất', classes: TONE.printed },
+  PACKED: { label: 'Đã đóng gói', classes: TONE.packed },
+  HANDED_OFF: { label: 'Đã bàn giao', classes: TONE.handed },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.shipped },
   // Chặng cuối, do đồng bộ tracking đặt. Trước đây không có nó nên đơn đã giao
   // xong vẫn đứng ở "Đã bàn giao" cạnh một badge tracking ghi "Đã giao".
-  DELIVERED: { label: 'Đã giao', classes: TONE.greenSolid },
+  DELIVERED: { label: 'Đã giao', classes: TONE.delivered },
 }
 
 // ---- Review (intake) status ------------------------------------------------
 export const REVIEW_STATUS: Record<ReviewStatus, BadgeMeta> = {
-  PENDING_REVIEW: { label: 'Chờ duyệt', classes: TONE.yellow },
-  NEEDS_CORRECTION: { label: 'Cần chỉnh sửa', classes: TONE.pink },
-  APPROVED: { label: 'Đã duyệt', classes: TONE.emerald },
-  REJECTED: { label: 'Từ chối', classes: TONE.redSolid },
-  CANCELLED: { label: 'Đã huỷ', classes: TONE.red },
+  PENDING_REVIEW: { label: 'Chờ duyệt', classes: TONE.review },
+  NEEDS_CORRECTION: { label: 'Cần chỉnh sửa', classes: TONE.fix },
+  APPROVED: { label: 'Đã duyệt', classes: TONE.delivered },
+  REJECTED: { label: 'Từ chối', classes: TONE.rejected },
+  CANCELLED: { label: 'Đã huỷ', classes: TONE.cancelled },
 }
 
 export const REVIEW_STATUS_OPTIONS = ['PENDING_REVIEW', 'NEEDS_CORRECTION'] as const
 
 // ---- Cancellation status ---------------------------------------------------
 export const CANCELLATION_STATUS: Record<CancellationStatus, BadgeMeta> = {
-  NONE: { label: '—', classes: TONE.slate },
-  SELLER_CANCELLED: { label: 'Seller huỷ', classes: TONE.red },
-  REQUESTED: { label: 'Chờ xử lý huỷ', classes: TONE.amber },
-  APPROVED: { label: 'Đồng ý huỷ', classes: TONE.red },
-  REJECTED: { label: 'Từ chối huỷ', classes: TONE.indigo },
+  NONE: { label: '—', classes: TONE.pending },
+  SELLER_CANCELLED: { label: 'Seller huỷ', classes: TONE.cancelled },
+  REQUESTED: { label: 'Chờ xử lý huỷ', classes: TONE.cut },
+  APPROVED: { label: 'Đồng ý huỷ', classes: TONE.cancelled },
+  REJECTED: { label: 'Từ chối huỷ', classes: TONE.printed },
 }
 
 // ---- Cancellation stage ----------------------------------------------------
 // Đơn bị huỷ ở khâu nào. Nhãn này luôn đi kèm câu trả lời "có tính tiền không":
 // từ lúc vào sản xuất là đã tốn NVL và công máy nên vẫn tính tiền khách.
 export const CANCEL_STAGE: Record<Exclude<CancelStage, ''>, BadgeMeta> = {
-  PRE_PRODUCTION: { label: 'Chưa sản xuất', classes: TONE.slate },
-  IN_PRODUCTION: { label: 'Đang sản xuất', classes: TONE.blue },
-  PACKED: { label: 'Đã đóng gói', classes: TONE.cyan },
-  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
+  PRE_PRODUCTION: { label: 'Chưa sản xuất', classes: TONE.pending },
+  IN_PRODUCTION: { label: 'Đang sản xuất', classes: TONE.printed },
+  PACKED: { label: 'Đã đóng gói', classes: TONE.packed },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.shipped },
 }
 
 export function cancelStageLabel(stage?: CancelStage): string {
@@ -83,48 +83,48 @@ export function cancelStageLabel(stage?: CancelStage): string {
 
 // ---- Design status ---------------------------------------------------------
 export const DESIGN_STATUS: Record<DesignStatus, BadgeMeta> = {
-  PENDING: { label: 'Chờ thiết kế', classes: TONE.slate },
-  IN_PROGRESS: { label: 'Đang thiết kế', classes: TONE.blue },
-  READY: { label: 'Sẵn sàng', classes: TONE.violet },
-  MISSING: { label: 'Thiếu file', classes: TONE.redSolid },
+  PENDING: { label: 'Chờ thiết kế', classes: TONE.pending },
+  IN_PROGRESS: { label: 'Đang thiết kế', classes: TONE.printed },
+  READY: { label: 'Sẵn sàng', classes: TONE.files },
+  MISSING: { label: 'Thiếu file', classes: TONE.rejected },
 }
 
 // ---- Priority --------------------------------------------------------------
 export const PRIORITY: Record<Priority, BadgeMeta> = {
-  NORMAL: { label: 'Bình thường', classes: TONE.slate },
-  HIGH: { label: 'Cao', classes: TONE.orange },
-  URGENT: { label: 'Khẩn cấp', classes: TONE.redSolid },
+  NORMAL: { label: 'Bình thường', classes: TONE.pending },
+  HIGH: { label: 'Cao', classes: TONE.cut },
+  URGENT: { label: 'Khẩn cấp', classes: TONE.rejected },
 }
 
 // ---- Note severity ---------------------------------------------------------
 export const NOTE_SEVERITY: Record<NoteSeverity, BadgeMeta> = {
-  LOW: { label: 'Thấp', classes: TONE.slate },
-  NORMAL: { label: 'Bình thường', classes: TONE.blue },
-  HIGH: { label: 'Cao', classes: TONE.orange },
-  CRITICAL: { label: 'Nghiêm trọng', classes: TONE.redSolid },
+  LOW: { label: 'Thấp', classes: TONE.pending },
+  NORMAL: { label: 'Bình thường', classes: TONE.printed },
+  HIGH: { label: 'Cao', classes: TONE.cut },
+  CRITICAL: { label: 'Nghiêm trọng', classes: TONE.rejected },
 }
 
 // ---- Note status -----------------------------------------------------------
 export const NOTE_STATUS: Record<NoteStatus, BadgeMeta> = {
-  OPEN: { label: 'Đang mở', classes: TONE.red },
-  IN_PROGRESS: { label: 'Đang xử lý', classes: TONE.blue },
-  WAITING: { label: 'Chờ', classes: TONE.amber },
-  RESOLVED: { label: 'Đã xử lý', classes: TONE.emerald },
+  OPEN: { label: 'Đang mở', classes: TONE.rejected },
+  IN_PROGRESS: { label: 'Đang xử lý', classes: TONE.printed },
+  WAITING: { label: 'Chờ', classes: TONE.qc },
+  RESOLVED: { label: 'Đã xử lý', classes: TONE.delivered },
 }
 
 // ---- Tracking status -------------------------------------------------------
 export const TRACKING_STATUS: Record<TrackingStatus, BadgeMeta> = {
-  NONE: { label: 'Chưa có', classes: TONE.slate },
-  PENDING: { label: 'Chờ lấy hàng', classes: TONE.yellow },
-  PRE_TRANSIT: { label: 'Chuẩn bị vận chuyển', classes: TONE.sky },
-  IN_TRANSIT: { label: 'Đang vận chuyển', classes: TONE.indigo },
-  OUT_FOR_DELIVERY: { label: 'Đang giao', classes: TONE.teal },
-  PICK_UP: { label: 'Chờ nhận tại bưu cục', classes: TONE.pink },
-  DELIVERED: { label: 'Đã giao', classes: TONE.greenSolid },
-  UNDELIVERED: { label: 'Giao không thành công', classes: TONE.amber },
-  EXCEPTION: { label: 'Sự cố', classes: TONE.redSolid },
-  EXPIRED: { label: 'Hết hạn theo dõi', classes: TONE.slate },
-  CANCELLED: { label: 'Đã huỷ vận chuyển', classes: TONE.red },
+  NONE: { label: 'Chưa có', classes: TONE.pending },
+  PENDING: { label: 'Chờ lấy hàng', classes: TONE.handed },
+  PRE_TRANSIT: { label: 'Chuẩn bị vận chuyển', classes: TONE.handed },
+  IN_TRANSIT: { label: 'Đang vận chuyển', classes: TONE.shipped },
+  OUT_FOR_DELIVERY: { label: 'Đang giao', classes: TONE.shipped },
+  PICK_UP: { label: 'Chờ nhận tại bưu cục', classes: TONE.shipped },
+  DELIVERED: { label: 'Đã giao', classes: TONE.delivered },
+  UNDELIVERED: { label: 'Giao không thành công', classes: TONE.rejected },
+  EXCEPTION: { label: 'Sự cố', classes: TONE.rejected },
+  EXPIRED: { label: 'Hết hạn theo dõi', classes: TONE.pending },
+  CANCELLED: { label: 'Đã huỷ vận chuyển', classes: TONE.cancelled },
 }
 
 export const TRACKING_STATUS_OPTIONS: { value: TrackingStatus; label: string }[] = (
@@ -152,7 +152,7 @@ export function badgeFrom<T extends string>(
   value: T | undefined | null,
 ): BadgeMeta {
   if (value && map[value]) return map[value]
-  return { label: value ?? '—', classes: TONE.slate }
+  return { label: value ?? '—', classes: TONE.pending }
 }
 
 /**

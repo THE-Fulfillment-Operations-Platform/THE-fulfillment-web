@@ -119,8 +119,8 @@ const missingMaterial = computed(() => preview.value?.skus.filter((k) => k.statu
 const materialWarnings = computed(() => (committed.value ? [] : preview.value?.material_warnings ?? []))
 
 const STATUS_BADGE: Record<MasterSkuStatus, string> = {
-  OK: TONE.emerald,
-  MISSING_MATERIAL: TONE.redSolid,
+  OK: TONE.delivered,
+  MISSING_MATERIAL: TONE.rejected,
 }
 const STATUS_LABEL: Record<MasterSkuStatus, string> = {
   OK: 'Sẽ map',

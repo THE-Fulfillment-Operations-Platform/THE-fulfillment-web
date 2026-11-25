@@ -34,8 +34,8 @@ function changePageSize(size: number) {
 }
 
 const HANDOFF_STATUS: Record<HandoffStatus, { label: string; classes: string }> = {
-  HANDED_OFF: { label: 'Đã bàn giao THE', classes: TONE.emerald },
-  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
+  HANDED_OFF: { label: 'Đã bàn giao THE', classes: TONE.handed },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.shipped },
 }
 
 const open = ref(false)

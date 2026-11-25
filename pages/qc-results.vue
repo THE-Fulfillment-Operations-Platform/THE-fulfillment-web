@@ -71,34 +71,34 @@ const ORDER_STATUS: Record<QcOrderStatus, { label: string; dot: string; chip: st
   DONE: {
     label: 'Đã QC đủ · sẵn sàng đóng gói',
     dot: 'bg-emerald-500',
-    chip: TONE.lime,
+    chip: TONE.qc,
   },
   PARTIAL: {
     label: 'Đạt một phần',
     dot: 'bg-amber-500',
-    chip: TONE.amber,
+    chip: TONE.cut,
   },
   NONE: {
     label: 'Chưa QC',
     dot: 'bg-slate-400',
-    chip: TONE.slate,
+    chip: TONE.pending,
   },
 }
 
 const ITEM_STATUS: Record<string, { label: string; chip: string; icon: string }> = {
   PASSED: {
     label: 'Đạt',
-    chip: TONE.lime,
+    chip: TONE.qc,
     icon: 'check',
   },
   REWORK: {
     label: 'Đang làm lại',
-    chip: TONE.redSolid,
+    chip: TONE.rejected,
     icon: 'alert',
   },
   WAITING: {
     label: 'Chờ QC',
-    chip: TONE.slate,
+    chip: TONE.pending,
     icon: 'calendar',
   },
 }
