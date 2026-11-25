@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiDownload } from '../http'
 import type {
+  Timeline,
   Batch, BatchLink, BatchLinkKind, CreateBatchResult, InternalStatus, Priority, ListParams,
   ScrapBatchInput, ScrapBatchResult,
 } from '~/types'
@@ -170,6 +171,8 @@ export interface CreateBatchInput {
 export const batchesApi = {
   list: (params?: BatchListParams) => apiGet<Batch[]>('/api/batches', params),
   get: (id: number | string) => apiGet<Batch>(`/api/batches/${id}`),
+  // Tiến độ batch: tạo / đã in / đã cắt / QC xong lúc nào, ai bấm.
+  timeline: (id: number | string) => apiGet<Timeline>(`/api/batches/${id}/timeline`),
   create: (body: CreateBatchInput) => apiPost<CreateBatchResult>('/api/batches', body),
   setStatus: (id: number | string, status: InternalStatus, note?: string) =>
     apiPatch<Batch>(`/api/batches/${id}/status`, { status, note }),

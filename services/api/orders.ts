@@ -2,6 +2,7 @@ import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '../http'
 import type {
   Order,
   OrderDeleteResult,
+  Timeline,
   ListParams,
   TrackingStatus,
   WarrantyEntry,
@@ -134,6 +135,8 @@ export const ordersApi = {
   labelScan: (code: string) => apiPost<LabelScanResult>('/api/orders/label-scan', { code }),
   list: (params?: OrderListParams) => apiGet<Order[]>('/api/orders', params),
   get: (id: number | string) => apiGet<Order>(`/api/orders/${id}`),
+  // Giờ hoàn thành từng khâu (import, duyệt, vào batch, in, cắt, QC, xuất kho) + người làm.
+  timeline: (id: number | string) => apiGet<Timeline>(`/api/orders/${id}/timeline`),
   create: (body: DirectOrderInput) => apiPost<Order>('/api/orders', body),
   update: (id: number | string, body: UpdateOrderInput) => apiPut<Order>(`/api/orders/${id}`, body),
   cancel: (id: number | string, reason: string) =>

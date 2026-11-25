@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { batchesApi } from '~/services/api'
-import type { Batch, BatchLink, BatchLinkKind, InternalStatus } from '~/types'
+import type { Batch, BatchLink, BatchLinkKind, InternalStatus, Timeline } from '~/types'
 import { useAuthStore } from '~/stores/auth'
 import { useApiResource } from '~/composables/useApiResource'
 import { INTERNAL_STATUS, PRODUCTION_STATUS_ORDER } from '~/utils/enums'
@@ -22,6 +22,28 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const { data: batch, loading, error, reload } = useApiResource<Batch>(() => batchesApi.get(id))
+
+// Ô "Tiến độ": lúc tạo / in / cắt / QC xong + người bấm, từ lịch sử trạng thái của
+// batch (lần ĐẦU đạt mỗi trạng thái). Là phần phụ: lỗi thì ô hiện "chưa có", trang vẫn chạy.
+// Tải lại mỗi khi batch tải lại (đổi trạng thái, nộp file…).
+const { data: progress, reload: reloadProgress } = useApiResource<Timeline>(() => batchesApi.timeline(id), {
+  immediate: false,
+})
+watch(batch, (b) => {
+  if (b) reloadProgress()
+})
+const PROGRESS_CELLS = [
+  { key: 'created', label: 'Tạo lúc' },
+  { key: 'printed', label: 'Đã in lúc' },
+  { key: 'cut', label: 'Đã cắt lúc' },
+  { key: 'qc_passed', label: 'QC xong lúc' },
+]
+const progressCells = computed(() =>
+  PROGRESS_CELLS.map((c) => {
+    const st = progress.value?.steps.find((s) => s.key === c.key)
+    return { ...c, at: st?.at ?? null, by: st?.at ? st.by_name || '' : '' }
+  }),
+)
 const items = computed(() =>
   (batch.value?.items ?? []).filter(
     (item) => item.order_item?.cancellation_status !== 'SELLER_CANCELLED' && item.order_item?.cancellation_status !== 'APPROVED',
@@ -938,6 +960,20 @@ async function printLabels() {
               sang “Đã in” / “Đã cắt”.
             </p>
           </div>
+        </div>
+
+        <!-- Tiến độ: mỗi chặng xong lúc nào, ai bấm (chủ xưởng 25/11). -->
+        <div class="card mb-5 p-5" data-testid="batch-progress">
+          <h3 class="text-sm font-semibold text-foreground">Tiến độ</h3>
+          <dl class="mt-3 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div v-for="c in progressCells" :key="c.key" :data-progress="c.key">
+              <dt class="text-xs text-muted-foreground">{{ c.label }}</dt>
+              <dd class="mt-0.5 text-sm font-medium tabular-nums" :class="c.at ? 'text-foreground' : 'text-muted-foreground'">
+                {{ c.at ? formatDateTime(c.at) : 'Chưa' }}
+              </dd>
+              <dd v-if="c.by" class="text-xs text-muted-foreground">{{ c.by }}</dd>
+            </div>
+          </dl>
         </div>
 
         <!-- Bộ file sản xuất của batch (link in + link cắt) — nộp một lần cho cả batch -->

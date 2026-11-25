@@ -32,6 +32,10 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   USER_CREATE: { label: 'Thêm tài khoản', tone: 'green' },
   USER_UPDATE: { label: 'Sửa tài khoản', tone: 'blue' },
   USER_DELETE: { label: 'Xoá tài khoản', tone: 'red' },
+  USER_RESTORE: { label: 'Khôi phục tài khoản đã xoá', tone: 'green' },
+  ROLE_PERMS_UPDATE: { label: 'Đổi quyền theo vai trò', tone: 'blue' },
+  API_KEY_CREATE: { label: 'Tạo khoá API cho khách', tone: 'green' },
+  API_KEY_REVOKE: { label: 'Thu hồi khoá API', tone: 'red' },
 
   // Đơn hàng
   ORDER_CREATE_DIRECT: { label: 'Tạo đơn hàng', tone: 'green' },
@@ -40,6 +44,13 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   ORDER_OPS_CANCEL: { label: 'Huỷ đơn hàng', tone: 'red' },
   ORDER_DELETE: { label: 'Xoá đơn hàng', tone: 'red' },
   ORDER_TRACKING_UPDATE: { label: 'Cập nhật vận chuyển', tone: 'blue' },
+  ORDER_CREATE_API: { label: 'Khách tạo đơn qua API', tone: 'green' },
+  ORDER_PURGE: { label: 'Xoá hẳn đơn (không khôi phục)', tone: 'red' },
+  ORDER_WARRANTY: { label: 'Tạo đơn bảo hành', tone: 'violet' },
+  ORDER_EXTERNAL_LABEL_SET: { label: 'Gắn label mua ngoài', tone: 'blue' },
+  ORDER_TRACKING_BULK_IMPORT: { label: 'Gắn mã vận đơn từ file', tone: 'blue' },
+  ORDER_TRACKING_FROM_THE: { label: 'Lấy mã vận đơn từ THE', tone: 'blue' },
+  ORDER_TRACKING_RESOLVED: { label: 'Tự khớp mã vận đơn (24hTrack)', tone: 'blue' },
 
   // Duyệt đơn
   REVIEW_APPROVE: { label: 'Duyệt đơn', tone: 'green' },
@@ -62,6 +73,11 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   ITEM_DESIGN_READY_BULK: { label: 'Báo xong thiết kế (nhiều sản phẩm)', tone: 'green' },
 
   // Sản xuất
+  BATCH_AUTO_CREATE: { label: 'Tự tạo lô sản xuất', tone: 'green' },
+  BATCH_DELETE: { label: 'Xoá lô sản xuất', tone: 'red' },
+  BATCH_SCRAP: { label: 'Huỷ cả lô đã sản xuất', tone: 'red' },
+  BATCH_PRODUCTION_PACKAGE_SET: { label: 'Nộp bộ file sản xuất cho lô', tone: 'blue' },
+  BATCH_LINK_IMPORT_COMMIT: { label: 'Nhập file in/cắt cho nhiều lô từ file', tone: 'blue' },
   BATCH_CREATE: { label: 'Tạo lô sản xuất', tone: 'green' },
   BATCH_STATUS_UPDATE: { label: 'Đổi trạng thái lô', tone: 'blue' },
   BATCH_LINK_ADD: { label: 'Gắn file in/cắt cho lô', tone: 'blue' },
@@ -71,11 +87,28 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   QC_SCAN: { label: 'Quét kiểm hàng', tone: 'neutral' },
   QC_PASS: { label: 'Kiểm hàng đạt', tone: 'green' },
   QC_FAIL: { label: 'Kiểm hàng lỗi', tone: 'red' },
+  QC_SCAN_ORDER: { label: 'Quét kiểm hàng cả đơn', tone: 'neutral' },
+  QC_UNDO: { label: 'Hạ kiểm hàng (làm lại bước QC)', tone: 'amber' },
+  QC_REWORK_INPLACE: { label: 'Làm lại tại trạm QC', tone: 'amber' },
+  NOTE_AUTO_RESOLVE: { label: 'Tự đóng ghi chú (đã làm lại đạt)', tone: 'green' },
+  BASKET_CREATE: { label: 'Cho đơn vào giỏ chờ', tone: 'violet' },
+  BASKET_RELEASE: { label: 'Xoá giỏ chờ', tone: 'violet' },
+  BASKET_AUTO_RELEASE: { label: 'Giỏ chờ tự xoá (đủ hàng)', tone: 'violet' },
 
   // Đóng gói & giao hàng
   PACKING_SCAN: { label: 'Đóng gói', tone: 'violet' },
   HANDOFF_CREATE: { label: 'Tạo phiếu bàn giao', tone: 'violet' },
   HANDOFF_SHIP: { label: 'Gửi hàng đi', tone: 'green' },
+  ORDER_EXPORT: { label: 'Xuất kho đơn', tone: 'green' },
+  ORDER_EXPORT_UNFINISHED: { label: 'Xuất kho khi còn sản phẩm chưa QC', tone: 'amber' },
+  ORDER_SHIP_TO_CARRIER: { label: 'Gửi đơn cho THE', tone: 'green' },
+  ORDER_SHIP_MANUAL: { label: 'Bàn giao THE thủ công', tone: 'violet' },
+  THE_SHIPMENT_LABELED: { label: 'Tạo đơn trên THE (có label)', tone: 'green' },
+  THE_SHIPMENT_CANCEL: { label: 'Huỷ đơn trên THE', tone: 'red' },
+  THE_SHIPMENT_CANCELLED_BY_THE: { label: 'THE huỷ vận đơn', tone: 'red' },
+  THE_SHIPMENT_RETURNED: { label: 'THE trả đơn về chờ xử lý', tone: 'amber' },
+  CARRIER_CONFIG_UPDATE: { label: 'Đổi cấu hình kết nối THE', tone: 'blue' },
+  SKU_SHIPPING_IMPORT: { label: 'Nạp thông tin vận chuyển cho SKU', tone: 'green' },
 
   // Nhập dữ liệu từ file
   IMPORT_PREVIEW: { label: 'Xem trước file đơn', tone: 'neutral' },
@@ -88,9 +121,13 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   MATERIAL_CREATE: { label: 'Thêm vật liệu', tone: 'green' },
   MATERIAL_UPDATE: { label: 'Sửa vật liệu', tone: 'blue' },
   MATERIAL_DELETE: { label: 'Xoá vật liệu', tone: 'red' },
+  MATERIAL_DELETE_BULK: { label: 'Xoá nhiều vật liệu', tone: 'red' },
   SKU_CREATE: { label: 'Thêm mã sản phẩm', tone: 'green' },
   SKU_UPDATE: { label: 'Sửa mã sản phẩm', tone: 'blue' },
   SKU_DELETE: { label: 'Xoá mã sản phẩm', tone: 'red' },
+  SKU_DELETE_BULK: { label: 'Xoá nhiều mã sản phẩm', tone: 'red' },
+  SKU_SET_ACTIVE_BULK: { label: 'Bật/tắt nhiều mã sản phẩm', tone: 'blue' },
+  SKU_PARENT_IMPORT_COMMIT: { label: 'Nhập SKU cha từ file', tone: 'green' },
   SELLER_CREATE: { label: 'Thêm khách bán hàng', tone: 'green' },
   SELLER_UPDATE: { label: 'Sửa khách bán hàng', tone: 'blue' },
   SELLER_DELETE: { label: 'Xoá khách bán hàng', tone: 'red' },
@@ -102,6 +139,7 @@ export const AUDIT_ACTION: Record<string, ActionMeta> = {
   NOTE_CREATE: { label: 'Tạo ghi chú', tone: 'green' },
   NOTE_UPDATE: { label: 'Sửa ghi chú', tone: 'blue' },
   NOTE_DELETE: { label: 'Xoá ghi chú', tone: 'red' },
+  NOTE_DELETE_BULK: { label: 'Xoá nhiều ghi chú', tone: 'red' },
   DATA_RESET: { label: 'Xoá sạch dữ liệu', tone: 'red' },
 }
 
@@ -117,6 +155,8 @@ export const auditActionClasses = (action?: string | null): string =>
 const ENTITY_LABEL: Record<string, string> = {
   order: 'Đơn hàng',
   order_item: 'Sản phẩm trong đơn',
+  role: 'Vai trò',
+  carrier_config: 'Kết nối THE',
   batch: 'Lô sản xuất',
   batch_item: 'Sản phẩm trong lô',
   package: 'Kiện hàng',
@@ -149,6 +189,9 @@ const linkKindLabel = (kind: string): string =>
 // Ordered rewrite rules for the English summaries written by the API. First
 // match wins; anything unmatched is shown as-is so nothing is ever swallowed.
 const SUMMARY_RULES: { re: RegExp; to: (m: RegExpMatchArray) => string }[] = [
+  // Đơn tạo qua API: phải đứng trước luật chung "Created order …" (khớp đầu tiên thắng)
+  { re: /^Created order (.+) via API \((.+)\)$/, to: (m) => `Khách tạo đơn ${m[1]} qua API (mã đơn của khách: ${m[2]})` },
+
   // Đăng nhập
   { re: /^User logged in$/, to: () => 'Đăng nhập vào hệ thống' },
 
@@ -244,6 +287,17 @@ const SUMMARY_RULES: { re: RegExp; to: (m: RegExpMatchArray) => string }[] = [
     re: /^Material (?:quota|size) import: (\d+) created, (\d+) updated$/,
     to: (m) => `Nhập vật liệu từ file: thêm mới ${m[1]}, cập nhật ${m[2]}`,
   },
+
+  // Quét kiểm cả đơn, xoá hàng loạt, khoá API, tạo đơn qua API
+  { re: /^Scanned order (.+) for QC$/, to: (m) => `Quét đơn ${m[1]} để kiểm hàng` },
+  { re: /^Deleted batch (.+)$/, to: (m) => `Xoá lô sản xuất ${m[1]}` },
+  { re: /^Created API key (.+) for seller (.+)$/, to: (m) => `Tạo khoá API ${m[1]} cho khách ${m[2]}` },
+  { re: /^Revoked API key (.+)$/, to: (m) => `Thu hồi khoá API ${m[1]}` },
+  { re: /^Restored previously deleted user (.+)$/, to: (m) => `Khôi phục tài khoản ${m[1]} (đã xoá trước đó)` },
+  { re: /^Deleted (\d+) materials \(skipped (\d+)\)$/, to: (m) => `Xoá ${m[1]} vật liệu, bỏ qua ${m[2]}` },
+  { re: /^Deleted (\d+) SKUs \(skipped (\d+)\)$/, to: (m) => `Xoá ${m[1]} mã sản phẩm, bỏ qua ${m[2]}` },
+  { re: /^Deleted (\d+) notes$/, to: (m) => `Xoá ${m[1]} ghi chú` },
+  { re: /^Set (\d+) SKUs (active|inactive)$/, to: (m) => `${m[2] === 'active' ? 'Bật' : 'Tắt'} ${m[1]} mã sản phẩm` },
 
   // Dữ liệu nền
   { re: /^Created material (.+)$/, to: (m) => `Thêm vật liệu ${m[1]}` },

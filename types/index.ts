@@ -1306,6 +1306,19 @@ export interface ReviewOrderDetail {
 
 // ---- Audit -----------------------------------------------------------------
 
+/** Một khâu trong GET /api/orders/:id/timeline và /api/batches/:id/timeline. */
+export interface TimelineStep {
+  key: string
+  /** RFC3339; null = chưa xong (hoặc không có lịch sử để biết). */
+  at: string | null
+  by_id?: number
+  by_name?: string
+}
+export interface Timeline {
+  entity_id: number
+  steps: TimelineStep[]
+}
+
 export interface AuditLog {
   action: string
   actor_email: string

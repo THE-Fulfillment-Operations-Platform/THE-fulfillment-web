@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ordersApi, trackingApi } from '~/services/api'
 import type { UpdateOrderInput, EditOrderItemInput, UpdateTrackingInput } from '~/services/api'
-import type { Order, OrderItem, OrderTrackingEvent, Role, TrackingStatus } from '~/types'
+import type { Order, OrderItem, OrderTrackingEvent, Role, Timeline, TrackingStatus } from '~/types'
 import { useApiResource } from '~/composables/useApiResource'
 import { refreshActionCounts } from '~/composables/useActionCounts'
 import { useAuthStore } from '~/stores/auth'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
 import { errorMessage } from '~/utils/api-error'
-import { formatDateTime } from '~/utils/format'
+import { formatDateTime, formatStepTime } from '~/utils/format'
 import TheShipmentCard from '~/components/orders/TheShipmentCard.vue'
 import ExternalLabelCard from '~/components/orders/ExternalLabelCard.vue'
 import WarrantyBadge from '~/components/orders/WarrantyBadge.vue'
@@ -28,6 +28,18 @@ const auth = useAuthStore()
 const toast = useToastStore()
 
 const { data: order, loading, error, reload } = useApiResource<Order>(() => ordersApi.get(id))
+
+// Giờ hoàn thành từng khâu + người làm (GET /orders/:id/timeline). Chỉ là phần
+// trang trí dưới thanh bước: lỗi hay chưa tải xong thì thanh bước vẫn hiện như cũ.
+// Tải lại mỗi khi đơn được tải lại (sửa, huỷ, bảo hành…) — watch order, không onMounted
+// riêng, nên chỉ một nhịp sau khi đơn về.
+const { data: stepTimes, reload: reloadStepTimes } = useApiResource<Timeline>(() => ordersApi.timeline(id), {
+  immediate: false,
+})
+watch(order, (o) => {
+  if (o) reloadStepTimes()
+})
+const stepAt = (key: string) => stepTimes.value?.steps.find((s) => s.key === key)
 
 // This is an operational detail view. Cancelled lines remain in the database
 // for audit, but must not appear as work that Design/Production still owns.
@@ -64,14 +76,19 @@ const timeline = computed(() => {
   const allBatched = its.length > 0 && its.every((i) => (i.batch_items?.length ?? 0) > 0)
   const atLeast = (set: string[]) => its.length > 0 && its.every((i) => set.includes(i.internal_status))
   return [
-    { key: 'import', label: 'Import', done: true },
+    { key: 'import', api: 'import', label: 'Import', done: true },
     // Không còn bước Design / set ready (23/10/2026): duyệt xong là vào gom batch.
-    { key: 'review', label: 'Đã duyệt', done: reviewStatus.value === 'APPROVED' },
-    { key: 'batch', label: 'Batch', done: allBatched },
-    { key: 'print', label: 'Đã in', done: atLeast(['PRINTED', 'CUT', 'QC_PASSED']) },
-    { key: 'cut', label: 'Đã cắt', done: atLeast(['CUT', 'QC_PASSED']) },
-    { key: 'qc', label: 'Đã QC', done: atLeast(['QC_PASSED']) },
-  ]
+    { key: 'review', api: 'approved', label: 'Đã duyệt', done: reviewStatus.value === 'APPROVED' },
+    { key: 'batch', api: 'batched', label: 'Batch', done: allBatched },
+    { key: 'print', api: 'printed', label: 'Đã in', done: atLeast(['PRINTED', 'CUT', 'QC_PASSED']) },
+    { key: 'cut', api: 'cut', label: 'Đã cắt', done: atLeast(['CUT', 'QC_PASSED']) },
+    { key: 'qc', api: 'qc_passed', label: 'Đã QC', done: atLeast(['QC_PASSED']) },
+    { key: 'handoff', api: 'handed_off', label: 'Xuất kho', done: isHandedOver(order.value?.seller_status) },
+  ].map((st) => {
+    // Giờ chỉ hiện ở khâu đã xong: khâu chưa xong để trống, không đoán.
+    const s = st.done ? stepAt(st.api) : undefined
+    return { ...st, time: formatStepTime(s?.at), by: s?.at ? s.by_name || '' : '' }
+  })
 })
 
 // Trường lõi của người nhận LUÔN hiện, trống thì '—'. Lọc bỏ trường trống như
@@ -512,21 +529,28 @@ async function syncTracking() {
             Đơn đang chờ duyệt — chưa vào sản xuất.
           </div>
           <!-- Approved → production timeline. -->
-          <div v-else class="mt-5 flex flex-wrap items-center gap-1">
+          <div v-else class="mt-5 flex flex-wrap items-start gap-y-3" data-testid="order-steps">
             <template v-for="(step, idx) in timeline" :key="step.key">
-              <div class="flex items-center gap-2">
-                <div
-                  class="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
-                  :class="step.done ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'"
-                >
-                  <UiIcon v-if="step.done" name="check" :size="14" />
-                  <span v-else>{{ idx + 1 }}</span>
+              <div class="flex flex-col" :data-step="step.key">
+                <div class="flex items-center gap-2">
+                  <div
+                    class="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
+                    :class="step.done ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-muted text-muted-foreground'"
+                  >
+                    <UiIcon v-if="step.done" name="check" :size="14" />
+                    <span v-else>{{ idx + 1 }}</span>
+                  </div>
+                  <span class="text-xs font-medium" :class="step.done ? 'text-foreground' : 'text-muted-foreground'">
+                    {{ step.label }}
+                  </span>
                 </div>
-                <span class="text-xs font-medium" :class="step.done ? 'text-foreground' : 'text-muted-foreground'">
-                  {{ step.label }}
-                </span>
+                <!-- Giờ hoàn thành (HH:mm dd/MM) + người làm, thẳng dưới tên khâu. -->
+                <div v-if="step.time" class="mt-1 pl-9 leading-tight">
+                  <p class="text-xs font-medium tabular-nums text-foreground">{{ step.time }}</p>
+                  <p v-if="step.by" class="max-w-[8rem] truncate text-[11px] text-muted-foreground" :title="step.by">{{ step.by }}</p>
+                </div>
               </div>
-              <div v-if="idx < timeline.length - 1" class="mx-1 h-px w-6 bg-muted" />
+              <div v-if="idx < timeline.length - 1" class="mx-2 mt-3.5 h-px w-5 shrink-0 bg-muted" />
             </template>
           </div>
         </div>

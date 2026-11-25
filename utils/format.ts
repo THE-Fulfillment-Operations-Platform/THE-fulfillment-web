@@ -19,6 +19,21 @@ export function formatDateTime(value?: string | null): string {
   })
 }
 
+/**
+ * Giờ ngắn dưới mỗi khâu: `HH:mm dd/MM` giờ xưởng (vd. `14:05 21/11`). Dựng từ
+ * từng phần của Intl, không tin thứ tự của toLocaleString. '' khi rỗng/sai.
+ */
+export function formatStepTime(value?: string | null): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: APP_TZ,
+  }).formatToParts(d)
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+  return `${g('hour')}:${g('minute')} ${g('day')}/${g('month')}`
+}
+
 export function formatDate(value?: string | null): string {
   if (!value) return '—'
   const d = new Date(value)

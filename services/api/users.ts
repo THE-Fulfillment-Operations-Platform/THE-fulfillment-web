@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from '../http'
-import type { User, Role, AuditLog, PermissionCatalog, RolePermission } from '~/types'
+import type { User, Role, AuditLog, ListParams, PermissionCatalog, RolePermission } from '~/types'
 
 export interface UserInput {
   email: string
@@ -36,8 +36,21 @@ export const usersApi = {
     apiPut<RolePermission>(`/api/role-permissions/${role}`, { permissions }),
 }
 
+export interface AuditListParams extends ListParams {
+  page?: number
+  page_size?: number
+  order?: string
+  batch?: string
+  actor?: string
+  date_from?: string
+  date_to?: string
+}
+
 export const auditApi = {
   // Audit logs grow fastest of all tables — always page server-side instead of
   // pulling the whole trail into the browser.
-  list: (params?: { page?: number; page_size?: number }) => apiGet<AuditLog[]>('/api/audit-logs', params),
+  // Tìm phía server: order = mã đơn (nội bộ / mã đơn shop / mã item) → dòng của đơn, item và
+  // phần batch của đơn; batch = #103000 hoặc 103000; actor = một phần email/tên;
+  // date_from (gồm) / date_to (LOẠI TRỪ) = RFC3339 (utils/dateRange).
+  list: (params?: AuditListParams) => apiGet<AuditLog[]>('/api/audit-logs', params),
 }
