@@ -268,7 +268,7 @@ const sizeError = computed(() => {
   return (l == null) !== (w == null) ? 'Nhập cả D lẫn R, hoặc bỏ trống cả hai' : ''
 })
 const canSubmit = computed(
-  () => !!form.name.trim() && (!!editing.value || !!form.code.trim()) && !sizeError.value,
+  () => !!form.name.trim() && !!form.code.trim() && !sizeError.value,
 )
 
 // Ô vận chuyển → số dương, hoặc null khi để trống (= lấy theo SKU cha).
@@ -312,9 +312,29 @@ async function submit() {
     // 409 kèm chi tiết → hộp xác nhận → gửi lại với confirm (#6380).
     if (editing.value) {
       const id = editing.value.id
+      // Mã đổi (sau khi chuẩn hoá) → hỏi lại trước khi lưu: từ giờ file import đơn
+      // và file SKU con phải dùng mã mới. Đơn đã nhập giữ mã cũ trên dòng đơn.
+      const newCode = normalizeCode(form.code)
+      const oldCode = editing.value.code
+      const codeChanged = !!newCode && newCode !== oldCode
+      if (codeChanged) {
+        const kidCount = editingKids.value.length
+        const ok = await useConfirm().confirm({
+          title: 'Đổi mã SKU',
+          message:
+            `Đổi mã ${oldCode} → ${newCode}.` +
+            (kidCount ? ` ${kidCount} SKU con giữ nguyên, tự theo mã cha mới.` : '') +
+            ' Đơn đã nhập vẫn giữ mã cũ trên dòng đơn; file import đơn và file SKU con từ giờ phải dùng mã mới.',
+          tone: 'warning',
+          confirmText: 'Đổi mã',
+        })
+        if (!ok) return
+      }
       // Luôn gửi đủ: 0 = xoá (tách khỏi cha / bỏ kích thước), vì form đang hiện
       // đúng giá trị hiện tại nên ô trống nghĩa là người dùng muốn bỏ.
       const body = {
+        // Chỉ gửi mã khi thật sự đổi; bỏ trống = giữ nguyên.
+        ...(codeChanged ? { code: newCode } : {}),
         name: form.name.trim(),
         product_name: form.product_name.trim(),
         description: form.description.trim(),
@@ -685,11 +705,13 @@ async function remove(s: Sku) {
             <input
               v-model="form.code"
               class="input font-mono"
-              :disabled="!!editing"
               placeholder="VD: WOOD-01"
               @blur="form.code = normalizeCode(form.code)"
             />
             <p v-if="!editing" class="mt-1 text-[11px] text-muted-foreground">Mã tự động VIẾT HOA, bỏ dấu tiếng Việt và bỏ khoảng trắng.</p>
+            <p v-else class="mt-1 text-[11px] text-muted-foreground">
+              Đơn đã nhập vẫn giữ mã cũ trên dòng đơn; file import đơn và file SKU con từ giờ phải dùng mã mới.
+            </p>
           </div>
           <div>
             <label class="label">Tên *</label>
