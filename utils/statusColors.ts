@@ -17,17 +17,17 @@ export const TONE: Record<Tone, string> = {
   // vàng: đã QC / chờ xử lý giữa chừng
   qc: 'bg-yellow-400 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // xanh ngọc: đã đóng gói
-  packed: 'bg-teal-400 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
+  packed: 'bg-teal-300 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // đỏ tía: đã bàn giao
-  handed: 'bg-fuchsia-800 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
+  handed: 'bg-green-600 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // nâu đen: đã gửi đi / đang vận chuyển
   shipped: 'bg-stone-900 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // lục đậm: xong / đã giao
-  delivered: 'bg-emerald-800 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
+  delivered: 'bg-green-900 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // hồng nhạt: chờ duyệt
   review: 'bg-rose-300 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // lục chanh: cần chỉnh sửa
-  fix: 'bg-lime-600 text-black ring-1 ring-inset ring-black/10 dark:ring-white/25',
+  fix: 'bg-blue-800 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // đỏ đặc: lỗi / từ chối / sự cố
   rejected: 'bg-red-800 text-white ring-1 ring-inset ring-black/10 dark:ring-white/25',
   // viền đỏ nền trắng: đã huỷ (khác nhãn đỏ đặc của lỗi / từ chối)
