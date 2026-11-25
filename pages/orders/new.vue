@@ -96,7 +96,7 @@ function removeItem(i: number) {
 function toRows(): ImportRow[] {
   const head = {
     'ORDER ID': order.storeOrderId.trim(),
-    'Shop name': order.shopName.trim(),
+    'Tên shop': order.shopName.trim(),
     Account: order.account.trim(),
     DATE: order.date,
     name: order.name.trim(),
@@ -181,7 +181,7 @@ function another() {
 
 <template>
   <div>
-    <PageHeader title="Tạo đơn lẻ" subtitle="Công cụ test của kỹ thuật viên — đơn đi qua đúng luồng Import, vào Chờ duyệt như đơn thật">
+    <PageHeader title="Tạo đơn lẻ" subtitle="Công cụ thử của kỹ thuật viên — đơn đi qua đúng luồng Import, vào Chờ duyệt như đơn thật">
       <template #actions>
         <NuxtLink to="/import" class="btn-secondary"><UiIcon name="upload" :size="16" /> Về Import</NuxtLink>
       </template>
@@ -200,7 +200,7 @@ function another() {
             <input id="o-id" v-model="order.storeOrderId" class="input font-mono" required />
           </div>
           <div>
-            <label class="label" for="o-shop">Shop name</label>
+            <label class="label" for="o-shop">Tên shop</label>
             <input id="o-shop" v-model="order.shopName" class="input" />
           </div>
           <div>
@@ -208,7 +208,7 @@ function another() {
             <input id="o-date" v-model="order.date" type="date" class="input" />
           </div>
           <div class="col-span-2">
-            <label class="label" for="o-acc">Account (tuỳ chọn)</label>
+            <label class="label" for="o-acc">Tài khoản (tuỳ chọn)</label>
             <input id="o-acc" v-model="order.account" class="input" />
           </div>
         </div>
@@ -287,11 +287,11 @@ function another() {
             <!-- Design mặt trước + Mockup bắt buộc (luật import 13/11/2026). Không đặt
                  `required` HTML: để trống vẫn bấm được, để test đúng lỗi đỏ của Import. -->
             <div class="col-span-2">
-              <label class="label" :for="`i-front-${i}`">Design mặt trước (link hoặc mã) <span class="text-rose-600 dark:text-rose-400">*</span></label>
+              <label class="label" :for="`i-front-${i}`">Thiết kế mặt trước (link hoặc mã) <span class="text-rose-600 dark:text-rose-400">*</span></label>
               <input :id="`i-front-${i}`" v-model="it.frontDesign" class="input" placeholder="https://…" />
             </div>
             <div class="col-span-2">
-              <label class="label" :for="`i-back-${i}`">Design mặt sau (nếu in 2 mặt)</label>
+              <label class="label" :for="`i-back-${i}`">Thiết kế mặt sau (nếu in 2 mặt)</label>
               <input :id="`i-back-${i}`" v-model="it.backDesign" class="input" placeholder="https://…" />
             </div>
             <div class="col-span-2">

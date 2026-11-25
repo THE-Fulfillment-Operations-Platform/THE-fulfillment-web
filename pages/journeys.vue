@@ -733,7 +733,7 @@ async function copyAddress() {
                 >
                   <UiSpinner v-if="syncing" :size="16" />
                   <UiIcon v-else name="refresh" :size="16" />
-                  Tra tracking
+                  Tra vận đơn
                 </button>
               </div>
             </template>

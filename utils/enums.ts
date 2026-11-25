@@ -82,8 +82,8 @@ export function cancelStageLabel(stage?: CancelStage): string {
 
 // ---- Design status ---------------------------------------------------------
 export const DESIGN_STATUS: Record<DesignStatus, BadgeMeta> = {
-  PENDING: { label: 'Chờ design', classes: 'bg-muted text-muted-foreground' },
-  IN_PROGRESS: { label: 'Đang design', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
+  PENDING: { label: 'Chờ thiết kế', classes: 'bg-muted text-muted-foreground' },
+  IN_PROGRESS: { label: 'Đang thiết kế', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
   READY: { label: 'Sẵn sàng', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
   MISSING: { label: 'Thiếu file', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
 }

@@ -335,8 +335,8 @@ function rowBatches(it: OrderItem): ItemBatch[] {
 const emptyText = computed(() => {
   const code = itemBatchFilterParams(filters.batch).batch
   return code
-    ? `Không có item nào khớp bộ lọc. Ô Batch ID khớp đúng mã batch như màn Batch (vd #102909); lọc theo id nội bộ thì gõ “id ${code}”.`
-    : 'Không có item nào khớp bộ lọc.'
+    ? `Không có sản phẩm nào khớp bộ lọc. Ô Mã batch khớp đúng mã batch như màn Batch (vd #102909); lọc theo id nội bộ thì gõ “id ${code}”.`
+    : 'Không có sản phẩm nào khớp bộ lọc.'
 })
 
 // ---- Chọn nhiều + xoá đơn (Admin/Owner) --------------------------------------
@@ -451,7 +451,7 @@ function statusLabel(it: OrderItem): string {
 function exportItems() {
   const rows = items.value
   if (!rows.length) {
-    toast.info('Không có item nào để xuất.')
+    toast.info('Không có sản phẩm nào để xuất.')
     return
   }
   // Exports the rows currently loaded (this page). Increase rows-per-page to
@@ -459,8 +459,8 @@ function exportItems() {
   const rowNo = new Map(rows.map((it, i) => [it.id, rowNumber(i)]))
   exportCsv(`orders-items-${new Date().toISOString().slice(0, 10)}`, rows, [
     { label: 'STT', value: (it) => rowNo.get(it.id) },
-    { label: 'Internal Item', value: 'internal_code' },
-    { label: 'Store Order', value: (it) => itemStoreOrderId(it) },
+    { label: 'Mã sản phẩm', value: 'internal_code' },
+    { label: 'Mã đơn shop', value: (it) => itemStoreOrderId(it) },
     { label: 'Seller', value: (it) => itemSellerName(it) },
     { label: 'Trùng StoreOrderID', value: (it) => (itemStoreOrderDup(it) ? 'Có' : '') },
     { label: 'SKU', value: 'sku_code' },
@@ -491,8 +491,8 @@ function exportItems() {
 <template>
   <div>
     <PageHeader
-      title="Orders / Items"
-      subtitle="Góc nhìn item-level — sản xuất/QC/packing chạy theo từng sản phẩm"
+      title="Đơn hàng / Sản phẩm"
+      subtitle="Xem theo từng sản phẩm — sản xuất, QC, đóng gói chạy theo từng sản phẩm"
     >
       <template #actions>
         <button
@@ -508,7 +508,7 @@ function exportItems() {
           v-if="auth.isTechnician"
           class="btn-secondary"
           :disabled="exportingImport"
-          title="Xuất mọi sản phẩm khớp bộ lọc (mọi trang) theo đúng mẫu Import đơn — sửa rồi import lại được"
+          title="Xuất mọi sản phẩm khớp bộ lọc (mọi trang) theo đúng mẫu Import đơn — sửa rồi nhập lại được"
           @click="exportAsImport"
         >
           <UiSpinner v-if="exportingImport" :size="16" />
@@ -535,7 +535,7 @@ function exportItems() {
           />
         </div>
         <div>
-          <label class="label">Store Order ID</label>
+          <label class="label">Mã đơn shop</label>
           <input v-model="filters.store_order_id" class="input" placeholder="Etsy-7821…" @keyup.enter="applyFilters" />
         </div>
         <div>
@@ -543,7 +543,7 @@ function exportItems() {
           <input v-model="filters.sku" class="input" placeholder="WOOD-01" @keyup.enter="applyFilters" />
         </div>
         <div>
-          <label class="label">Internal code (item)</label>
+          <label class="label">Mã nội bộ (sản phẩm)</label>
           <input v-model="filters.internal_code" class="input" placeholder="100035_1/5" @keyup.enter="applyFilters" />
         </div>
         <div>
@@ -556,11 +556,11 @@ function exportItems() {
           <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="NVL" />
         </div>
         <div>
-          <label class="label">Duyệt (review)</label>
+          <label class="label">Duyệt</label>
           <UiSelect v-model="filters.review_status" :options="reviewStatusOptions" aria-label="Trạng thái duyệt" />
         </div>
         <div>
-          <label class="label">Batch ID</label>
+          <label class="label">Mã batch</label>
           <!-- Mã batch như màn Batch hiện (#102909 hoặc 102909), khớp đúng mã.
                Lọc theo id nội bộ: gõ rõ "id 1909". -->
           <input
@@ -635,8 +635,8 @@ function exportItems() {
                   />
                 </th>
                 <th class="table-th w-12">STT</th>
-                <th class="table-th">Internal Item</th>
-                <th class="table-th hidden md:table-cell">Store Order / Seller</th>
+                <th class="table-th">Mã sản phẩm</th>
+                <th class="table-th hidden md:table-cell">Mã đơn shop / Seller</th>
                 <th class="table-th">
                   <button class="inline-flex items-center gap-1 hover:text-foreground" @click="toggleSort('sku')">
                     SKU <span class="text-[10px] opacity-70">{{ sortIcon('sku') }}</span>
@@ -648,7 +648,7 @@ function exportItems() {
                   </button>
                 </th>
                 <th class="table-th hidden lg:table-cell">NVL</th>
-                <th class="table-th hidden lg:table-cell">Design</th>
+                <th class="table-th hidden lg:table-cell">Thiết kế</th>
                 <th class="table-th hidden lg:table-cell">Mockup</th>
                 <th class="table-th hidden md:table-cell">Batch</th>
                 <th class="table-th hidden lg:table-cell">
@@ -657,7 +657,7 @@ function exportItems() {
                   </button>
                 </th>
                 <th class="table-th">Trạng thái</th>
-                <th class="table-th hidden md:table-cell">Tracking</th>
+                <th class="table-th hidden md:table-cell">Vận đơn</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
@@ -690,12 +690,12 @@ function exportItems() {
                   <!-- Huy hiệu (Làm lại / Trùng) được xuống dòng dưới mã, không đẩy rộng cột. -->
                   <div class="max-w-[9rem] whitespace-normal">
                   {{ it.internal_code }}
-                  <!-- Sản phẩm từng QC fail: nói ngay đang ở lần sản xuất thứ mấy,
+                  <!-- Sản phẩm từng QC không đạt: nói ngay đang ở lần sản xuất thứ mấy,
                        để không ai tưởng đơn "biến mất" khi nó rời batch cũ. -->
                   <span
                     v-if="(it.rework_count ?? 0) > 0"
                     class="ml-1.5 inline-flex items-center whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                    :title="`QC fail ${it.rework_count} lần — đang làm lại (lần sản xuất thứ ${(it.rework_count ?? 0) + 1})`"
+                    :title="`QC không đạt ${it.rework_count} lần — đang làm lại (lần sản xuất thứ ${(it.rework_count ?? 0) + 1})`"
                   >
                     Làm lại ×{{ it.rework_count }}
                   </span>

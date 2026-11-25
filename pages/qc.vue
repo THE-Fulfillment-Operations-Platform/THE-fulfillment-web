@@ -369,13 +369,13 @@ function pass() {
         // SP cuối: giỏ đủ — hiện số giỏ to, hướng dẫn đi nhặt + quét xác nhận.
         showBasket({ ...basket, passed_items: basket.total_items, status: 'FULL' }, 'full')
       } else if (basket) {
-        toast.success(`${item.item_code} đã QC PASS → bỏ vào GIỎ #${basket.number}`)
+        toast.success(`${item.item_code} đã QC đạt → bỏ vào GIỎ #${basket.number}`)
       } else {
-        toast.success(`${item.item_code} đã QC PASS → Đã QC`)
+        toast.success(`${item.item_code} đã QC đạt → Đã QC`)
       }
     })
     .catch((e) =>
-      toast.error(`${item.item_code}: CHƯA lưu được QC PASS — ${errorMessage(e)}. Quét lại mã này.`),
+      toast.error(`${item.item_code}: CHƯA lưu được QC đạt — ${errorMessage(e)}. Quét lại mã này.`),
     )
     .finally(() => {
       const i = pending.value.indexOf(item.item_code)
@@ -427,7 +427,7 @@ async function submitUndo() {
     const itemId = result.value.item_id
     const itemCode = result.value.item_code
     const { data } = await qcApi.undo({ item_id: itemId, reason: undoReason.value.trim() || undefined })
-    toast.success(`${itemCode}: đã hạ QC (${data.parts} phần NVL về “Đã cắt”) — QC lại rồi PASS.`)
+    toast.success(`${itemCode}: đã hạ QC (${data.parts} phần NVL về “Đã cắt”) — QC lại rồi bấm Đạt.`)
     undoOpen.value = false
     // Quét lại chính sản phẩm đó: trạm phải hiện trạng thái mới ngay, người QC
     // đang cầm hàng trên tay và sắp bấm PASS lại.
@@ -497,7 +497,7 @@ async function submitRework() {
       .filter((b) => !b.scrapped && planned.some((p) => p.material_code === b.material_code))
       .map((b) => `${b.material_code} lần ${b.attempt ?? '?'}`)
     toast.success(
-      `${itemCode}: đã ghi nhận phần in lẻ (${made.join(', ') || 'phần mới'}) — đối chiếu mockup rồi PASS.`,
+      `${itemCode}: đã ghi nhận phần in lẻ (${made.join(', ') || 'phần mới'}) — đối chiếu mockup rồi bấm Đạt.`,
     )
     // Tải lại màn đơn cho đúng chặng sản xuất (về "Đã cắt"). Chip vẫn là "Đang làm
     // lại" (rework_count > 0 và chưa QC) cho tới khi PASS — đúng, nó vẫn là hàng làm lại.
@@ -559,7 +559,7 @@ onMounted(focusScan)
   <div>
     <PageHeader
       title="Quét QC"
-      :subtitle="result ? undefined : 'Quét mã đơn → xem các sản phẩm trong đơn → bấm từng sản phẩm, đối chiếu mockup → PASS/FAIL. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành.'"
+      :subtitle="result ? undefined : 'Quét mã đơn → xem các sản phẩm trong đơn → bấm từng sản phẩm, đối chiếu mockup → ĐẠT / KHÔNG ĐẠT. QC 1 lần cho cả sản phẩm (mọi NVL), làm khi sản phẩm đã hoàn thành.'"
     />
 
     <!-- Scan bar -->
@@ -568,7 +568,7 @@ onMounted(focusScan)
     <div class="card" :class="result ? 'mb-3 p-3' : 'mb-5 p-4'">
       <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="scan">
         <div class="flex-1">
-          <label class="label" :class="result ? 'sr-only' : ''" for="qc-scan">Mã đơn / mã item</label>
+          <label class="label" :class="result ? 'sr-only' : ''" for="qc-scan">Mã đơn / mã sản phẩm</label>
           <input
             id="qc-scan"
             ref="scanInput"
@@ -590,7 +590,7 @@ onMounted(focusScan)
       <!-- PASS ghi ở nền nên trạm trống ngay; dòng này để việc đang chạy không vô hình. -->
       <p v-if="pending.length" class="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <UiSpinner :size="14" />
-        Đang lưu QC PASS: <span class="font-mono">{{ pending.join(', ') }}</span>
+        Đang lưu QC đạt: <span class="font-mono">{{ pending.join(', ') }}</span>
       </p>
     </div>
 
@@ -673,7 +673,7 @@ onMounted(focusScan)
           <UiIcon name="alert" :size="18" /> Đơn có ghi chú
         </p>
         <p class="mt-2 whitespace-pre-line break-words text-xl font-semibold leading-snug text-amber-900 dark:text-amber-100">{{ order.order_note }}</p>
-        <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">Mở từng sản phẩm để QC sẽ phải bấm “Đã đọc ghi chú” trước khi PASS.</p>
+        <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">Mở từng sản phẩm để QC sẽ phải bấm “Đã đọc ghi chú” trước khi bấm Đạt.</p>
       </div>
 
       <div v-if="!order.items.length" class="card py-10 text-center text-sm text-muted-foreground">
@@ -718,7 +718,7 @@ onMounted(focusScan)
       <div class="rounded-full bg-muted p-4">
         <UiIcon name="qc" :size="32" />
       </div>
-      <p class="text-sm">Quét một mã đơn (hoặc mã item) để bắt đầu kiểm tra QC.</p>
+      <p class="text-sm">Quét một mã đơn (hoặc mã sản phẩm) để bắt đầu kiểm tra QC.</p>
     </div>
 
     <!-- QC comparison -->
@@ -751,7 +751,7 @@ onMounted(focusScan)
           />
           <div v-else class="flex flex-col items-center gap-2 text-center text-slate-300">
             <UiIcon name="alert" :size="28" />
-            <p v-if="!isValidUrl(result.mockup_url)" class="text-sm">Item này chưa có mockup — không thể đối chiếu.</p>
+            <p v-if="!isValidUrl(result.mockup_url)" class="text-sm">Sản phẩm này chưa có mockup — không thể đối chiếu.</p>
             <template v-else>
               <p class="text-sm">Ảnh mockup không tải được — link không phải ảnh trực tiếp.</p>
               <UiMockupLink :url="result.mockup_url" small label="Mở mockup ở tab mới" />
@@ -774,9 +774,9 @@ onMounted(focusScan)
           <div class="min-w-0 flex-1 text-sm text-foreground">
             <p v-if="alreadyQC" class="font-semibold">Sản phẩm này đã QC — hàng của đơn ở giỏ #{{ itemBasket.number }}.</p>
             <p v-else-if="isLastOfOrder" class="text-base font-bold">
-              Sản phẩm CUỐI của đơn — PASS xong giỏ #{{ itemBasket.number }} tự xoá; cầm sản phẩm ra giỏ, lấy đủ {{ itemBasket.total_items }} sản phẩm bó lại.
+              Sản phẩm CUỐI của đơn — Đạt xong giỏ #{{ itemBasket.number }} tự xoá; cầm sản phẩm ra giỏ, lấy đủ {{ itemBasket.total_items }} sản phẩm bó lại.
             </p>
-            <p v-else class="text-base font-bold">Hàng của đơn đang ở giỏ #{{ itemBasket.number }} — PASS xong bỏ vào giỏ này.</p>
+            <p v-else class="text-base font-bold">Hàng của đơn đang ở giỏ #{{ itemBasket.number }} — Đạt xong bỏ vào giỏ này.</p>
             <p class="mt-1 text-xs text-muted-foreground">
               Đơn {{ basketInfo?.passed_items }}/{{ basketInfo?.total_items }} sản phẩm đã QC đạt ·
               <button type="button" class="font-medium text-primary hover:underline" @click="reprintBasket(itemBasket)">In lại tem giỏ</button>
@@ -789,7 +789,7 @@ onMounted(focusScan)
         >
           <div class="min-w-0 text-sm text-foreground">
             <p class="font-bold">Đơn có {{ basketInfo?.total_items }} sản phẩm — mới QC đạt {{ basketInfo?.passed_items }}</p>
-            <p class="text-xs text-muted-foreground">Đơn chưa có giỏ chờ. Cần gom hàng thì bấm <b>Tạo giỏ chờ</b> (lấy số trống thấp nhất, hiện tem giỏ để in) — PASS không tự tạo giỏ.</p>
+            <p class="text-xs text-muted-foreground">Đơn chưa có giỏ chờ. Cần gom hàng thì bấm <b>Tạo giỏ chờ</b> (lấy số trống thấp nhất, hiện tem giỏ để in) — Đạt không tự tạo giỏ.</p>
           </div>
           <button v-if="canJudge && basketInfo" class="btn-secondary" :disabled="creatingBasket" @click="createBasket(basketInfo.order_id)">
             <UiSpinner v-if="creatingBasket" :size="14" /><UiIcon v-else name="box" :size="16" /> Tạo giỏ chờ
@@ -907,7 +907,7 @@ onMounted(focusScan)
 
           <!-- File in/cắt & link design — hiển thị link nào có, bỏ qua link trống -->
           <div class="mt-3 border-t border-border pt-2">
-            <p class="label">File &amp; Design</p>
+            <p class="label">File &amp; thiết kế</p>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
               <a v-if="result.design_url" :href="result.design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Design (mặt trước)</a>
               <a v-if="result.back_design_url" :href="result.back_design_url" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline"><UiIcon name="link" :size="13" /> Design (mặt sau)</a>
@@ -956,7 +956,7 @@ onMounted(focusScan)
           >
             <UiIcon name="check" :size="18" class="mt-0.5 shrink-0" />
             <div>
-              <p class="font-semibold">Item này đã QC rồi</p>
+              <p class="font-semibold">Sản phẩm này đã QC rồi</p>
               <p class="mt-0.5 text-xs text-emerald-700/90 dark:text-emerald-300/90">
                 Không cần quét lại. Quay về đơn hoặc quét mã khác để tiếp tục.
               </p>
@@ -977,7 +977,7 @@ onMounted(focusScan)
           </div>
 
           <!-- Đã FAIL QC, phần cũ đã huỷ và chưa có phần mới: nói rõ ngay lúc quét
-               hai đường để QC lại (gom batch mới / in lẻ), thay vì để PASS mở rồi
+               hai đường để QC lại (gom batch mới / in lẻ), thay vì để nút Đạt mở rồi
                server văng lỗi. -->
           <div
             v-if="awaitingRework && !alreadyQC"
@@ -987,7 +987,7 @@ onMounted(focusScan)
             <UiIcon name="alert" :size="18" class="mt-0.5 shrink-0" />
             <div class="min-w-0 flex-1">
               <p class="font-semibold">
-                Sản phẩm này đã FAIL QC, phần sản xuất cũ đã huỷ<template v-if="lastScrapReason"> ({{ lastScrapReason }})</template>.
+                Sản phẩm này đã QC không đạt, phần sản xuất cũ đã huỷ<template v-if="lastScrapReason"> ({{ lastScrapReason }})</template>.
               </p>
               <p class="mt-0.5 text-xs">
                 Để QC lại: gom batch mới → Đã in → Đã cắt rồi quét lại tem cũ, hoặc bấm “Làm lại tại chỗ” nếu đã in lẻ xong.
@@ -1014,16 +1014,16 @@ onMounted(focusScan)
           </div>
 
           <p v-if="!canJudge" class="rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-            Tài khoản chỉ có quyền xem ở trạm QC — quét để tra thông tin, không bấm Pass / Fail được.
+            Tài khoản chỉ có quyền xem ở trạm QC — quét để tra thông tin, không bấm Đạt / Không đạt được.
           </p>
           <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               class="btn-success"
               :disabled="alreadyQC || notProducedYet || awaitingRework || mustAckNote"
-              :title="alreadyQC ? 'Item đã QC rồi' : (awaitingRework ? 'Phần sản xuất cũ đã huỷ (QC fail) — gom batch mới hoặc bấm “Làm lại tại chỗ” trước' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : '')))"
+              :title="alreadyQC ? 'Sản phẩm đã QC rồi' : (awaitingRework ? 'Phần sản xuất cũ đã huỷ (QC không đạt) — gom batch mới hoặc bấm “Làm lại tại chỗ” trước' : (notProducedYet ? 'Còn NVL chưa cắt xong' : (mustAckNote ? 'Đọc ghi chú đơn và bấm “Đã đọc ghi chú” trước' : '')))"
               @click="pass"
             >
-              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'PASS — Đã QC' }}
+              <UiIcon name="check" :size="16" /> {{ alreadyQC ? 'Đã QC' : 'ĐẠT — Đã QC' }}
             </button>
             <button
               class="btn-danger"
@@ -1031,7 +1031,7 @@ onMounted(focusScan)
               :title="noLivePartLeft ? 'Phần cũ đã huỷ rồi — gom batch mới hoặc Làm lại tại chỗ trước' : (alreadyQC ? 'Sản phẩm đã QC — ghi lỗi sẽ huỷ phần đã sản xuất và trả về làm lại' : '')"
               @click="openFail"
             >
-              <UiIcon name="alert" :size="16" /> FAIL — Ghi lỗi
+              <UiIcon name="alert" :size="16" /> KHÔNG ĐẠT — Ghi lỗi
             </button>
           </div>
           <!-- Bấm nhầm PASS thì hàng vẫn tốt: mở lại cổng, đừng huỷ hàng. -->
@@ -1056,18 +1056,18 @@ onMounted(focusScan)
     <UiModal v-model="failOpen" title="Ghi nhận lỗi QC">
       <div class="space-y-3">
         <p class="text-sm text-foreground">
-          Item <span class="font-mono font-semibold">{{ result?.item_code }}</span>: phần đã sản xuất
-          sẽ bị huỷ (vẫn lưu ở batch cũ để truy vết), hệ thống mở note theo dõi và trả sản phẩm về để
+          Sản phẩm <span class="font-mono font-semibold">{{ result?.item_code }}</span>: phần đã sản xuất
+          sẽ bị huỷ (vẫn lưu ở batch cũ để truy vết), hệ thống mở ghi chú theo dõi và trả sản phẩm về để
           làm lại.
         </p>
         <div
           v-if="alreadyQC"
           class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
         >
-          <p class="font-semibold">Sản phẩm này đã QC PASS rồi.</p>
+          <p class="font-semibold">Sản phẩm này đã QC đạt rồi.</p>
           <p class="mt-0.5">
             Ghi lỗi ở đây là huỷ hàng thật: phần được chọn bị huỷ, các phần NVL còn lại của sản phẩm
-            được hạ khỏi “đã QC”, và đây tính là một lần làm lại. Nếu chỉ là BẤM NHẦM PASS thì đóng
+            được hạ khỏi “đã QC”, và đây tính là một lần làm lại. Nếu chỉ là BẤM NHẦM ĐẠT thì đóng
             hộp thoại này và dùng “Hạ QC”.
           </p>
         </div>
@@ -1106,10 +1106,10 @@ onMounted(focusScan)
         <p class="text-sm text-foreground">
           Sản phẩm <span class="font-mono font-semibold">{{ result?.item_code }}</span> sẽ quay về
           “Đã cắt” để QC lại. Không tấm nào bị huỷ, không tính là một lần làm lại, không đụng tới
-          file design.
+          file thiết kế.
         </p>
         <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-          Chỉ dùng khi hàng VẪN TỐT và chỉ là bấm nhầm. Hàng hỏng thật thì dùng “FAIL — Ghi lỗi”
+          Chỉ dùng khi hàng VẪN TỐT và chỉ là bấm nhầm. Hàng hỏng thật thì dùng “KHÔNG ĐẠT — Ghi lỗi”
           (một sản phẩm) hoặc “Huỷ batch” ở màn batch (cả tấm) — nếu không, tấm hỏng sẽ không được
           ghi nhận ở đâu cả.
         </div>
@@ -1150,8 +1150,8 @@ onMounted(focusScan)
         </ul>
         <ul class="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           <li>Sản phẩm rời danh sách chờ gom batch của NVL này ngay.</li>
-          <li>Không tính thêm một lần làm lại (QC FAIL đã tính), không mở ghi chú mới — ghi chú QC fail đang mở tự đóng khi PASS.</li>
-          <li>Xong thì trạm hiện lại sản phẩm với PASS mở: đối chiếu mockup rồi PASS / FAIL như bình thường.</li>
+          <li>Không tính thêm một lần làm lại (QC không đạt đã tính), không mở ghi chú mới — ghi chú QC không đạt đang mở tự đóng khi bấm Đạt.</li>
+          <li>Xong thì trạm hiện lại sản phẩm với nút Đạt mở: đối chiếu mockup rồi ĐẠT / KHÔNG ĐẠT như bình thường.</li>
         </ul>
         <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
           Chỉ bấm khi tấm làm lại ĐÃ in và cắt xong, đang cầm trên tay. Chưa in thì để sản phẩm ở hàng chờ gom

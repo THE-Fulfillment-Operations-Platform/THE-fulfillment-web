@@ -909,9 +909,17 @@ export interface BatchItem {
   order_item?: OrderItem
 }
 
+export interface BatchSeller {
+  id: number
+  code: string
+  name: string
+}
+
 export interface Batch {
   id: number
   code: string
+  // Seller có hàng trong batch (API bỏ trùng, xếp theo tên). Danh sách batch và chi tiết đều có.
+  sellers?: BatchSeller[]
   material_id: number
   material_code?: string
   material_name?: string

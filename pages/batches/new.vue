@@ -193,7 +193,7 @@ async function createBatch() {
   const skuSummary = skuCodes.length <= 3 ? skuCodes.join(', ') : `${skuCodes.length} SKU`
   const message =
     `Batch NVL: ${activeMaterial.value.material_name} (${activeMaterial.value.material_code})\n` +
-    `Số item đã chọn: ${selectedCount.value}\n` +
+    `Số sản phẩm đã chọn: ${selectedCount.value}\n` +
     `Tổng sản phẩm: ${selectedProducts.value}\n` +
     `SKU: ${skuSummary}` +
     (willSplit.value ? `\nSẽ tạo ${splitGroups.value.length} batch (mỗi tấm một batch).` : '')
@@ -214,7 +214,7 @@ async function createBatch() {
           cancelText: 'Quay lại',
         }
       : {
-          title: 'Tạo Batch',
+          title: 'Tạo batch',
           message,
           tone: 'primary',
           confirmText: 'Tạo Batch',
@@ -240,7 +240,7 @@ async function createBatch() {
       created.length > 1
         ? `Đã tạo ${created.length} batch: ${created.map((b) => b.code).join(', ')}`
         : `Đã tạo batch ${created[0].code}`
-    toast.success(base + (skipped ? ` (bỏ qua ${skipped} item)` : ''))
+    toast.success(base + (skipped ? ` (bỏ qua ${skipped} sản phẩm)` : ''))
     // Một batch → mở luôn; nhiều batch → về danh sách, các batch mới nằm trên cùng.
     router.push(created.length === 1 ? `/batches/${created[0].id}` : '/batches')
   } catch (e) {
@@ -262,8 +262,8 @@ onMounted(() => {
       <NuxtLink to="/batches" class="text-sm text-primary hover:underline">← Về danh sách batch</NuxtLink>
     </div>
     <PageHeader
-      title="Tạo Batch theo nguyên vật liệu"
-      subtitle="SKU cố định theo material. Combo nhiều NVL: tạo batch riêng cho từng material với cùng item."
+      title="Tạo batch theo nguyên vật liệu"
+      subtitle="SKU cố định theo chất liệu. Combo nhiều NVL: tạo batch riêng cho từng chất liệu với cùng sản phẩm."
     />
 
     <!-- Material buckets -->
@@ -279,7 +279,7 @@ onMounted(() => {
           <p class="text-sm font-semibold text-foreground">{{ b.material_name }}</p>
           <p class="text-xs text-muted-foreground">{{ b.material_code }}</p>
           <p class="mt-2 text-2xl font-semibold text-primary">{{ b.item_count }}</p>
-          <p class="text-xs text-muted-foreground">item sẵn sàng</p>
+          <p class="text-xs text-muted-foreground">sản phẩm sẵn sàng</p>
         </button>
       </div>
     </UiStateBlock>
@@ -289,7 +289,7 @@ onMounted(() => {
       <div class="card overflow-hidden lg:col-span-2">
         <div class="flex items-center justify-between border-b border-border bg-muted px-4 py-2.5">
           <h3 class="text-sm font-semibold text-foreground">
-            Item NVL {{ activeMaterial.material_name }} (chưa vào batch)
+            Sản phẩm dùng NVL {{ activeMaterial.material_name }} (chưa vào batch)
           </h3>
           <span class="text-xs text-muted-foreground">Đã chọn {{ selectedIds.size }}/{{ items.length }}</span>
         </div>
@@ -304,7 +304,7 @@ onMounted(() => {
           :loading="itemsLoading"
           :error="itemsError"
           :empty="!itemsLoading && !itemsError && items.length === 0"
-          empty-text="Không còn sản phẩm nào chờ gom batch cho material này."
+          empty-text="Không còn sản phẩm nào chờ gom batch cho chất liệu này."
           @retry="fetchItems"
         >
           <div class="overflow-x-auto">
@@ -326,7 +326,7 @@ onMounted(() => {
                             ? 'Chọn tất cả (bỏ qua sản phẩm đã có phần ở NVL khác)'
                             : 'Chọn tất cả'
                       "
-                      aria-label="Chọn tất cả item"
+                      aria-label="Chọn tất cả sản phẩm"
                       @change="toggleAll"
                     />
                   </th>
@@ -353,12 +353,12 @@ onMounted(() => {
                   </td>
                   <td class="table-td font-medium text-foreground">
                     {{ it.internal_code }}
-                    <!-- Hàng làm lại sau QC fail: người gom batch cần thấy ngay để
+                    <!-- Hàng làm lại sau QC không đạt: người gom batch cần thấy ngay để
                          ưu tiên, vì khách đã chờ qua một lượt sản xuất hỏng. -->
                     <span
                       v-if="(it.rework_count ?? 0) > 0"
                       class="ml-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"
-                      :title="`Đã QC fail ${it.rework_count} lần — đây là lần sản xuất thứ ${(it.rework_count ?? 0) + 1}`"
+                      :title="`Đã QC không đạt ${it.rework_count} lần — đây là lần sản xuất thứ ${(it.rework_count ?? 0) + 1}`"
                     >
                       Làm lại · lần {{ (it.rework_count ?? 0) + 1 }}
                     </span>
@@ -391,7 +391,7 @@ onMounted(() => {
             <dt class="text-muted-foreground">Kích thước tấm</dt>
             <dd class="font-medium tabular-nums">{{ activeSheetHasSize ? formatDimMM(activeSheet?.length_mm, activeSheet?.width_mm) : 'Chưa khai' }}</dd>
           </div>
-          <div class="flex justify-between"><dt class="text-muted-foreground">Số item đã chọn</dt><dd class="font-medium">{{ selectedCount }}</dd></div>
+          <div class="flex justify-between"><dt class="text-muted-foreground">Số sản phẩm đã chọn</dt><dd class="font-medium">{{ selectedCount }}</dd></div>
           <div class="flex justify-between"><dt class="text-muted-foreground">Tổng sản phẩm</dt><dd class="font-medium">{{ selectedProducts }}</dd></div>
         </dl>
 
@@ -416,7 +416,7 @@ onMounted(() => {
           <ul class="mt-2 space-y-1 text-muted-foreground">
             <li v-for="(g, i) in splitGroups" :key="i" class="flex justify-between gap-2">
               <span class="truncate" :title="g.sku_codes.join(' + ')">#{{ i + 1 }} · <span class="text-foreground">{{ g.sku_codes.join(' + ') || '—' }}</span></span>
-              <span class="shrink-0 font-medium text-foreground">{{ g.product_count }} sp · {{ g.items.length }} item</span>
+              <span class="shrink-0 font-medium text-foreground">{{ g.product_count }} sp · {{ g.items.length }} sản phẩm</span>
             </li>
           </ul>
         </div>
@@ -428,10 +428,10 @@ onMounted(() => {
           class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"
         >
           <template v-if="!activeSheetHasSize">
-            NVL này chưa khai kích thước tấm (Master Data → NVL) và {{ unsizedCount }}/{{ selectedCount }} item chưa có định mức khai cho cặp SKU – NVL: SKU đó thành một batch riêng, không chẻ dù bao nhiêu sản phẩm.
+            NVL này chưa khai kích thước tấm (Dữ liệu gốc → NVL) và {{ unsizedCount }}/{{ selectedCount }} sản phẩm chưa có định mức khai cho cặp SKU – NVL: SKU đó thành một batch riêng, không chẻ dù bao nhiêu sản phẩm.
           </template>
           <template v-else>
-            {{ unsizedCount }}/{{ selectedCount }} item chưa có định mức (chưa khai cho cặp SKU – NVL và SKU chưa có D x R để ước tính) — SKU đó thành một batch riêng không giới hạn.
+            {{ unsizedCount }}/{{ selectedCount }} sản phẩm chưa có định mức (chưa khai cho cặp SKU – NVL và SKU chưa có D x R để ước tính) — SKU đó thành một batch riêng không giới hạn.
           </template>
         </p>
 

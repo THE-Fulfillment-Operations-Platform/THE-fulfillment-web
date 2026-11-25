@@ -325,7 +325,7 @@ async function commit() {
                 <th class="table-th">Dòng</th>
                 <th class="table-th">Batch</th>
                 <th class="table-th">Chất liệu</th>
-                <th class="table-th">SL item</th>
+                <th class="table-th">SL sản phẩm</th>
                 <th class="table-th">Link hiện tại</th>
                 <th class="table-th">Link mới</th>
                 <th class="table-th">Kết quả</th>

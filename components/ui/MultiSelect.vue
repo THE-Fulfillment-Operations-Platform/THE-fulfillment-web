@@ -4,8 +4,10 @@
 // bảng chọn teleport ra <body>, vị trí fixed nên không bị bảng/modal cắt, tự lật
 // lên khi dưới hết chỗ; màn quá thấp thì phủ lên ô mà vẫn gọn trong khung nhìn.
 //
-//   - v-model là MẢNG giá trị; mảng rỗng = "Tất cả" (không lọc). Dòng "Tất cả" ở
-//     đầu bảng bỏ mọi lựa chọn.
+//   - v-model là MẢNG giá trị; mảng rỗng = "Tất cả" (không lọc). Tích hết mọi ô
+//     cũng phát ra mảng rỗng (= không lọc) nên tham số gửi API không đổi.
+//   - Chủ xưởng 25/11: bấm "Tất cả" thì MỌI ô con được tích; bỏ "Tất cả" thì bỏ hết;
+//     tích đủ từng ô thì "Tất cả" tự tích; bỏ một ô thì "Tất cả" mất tích.
 //   - Nút hiện: rỗng → allLabel; 1 mục → nhãn mục đó; nhiều → "3 đã chọn".
 //   - Tick nhiều mục rồi mới lọc một lần: sự kiện `change` bắn khi ĐÓNG bảng (bấm
 //     ra ngoài, Esc, Tab, nút Xong) và chỉ khi lựa chọn đã khác lúc mở.
@@ -56,6 +58,12 @@ const query = ref('')
 let openedWith = ''
 
 const selected = computed<T[]>(() => props.modelValue ?? [])
+// Mảng rỗng vừa là "xem tất cả" vừa là "chưa tích ô nào" khi người dùng vừa bỏ
+// "Tất cả": cờ này phân biệt hai trạng thái chỉ để VẼ ô tick (không đổi giá trị).
+const noneMode = ref(false)
+const enabledValues = computed(() => props.options.filter((o) => !o.disabled).map((o) => o.value))
+const allChecked = computed(() => !noneMode.value && (count.value === 0 || count.value >= enabledValues.value.length))
+const optChecked = (v: T) => (count.value === 0 ? !noneMode.value : isSelected(v))
 const selectedSet = computed(() => new Set(selected.value))
 const isSelected = (v: T) => selectedSet.value.has(v)
 const count = computed(() => selected.value.length)
@@ -126,6 +134,7 @@ function openMenu() {
   if (props.disabled || open.value) return
   open.value = true
   query.value = ''
+  noneMode.value = false
   openedWith = JSON.stringify(selected.value)
   const first = rows.value.findIndex((r) => r.kind === 'opt' && isSelected(r.o.value))
   activeIndex.value = first >= 0 ? first : 0
@@ -178,17 +187,27 @@ function setValue(next: T[]) {
 function toggleRow(r: Row | undefined) {
   if (!r || rowDisabled(r)) return
   if (r.kind === 'all') {
-    if (count.value) setValue([])
+    // Đang tích hết → bỏ hết (vẫn là không lọc, chỉ đổi cách vẽ); ngược lại → tích hết.
+    noneMode.value = allChecked.value
+    setValue([])
     return
   }
   const v = r.o.value
-  if (isSelected(v)) {
-    setValue(selected.value.filter((x) => x !== v))
+  // Tập đang tích: trạng thái "tất cả" nghĩa là mọi ô, "chưa tích" nghĩa là rỗng.
+  const base = count.value === 0 ? (noneMode.value ? [] : enabledValues.value) : selected.value
+  const next = new Set(base)
+  if (next.has(v)) next.delete(v)
+  else next.add(v)
+  // Giữ thứ tự của danh sách (nhãn trên nút, tham số gửi API ổn định); giá trị
+  // không còn trong danh sách (seller đã xoá…) rơi khỏi lựa chọn ở lần tick này.
+  const ordered = props.options.filter((o) => next.has(o.value)).map((o) => o.value)
+  if (ordered.length >= enabledValues.value.length) {
+    // Tích đủ mọi ô = không lọc.
+    noneMode.value = false
+    setValue([])
   } else {
-    // Giữ thứ tự của danh sách (nhãn trên nút, tham số gửi API ổn định); giá trị
-    // không còn trong danh sách (seller đã xoá…) rơi khỏi lựa chọn ở lần tick này.
-    const next = new Set([...selected.value, v])
-    setValue(props.options.filter((o) => next.has(o.value)).map((o) => o.value))
+    noneMode.value = ordered.length === 0
+    setValue(ordered)
   }
 }
 
@@ -340,7 +359,7 @@ onBeforeUnmount(detach)
               :key="r.kind === 'all' ? '__all__' : String(r.o.value)"
               :data-idx="i"
               role="option"
-              :aria-selected="r.kind === 'all' ? count === 0 : isSelected(r.o.value)"
+              :aria-selected="r.kind === 'all' ? allChecked : optChecked(r.o.value)"
               :aria-disabled="rowDisabled(r) || undefined"
               class="flex items-center gap-2 rounded-md px-2.5 py-1.5"
               :class="[
@@ -355,13 +374,13 @@ onBeforeUnmount(detach)
                    `rounded` của repo là 0.625rem — với ô 16px thành hình tròn. -->
               <span
                 class="flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors"
-                :class="(r.kind === 'all' ? count === 0 : isSelected(r.o.value))
+                :class="(r.kind === 'all' ? allChecked : optChecked(r.o.value))
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-input bg-card'"
                 aria-hidden="true"
               >
                 <UiIcon
-                  v-if="r.kind === 'all' ? count === 0 : isSelected(r.o.value)"
+                  v-if="r.kind === 'all' ? allChecked : optChecked(r.o.value)"
                   name="check"
                   :size="12"
                 />
@@ -371,7 +390,7 @@ onBeforeUnmount(detach)
               </template>
               <template v-else>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate" :class="isSelected(r.o.value) ? 'font-medium text-primary' : 'text-foreground'">{{ r.o.label }}</span>
+                  <span class="block truncate" :class="count > 0 && isSelected(r.o.value) ? 'font-medium text-primary' : 'text-foreground'">{{ r.o.label }}</span>
                   <span v-if="r.o.sublabel" class="block truncate text-xs text-muted-foreground">{{ r.o.sublabel }}</span>
                 </span>
                 <span v-if="r.o.hint" class="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">{{ r.o.hint }}</span>
@@ -384,7 +403,7 @@ onBeforeUnmount(detach)
 
           <div class="flex shrink-0 items-center justify-between gap-2 border-t border-border px-2.5 py-1.5" @mousedown.prevent>
             <span class="truncate text-xs text-muted-foreground" aria-live="polite">
-              {{ count ? `${count} đã chọn` : 'Chưa chọn — đang xem tất cả' }}
+              {{ count ? `${count} đã chọn` : noneMode ? 'Chưa tích — xem tất cả' : 'Đã tích tất cả — không lọc' }}
             </span>
             <button type="button" class="btn-secondary h-7 shrink-0 px-2.5 py-0 text-xs" @click="closeMenu()">Xong</button>
           </div>

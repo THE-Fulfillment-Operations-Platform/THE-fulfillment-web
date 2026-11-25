@@ -615,7 +615,7 @@ function issueDetail(it: TrackingImportIssue): string {
                    dòng dữ liệu cuộn XUYÊN QUA header dính-trên. z-10 giữ header
                    luôn nằm trên nội dung. -->
               <thead class="sticky top-0 z-10 [&_th]:bg-card">
-                <tr><th class="table-th">Order ID</th><th class="table-th">Lý do</th></tr>
+                <tr><th class="table-th">Mã đơn</th><th class="table-th">Lý do</th></tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-for="f in result.failed" :key="f.order_id">

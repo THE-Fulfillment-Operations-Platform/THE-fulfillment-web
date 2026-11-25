@@ -197,7 +197,7 @@ const updating = computed(() => pendingStatus.value !== null)
 const busyStep = ref(0)
 const busySubtitle = computed(() => {
   if (!batch.value) return ''
-  return `Batch ${batch.value.code} · ${items.value.length} item cập nhật theo.`
+  return `Batch ${batch.value.code} · ${items.value.length} sản phẩm cập nhật theo.`
 })
 
 async function setStatus(status: InternalStatus) {
@@ -228,7 +228,7 @@ async function chooseStatus(status: InternalStatus) {
   if (isPastStep(status)) {
     const ok = await useConfirm().confirm({
       title: 'Hạ trạng thái sản xuất',
-      message: `Batch đang ở "${INTERNAL_STATUS[batch.value.status].label}". Hạ về "${INTERNAL_STATUS[status].label}"? Chỉ dùng khi bấm nhầm — item đã QC sẽ không bị ảnh hưởng.`,
+      message: `Batch đang ở "${INTERNAL_STATUS[batch.value.status].label}". Hạ về "${INTERNAL_STATUS[status].label}"? Chỉ dùng khi bấm nhầm — sản phẩm đã QC sẽ không bị ảnh hưởng.`,
       tone: 'danger',
       confirmText: 'Hạ trạng thái',
     })
@@ -347,7 +347,7 @@ const packageState = computed<{ tone: 'locked' | 'missing' | 'ready'; text: stri
     }
   }
   const missing = missingProductionLinks.value
-  if (missing.length === 2) return { tone: 'missing', text: 'Chưa có bộ file sản xuất — đang chờ designer nộp.' }
+  if (missing.length === 2) return { tone: 'missing', text: 'Chưa có bộ file sản xuất — đang chờ thiết kế nộp.' }
   if (missing.length === 1) return { tone: 'missing', text: `Thiếu ${missing[0]} — cần đủ cả hai link mới sản xuất được.` }
   return { tone: 'ready', text: 'Đã đủ bộ file — batch sẵn sàng vào sản xuất.' }
 })
@@ -618,7 +618,7 @@ async function printLabels() {
             </div>
             <div class="info">
               ${r.seller_name ? `<div class="row"><span class="key">Seller</span><span class="val">${esc(r.seller_name)}</span></div>` : ''}
-              <div class="row"><span class="key">Order</span><span class="val">${esc(r.store_order_id || '—')}</span></div>
+              <div class="row"><span class="key">Mã đơn shop</span><span class="val">${esc(r.store_order_id || '—')}</span></div>
               <div class="row"><span class="key">Nhận</span><span class="val">${esc(r.shipping_name || '—')}</span></div>
               ${r.qc_description ? `<div class="desc">${esc(r.qc_description)}</div>` : ''}
             </div>
@@ -823,7 +823,7 @@ async function printLabels() {
               <h1 class="text-xl font-semibold text-foreground">
                 Batch {{ batch.code }}
                 <span class="ml-2 text-sm font-normal text-muted-foreground">
-                  Material: {{ batch.material_name || batch.material?.name || batch.material_code }}
+                  Chất liệu: {{ batch.material_name || batch.material?.name || batch.material_code }}
                 </span>
               </h1>
               <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -836,7 +836,7 @@ async function printLabels() {
                   <UiIcon name="alert" :size="13" /> Đã đóng
                 </span>
                 <span class="text-xs text-muted-foreground">
-                  {{ liveItemCount }} item
+                  {{ liveItemCount }} sản phẩm
                   <template v-if="batch.scrapped_count"> · {{ batch.scrapped_count }} đã huỷ</template>
                   <template v-if="liveItemCount"> · {{ stageCounts.NOT_HANDED }} chưa bàn giao</template>
                 </span>
@@ -859,11 +859,11 @@ async function printLabels() {
               </button>
               <button class="btn-secondary" :disabled="downloadingZip" @click="downloadBatchAssets">
                 <UiSpinner v-if="downloadingZip" :size="16" />
-                <UiIcon v-else name="box" :size="16" /> Download ZIP
+                <UiIcon v-else name="box" :size="16" /> Tải ZIP
               </button>
               <button class="btn-secondary" :disabled="downloadingDesignZip" @click="downloadBatchDesign">
                 <UiSpinner v-if="downloadingDesignZip" :size="16" />
-                <UiIcon v-else name="download" :size="16" /> Tải Design (ZIP)
+                <UiIcon v-else name="download" :size="16" /> Tải file thiết kế (ZIP)
               </button>
               <button
                 v-if="canScrap"
@@ -943,7 +943,7 @@ async function printLabels() {
                 {{ INTERNAL_STATUS[s].label }}
               </button>
               <span class="text-[11px] text-muted-foreground">
-                (cascade xuống item · QC làm 1 lần ở trạm QC{{ isOwner ? ' · OWNER được hạ để sửa nhầm' : '' }})
+                (áp xuống từng sản phẩm · QC làm 1 lần ở trạm QC{{ isOwner ? ' · OWNER được hạ để sửa nhầm' : '' }})
               </span>
             </div>
             <p
@@ -982,7 +982,7 @@ async function printLabels() {
             <div>
               <h3 class="text-sm font-semibold text-foreground">Bộ file sản xuất</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                Link in + link cắt nộp một lần cho cả batch, áp dụng cho toàn bộ {{ items.length }} item, gồm bảng bên dưới, file Excel và ZIP sản xuất.
+                Link in + link cắt nộp một lần cho cả batch, áp dụng cho toàn bộ {{ items.length }} sản phẩm, gồm bảng bên dưới, file Excel và ZIP sản xuất.
               </p>
             </div>
             <button v-if="canEditLinks" class="btn-primary shrink-0" @click="openPairModal">
@@ -1035,7 +1035,7 @@ async function printLabels() {
         <!-- Items (production template fields) -->
         <div class="card overflow-hidden">
           <div class="border-b border-border bg-muted px-4 py-2.5">
-            <h3 class="text-sm font-semibold text-foreground">Items trong batch (dữ liệu sản xuất)</h3>
+            <h3 class="text-sm font-semibold text-foreground">Sản phẩm trong batch (dữ liệu sản xuất)</h3>
           </div>
           <!-- Lọc theo chặng (cùng chip cột Trạng thái). STT là số của item nên
                không đổi khi lọc. Số đếm tính theo item, không theo cái. -->
@@ -1061,7 +1061,7 @@ async function printLabels() {
                 <tr>
                   <th class="table-th sticky left-0 z-20 bg-card">Mã nội bộ</th>
                   <!-- STT đứng ngay sau Mã nội bộ, xa cột SL — anh Kiên 10/11: thợ nhìn nhầm STT thành số lượng -->
-                  <th class="table-th" title="Số thứ tự của item trong batch, theo thứ tự tem QR và file Excel">STT</th>
+                  <th class="table-th" title="Số thứ tự của sản phẩm trong batch, theo thứ tự tem QR và file Excel">STT</th>
                   <th class="table-th">Seller</th>
                   <th class="table-th">Mã đơn shop</th>
                   <th class="table-th hidden sm:table-cell">SKU</th>
@@ -1077,7 +1077,7 @@ async function printLabels() {
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-if="!tableRows.length">
-                  <td colspan="13" class="table-td py-6 text-center text-sm text-muted-foreground">Không có item nào ở nhóm này.</td>
+                  <td colspan="13" class="table-td py-6 text-center text-sm text-muted-foreground">Không có sản phẩm nào ở nhóm này.</td>
                 </tr>
                 <tr v-for="(r, idx) in tableRows" :key="idx" class="group hover:bg-muted">
                   <td class="table-td sticky left-0 z-10 bg-card font-medium text-foreground group-hover:bg-muted">{{ r.display_code }}</td>
@@ -1139,7 +1139,7 @@ async function printLabels() {
       icon="batches"
       :title="pendingStatus ? `Đang chuyển batch sang “${INTERNAL_STATUS[pendingStatus].label}”` : 'Đang cập nhật batch…'"
       :subtitle="busySubtitle"
-      :steps="['Ghi trạng thái & cascade xuống item', 'Cập nhật lại bảng']"
+      :steps="['Ghi trạng thái xuống từng sản phẩm', 'Cập nhật lại bảng']"
       :active-step="busyStep"
     />
 

@@ -23,7 +23,7 @@ const { installed } = usePwaInstall()
         <UiIcon name="menu" :size="22" />
       </button>
       <span class="hidden truncate text-sm font-medium text-muted-foreground md:block">
-        BGDecor Fulfillment Operations Platform
+        BGDecor - Nền tảng điều hành xưởng
       </span>
       <span class="truncate text-sm font-semibold text-foreground md:hidden">BGDecor Fulfillment</span>
     </div>

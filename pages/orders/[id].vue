@@ -50,8 +50,8 @@ function designRefs(it: OrderItem): { label: string; value: string; isUrl: boole
   const back = (it.back_design_url ?? '').trim()
   const isUrl = (v: string) => /^https?:\/\//i.test(v)
   const out: { label: string; value: string; isUrl: boolean }[] = []
-  if (front) out.push({ label: back ? 'Design mặt trước' : 'Design', value: front, isUrl: isUrl(front) })
-  if (back) out.push({ label: 'Design mặt sau', value: back, isUrl: isUrl(back) })
+  if (front) out.push({ label: back ? 'Thiết kế mặt trước' : 'Thiết kế', value: front, isUrl: isUrl(front) })
+  if (back) out.push({ label: 'Thiết kế mặt sau', value: back, isUrl: isUrl(back) })
   return out
 }
 
@@ -76,7 +76,7 @@ const timeline = computed(() => {
   const allBatched = its.length > 0 && its.every((i) => (i.batch_items?.length ?? 0) > 0)
   const atLeast = (set: string[]) => its.length > 0 && its.every((i) => set.includes(i.internal_status))
   return [
-    { key: 'import', api: 'import', label: 'Import', done: true },
+    { key: 'import', api: 'import', label: 'Nhập đơn', done: true },
     // Không còn bước Design / set ready (23/10/2026): duyệt xong là vào gom batch.
     { key: 'review', api: 'approved', label: 'Đã duyệt', done: reviewStatus.value === 'APPROVED' },
     { key: 'batch', api: 'batched', label: 'Batch', done: allBatched },
@@ -347,7 +347,7 @@ async function submitTracking() {
       tracking_url: trackingForm.tracking_url,
     }
     await ordersApi.updateTracking(o.id, body)
-    toast.success('Đã cập nhật tracking')
+    toast.success('Đã cập nhật vận đơn')
     trackingOpen.value = false
     await reload()
     await loadJourney()
@@ -426,7 +426,7 @@ async function syncTracking() {
             <div>
               <h1 class="text-xl font-semibold text-foreground">{{ order.internal_code }}</h1>
               <p class="mt-1 text-sm text-muted-foreground">
-                Store Order: <span class="font-medium text-foreground">{{ order.store_order_id }}</span>
+                Mã đơn shop: <span class="font-medium text-foreground">{{ order.store_order_id }}</span>
                 <WarrantyBadge :seq="order.warranty_seq" class="ml-1.5" />
                 <span class="mx-2 text-muted-foreground">·</span>
                 {{ order.store_name }}
@@ -491,7 +491,7 @@ async function syncTracking() {
               class="btn-secondary"
               @click="openTracking"
             >
-              <UiIcon name="shipping" :size="16" /> Cập nhật tracking
+              <UiIcon name="shipping" :size="16" /> Cập nhật vận đơn
             </button>
             <button
               v-if="canCancel"
@@ -577,7 +577,7 @@ async function syncTracking() {
               </div>
 
               <div class="mt-3 flex flex-wrap items-center gap-4 border-t border-border pt-3 text-sm">
-                <UiMockupLink :url="it.mockup_url" label="Mockup seller" />
+                <UiMockupLink :url="it.mockup_url" label="Mockup của seller" />
                 <!-- File design seller gửi (mặt trước / mặt sau). Cột design có thể là
                      link hoặc chỉ là mã tham chiếu — mã thì in ra để copy, không làm link. -->
                 <template v-for="d in designRefs(it)" :key="d.label">
@@ -586,7 +586,7 @@ async function syncTracking() {
                   </a>
                   <span v-else class="text-xs text-muted-foreground">{{ d.label }}: <span class="select-all font-mono text-foreground">{{ d.value }}</span></span>
                 </template>
-                <span v-if="!designRefs(it).length" class="text-xs text-muted-foreground">Design: chưa có</span>
+                <span v-if="!designRefs(it).length" class="text-xs text-muted-foreground">Thiết kế: chưa có</span>
                 <a v-if="it.print_file_url" :href="it.print_file_url" target="_blank" class="inline-flex items-center gap-1 text-primary hover:underline">
                   <UiIcon name="link" :size="14" /> File in
                 </a>
@@ -613,7 +613,7 @@ async function syncTracking() {
             </div>
 
             <div v-if="order.note" class="card p-4">
-              <h3 class="mb-1 text-sm font-semibold text-foreground">Note xưởng</h3>
+              <h3 class="mb-1 text-sm font-semibold text-foreground">Ghi chú xưởng</h3>
               <p class="text-sm text-foreground">{{ order.note }}</p>
             </div>
           </div>
@@ -637,7 +637,7 @@ async function syncTracking() {
             <!-- Tracking (YC8) -->
             <div class="card p-4">
               <div class="mb-3 flex items-center justify-between gap-2">
-                <h3 class="text-sm font-semibold text-foreground">Vận chuyển / Tracking</h3>
+                <h3 class="text-sm font-semibold text-foreground">Vận chuyển / Vận đơn</h3>
                 <div class="flex items-center gap-3">
                   <button
                     v-if="canEditTracking && journeyEnabled"
@@ -651,7 +651,7 @@ async function syncTracking() {
                     @click="syncTracking"
                   >
                     <UiSpinner v-if="syncingTracking" :size="12" />
-                    Tra tracking
+                    Tra vận đơn
                   </button>
                   <button
                     v-if="canEditTracking"
@@ -697,7 +697,7 @@ async function syncTracking() {
                   rel="noopener"
                   class="mt-3 inline-flex items-center gap-1 text-sm text-primary hover:underline"
                 >
-                  <UiIcon name="link" :size="14" /> Mở tracking
+                  <UiIcon name="link" :size="14" /> Mở trang theo dõi vận đơn
                 </a>
                 <p v-if="order.tracking_updated_at" class="mt-3 text-xs text-muted-foreground">
                   Cập nhật lúc {{ formatDateTime(order.tracking_updated_at) }}
@@ -707,7 +707,7 @@ async function syncTracking() {
                 </p>
               </template>
               <template v-else>
-                <p class="text-sm text-muted-foreground">Chưa có thông tin tracking.</p>
+                <p class="text-sm text-muted-foreground">Chưa có thông tin vận đơn.</p>
                 <!-- Without a tracking number the sync becomes a lookup: it asks
                      24hTrack whether a parcel is tagged with this store order id. -->
                 <button
@@ -722,7 +722,7 @@ async function syncTracking() {
                   @click="syncTracking"
                 >
                   <UiSpinner v-if="syncingTracking" :size="16" />
-                  Tra tracking
+                  Tra vận đơn
                 </button>
                 <p v-if="canEditTracking && journeyEnabled && !handedOver" class="mt-2 text-xs text-muted-foreground">
                   Hành trình bắt đầu được lấy sau khi bàn giao cho THE ở màn Đóng gói.
@@ -768,7 +768,7 @@ async function syncTracking() {
               :to="`/notes?entity_type=ORDER&entity_id=${order.id}`"
               class="btn-secondary w-full"
             >
-              <UiIcon name="notes" :size="16" /> Notes liên quan
+              <UiIcon name="notes" :size="16" /> Ghi chú liên quan
             </NuxtLink>
           </div>
         </div>
@@ -778,7 +778,7 @@ async function syncTracking() {
           <div class="space-y-5">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div class="sm:col-span-2">
-                <label class="label">Store name</label>
+                <label class="label">Tên shop</label>
                 <input v-model="editForm.store_name" class="input" placeholder="Tên store" />
               </div>
               <div>
@@ -814,7 +814,7 @@ async function syncTracking() {
                 <input v-model="editForm.shipping_country" class="input" />
               </div>
               <div class="sm:col-span-2">
-                <label class="label">Note xưởng</label>
+                <label class="label">Ghi chú xưởng</label>
                 <textarea v-model="editForm.note" class="input" rows="2" />
               </div>
             </div>
@@ -833,11 +833,11 @@ async function syncTracking() {
                       <input v-model.number="it.quantity" type="number" min="1" class="input" />
                     </div>
                     <div>
-                      <label class="label">Design (mặt trước) <span class="text-rose-600 dark:text-rose-400">*</span></label>
+                      <label class="label">Thiết kế (mặt trước) <span class="text-rose-600 dark:text-rose-400">*</span></label>
                       <input v-model="it.design_url" class="input" placeholder="https://…" />
                     </div>
                     <div>
-                      <label class="label">Design (mặt sau)</label>
+                      <label class="label">Thiết kế (mặt sau)</label>
                       <input v-model="it.back_design_url" class="input" placeholder="https://…" />
                     </div>
                     <div class="sm:col-span-2">
@@ -897,11 +897,11 @@ async function syncTracking() {
         </UiModal>
 
         <!-- Tracking update (YC8) -->
-        <UiModal v-model="trackingOpen" title="Cập nhật tracking">
+        <UiModal v-model="trackingOpen" title="Cập nhật vận đơn">
           <div class="space-y-4">
             <div>
               <label class="label">Trạng thái</label>
-              <UiSelect v-model="trackingForm.tracking_status" :options="trackingStatusOptions" aria-label="Trạng thái tracking" />
+              <UiSelect v-model="trackingForm.tracking_status" :options="trackingStatusOptions" aria-label="Trạng thái vận đơn" />
             </div>
             <div>
               <label class="label">Mã vận đơn</label>
@@ -910,7 +910,7 @@ async function syncTracking() {
             <div>
               <!-- Link nội bộ, KHÔNG gửi sang màn seller: nó dẫn tới trang của
                    nhà cung cấp tracking, mở ra là thấy hãng vận chuyển thật. -->
-              <label class="label">Link tracking (nội bộ)</label>
+              <label class="label">Link theo dõi vận đơn (nội bộ)</label>
               <input v-model="trackingForm.tracking_url" class="input" placeholder="https://…" />
             </div>
           </div>

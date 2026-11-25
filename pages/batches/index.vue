@@ -38,7 +38,7 @@ const canDesignOps = computed(() => auth.can('batches.manage'))
 
 const filters = reactive({
   material_id: '',
-  // Ô Status và ô Seller chọn NHIỀU (chủ xưởng 22/11): mảng rỗng = Tất cả. Bản lưu
+  // Ô Trạng thái và ô Seller chọn NHIỀU (chủ xưởng 22/11): mảng rỗng = Tất cả. Bản lưu
   // cũ dạng chuỗi đơn tự thành mảng (usePersistedFilters).
   status: [] as string[],
   priority: '',
@@ -156,6 +156,19 @@ function skuCodes(b: Batch): string[] {
 }
 // Chữ hiện trong ô: cột SKU bị giới hạn bề rộng (xem <td> bên dưới) nên chỉ cần
 // danh sách đầy đủ — phần dài bị cắt bằng dấu …, rê chuột vào xem đủ (title).
+// Seller của batch: một batch có thể gom hàng của nhiều seller. Ô hiện tối đa 2 tên
+// ("A, B +2"), rê chuột thấy đủ (title). API đã bỏ trùng và xếp theo tên.
+const SELLER_SHOWN = 2
+const sellerName = (s: { name?: string; code?: string }) => s.name || s.code || ''
+function sellerSummary(b: Batch): string {
+  const list = (b.sellers ?? []).map(sellerName).filter(Boolean)
+  if (!list.length) return '—'
+  const head = list.slice(0, SELLER_SHOWN).join(', ')
+  return list.length > SELLER_SHOWN ? `${head} +${list.length - SELLER_SHOWN}` : head
+}
+function sellerFull(b: Batch): string {
+  return (b.sellers ?? []).map(sellerName).filter(Boolean).join(', ')
+}
 function skuSummary(b: Batch): string {
   const codes = skuCodes(b)
   return codes.length ? codes.join(', ') : '—'
@@ -198,15 +211,16 @@ function exportBatches() {
   }
   exportCsv(`batches-${new Date().toISOString().slice(0, 10)}`, list, [
     { label: 'Batch', value: 'code' },
-    { label: 'Material', value: (b) => batchMaterialLabel(b) },
+    { label: 'Chất liệu', value: (b) => batchMaterialLabel(b) },
     { label: 'Số lượng SP', value: (b) => batchProductTotal(b) ?? '' },
     { label: 'NVL cần (tấm)', value: (b) => batchMaterialUnits(b) ?? '' },
     { label: 'Đã huỷ', value: (b) => b.scrapped_count ?? 0 },
     { label: 'Tạo lúc', value: (b) => (b.created_at ? formatDateTime(b.created_at) : '') },
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
+    { label: 'Seller', value: (b) => sellerFull(b) },
     { label: 'SKU', value: (b) => skuSummary(b) },
-    { label: 'Status', value: (b) => batchStatusBadge(b).label },
-    { label: 'Priority', value: (b) => PRIORITY[b.priority || 'NORMAL']?.label ?? b.priority ?? '' },
+    { label: 'Trạng thái', value: (b) => batchStatusBadge(b).label },
+    { label: 'Ưu tiên', value: (b) => PRIORITY[b.priority || 'NORMAL']?.label ?? b.priority ?? '' },
     { label: 'Hạn', value: (b) => (b.due_date ? formatDate(b.due_date) : '') },
     { label: 'Trễ (ngày)', value: (b) => (isBatchOverdue(b) ? overdueDays(b) : '') },
     { label: 'Người tạo', value: (b) => b.created_by?.full_name || b.created_by?.email || '' },
@@ -255,7 +269,7 @@ async function autoCreateBatches() {
 
 <template>
   <div>
-    <PageHeader title="Batches" subtitle="Lệnh sản xuất theo nhóm nguyên vật liệu">
+    <PageHeader title="Batch sản xuất" subtitle="Lệnh sản xuất theo nhóm nguyên vật liệu">
       <template #actions>
         <button class="btn-secondary" :disabled="!rows.length" title="Xuất các batch đang hiển thị ra CSV" @click="exportBatches">
           <UiIcon name="upload" :size="16" /> Xuất CSV
@@ -287,7 +301,7 @@ async function autoCreateBatches() {
     <div class="card mb-4 p-4">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
         <div>
-          <label class="label">Batch ID</label>
+          <label class="label">Mã batch</label>
           <input v-model="filters.batch_id" class="input" placeholder="#101001" @keyup.enter="applyFilters" />
         </div>
         <!-- Tìm ngược từ đơn: nhập mã nội bộ đơn / mã tem là ra batch đang sản xuất nó. -->
@@ -313,20 +327,20 @@ async function autoCreateBatches() {
           />
         </div>
         <div>
-          <label class="label">Material</label>
-          <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="Material" @change="applyFilters" />
+          <label class="label">Chất liệu</label>
+          <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="Chất liệu" @change="applyFilters" />
         </div>
         <div>
           <label class="label">SKU</label>
           <input v-model="filters.sku" class="input" placeholder="WOOD-01" @keyup.enter="applyFilters" />
         </div>
         <div>
-          <label class="label">Status</label>
-          <UiMultiSelect v-model="filters.status" :options="statusOptions" aria-label="Status" @change="applyFilters" />
+          <label class="label">Trạng thái</label>
+          <UiMultiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái" @change="applyFilters" />
         </div>
         <div>
-          <label class="label">Priority</label>
-          <UiSelect v-model="filters.priority" :options="priorityOptions" aria-label="Priority" @change="applyFilters" />
+          <label class="label">Ưu tiên</label>
+          <UiSelect v-model="filters.priority" :options="priorityOptions" aria-label="Ưu tiên" @change="applyFilters" />
         </div>
         <div>
           <label class="label">Từ ngày</label>
@@ -374,12 +388,13 @@ async function autoCreateBatches() {
             <thead class="bg-muted">
               <tr>
                 <th class="table-th">Batch</th>
-                <th class="table-th">Material</th>
+                <th class="table-th">Chất liệu</th>
+                <th class="table-th" title="Seller có hàng trong batch">Seller</th>
                 <th class="table-th" title="Tổng số sản phẩm trong batch (cộng SL từng dòng)">Số lượng SP</th>
                 <th class="table-th" title="Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)">NVL</th>
-                <th class="table-th hidden lg:table-cell">SKU / Products</th>
-                <th class="table-th">Status</th>
-                <th class="table-th hidden sm:table-cell">Priority</th>
+                <th class="table-th hidden lg:table-cell">SKU / Sản phẩm</th>
+                <th class="table-th">Trạng thái</th>
+                <th class="table-th hidden sm:table-cell">Ưu tiên</th>
                 <th class="table-th hidden md:table-cell">Hạn</th>
                 <th class="table-th hidden xl:table-cell">Tạo lúc</th>
                 <th class="table-th hidden lg:table-cell">Người tạo</th>
@@ -406,6 +421,7 @@ async function autoCreateBatches() {
                   </div>
                 </td>
                 <td class="table-td">{{ batchMaterialLabel(b) }}</td>
+                <td class="table-td max-w-[12rem] truncate" :title="sellerFull(b) || undefined">{{ sellerSummary(b) }}</td>
                 <td class="table-td font-medium text-foreground">
                   {{ batchProductTotal(b) ?? '—' }}
                   <!-- Batch có thể còn 0 sản phẩm mà vẫn tồn tại: hàng nó làm ra đã
@@ -413,7 +429,7 @@ async function autoCreateBatches() {
                   <span
                     v-if="(b.scrapped_count ?? 0) > 0"
                     class="ml-1 text-[11px] font-normal text-rose-600 dark:text-rose-400"
-                    :title="`${b.scrapped_count} phần sản xuất của batch này đã bị huỷ (QC fail lẻ hoặc huỷ cả tấm) và đang được làm lại ở batch khác`"
+                    :title="`${b.scrapped_count} phần sản xuất của batch này đã bị huỷ (QC không đạt lẻ hoặc huỷ cả tấm) và đang được làm lại ở batch khác`"
                   >
                     ({{ b.scrapped_count }} huỷ)
                   </span>
@@ -423,7 +439,7 @@ async function autoCreateBatches() {
                     v-if="batchMaterialUnits(b) != null"
                     title="Số tấm NVL cần, theo định mức của từng cặp SKU – NVL (khai, chưa khai thì ước tính theo kích thước)"
                   >{{ batchMaterialUnits(b) }} tấm</span>
-                  <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Master Data — chưa tính được số tấm">—</span>
+                  <span v-else class="text-muted-foreground" title="Có sản phẩm hoặc NVL chưa khai kích thước trong Dữ liệu gốc (Master Data) — chưa tính được số tấm">—</span>
                 </td>
                 <td class="table-td hidden max-w-[9rem] truncate text-muted-foreground lg:table-cell" :title="skuSummary(b)">{{ skuSummary(b) }}</td>
                 <td class="table-td">

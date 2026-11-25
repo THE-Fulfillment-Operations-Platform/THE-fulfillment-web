@@ -24,7 +24,7 @@ const apiDocsUrl = useApiDocsUrl()
       <AppLogo variant="the" />
       <div class="min-w-0 leading-tight">
         <p class="truncate text-sm font-semibold text-foreground">BGDecor</p>
-        <p class="text-[11px] text-muted-foreground">Fulfillment Operations</p>
+        <p class="text-[11px] text-muted-foreground">Điều hành xưởng</p>
       </div>
       <!-- Close (mobile drawer only) -->
       <button

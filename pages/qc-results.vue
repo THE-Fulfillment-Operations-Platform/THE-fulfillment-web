@@ -126,7 +126,7 @@ function exportRows() {
     rows,
     [
       { label: 'Mã đơn', value: ({ o }) => o.internal_code },
-      { label: 'Store Order', value: ({ o }) => o.store_order_id },
+      { label: 'Mã đơn shop', value: ({ o }) => o.store_order_id },
       { label: 'Seller', value: ({ o }) => o.seller_name ?? '' },
       { label: 'Trạng thái đơn', value: ({ o }) => ORDER_STATUS[o.status].label },
       { label: 'Đạt / Tổng', value: ({ o }) => `${o.passed_items}/${o.total_items}` },
@@ -164,7 +164,7 @@ function exportRows() {
           { key: 'done', label: 'Đơn đã QC đủ', hint: 'sẵn sàng đóng gói', value: summary?.orders_done ?? 0, tone: 'emerald' },
           { key: 'partial', label: 'Đơn đạt một phần', hint: 'còn sản phẩm chưa QC', value: summary?.orders_partial ?? 0, tone: 'amber' },
           { key: 'none', label: 'Đơn chưa QC', hint: 'chưa sản phẩm nào đạt', value: summary?.orders_none ?? 0, tone: 'slate' },
-          { key: 'rework', label: 'Sản phẩm làm lại', hint: 'QC fail, đang sản xuất lại', value: summary?.items_rework ?? 0, tone: 'rose' },
+          { key: 'rework', label: 'Sản phẩm làm lại', hint: 'QC không đạt, đang sản xuất lại', value: summary?.items_rework ?? 0, tone: 'rose' },
         ]"
         :key="tile.key"
         class="card p-4 text-left transition-shadow hover:shadow-soft"
@@ -195,7 +195,7 @@ function exportRows() {
           <input
             v-model="filters.q"
             class="input"
-            placeholder="Mã đơn, Store Order ID, mã sản phẩm hoặc SKU…"
+            placeholder="Mã đơn, mã đơn shop, mã sản phẩm hoặc SKU…"
             @keyup.enter="applyFilters"
           />
         </div>
@@ -326,7 +326,7 @@ function exportRows() {
                       <span
                         v-if="it.rework_count > 0"
                         class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/20 dark:text-amber-200"
-                        :title="`QC fail ${it.rework_count} lần`"
+                        :title="`QC không đạt ${it.rework_count} lần`"
                       >
                         làm lại ×{{ it.rework_count }}
                       </span>
