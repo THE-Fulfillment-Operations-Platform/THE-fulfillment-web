@@ -5,7 +5,8 @@
 //
 // Token là chìa khoá ví: máy chủ lưu niêm phong, màn này chỉ thấy 4 ký tự cuối.
 import { carrierApi } from '~/services/api'
-import type { CarrierConfig, CarrierCheck } from '~/services/api'
+import type { CarrierConfig, CarrierCheck, THEServiceRules } from '~/services/api'
+import TheServiceRules from '~/components/settings/TheServiceRules.vue'
 import { errorMessage } from '~/utils/api-error'
 import { useToastStore } from '~/stores/toast'
 import { useConfirm } from '~/composables/useConfirm'
@@ -30,6 +31,26 @@ const form = reactive({
   value: '' as string | number,
 })
 
+// Bảng "loại hàng → dịch vụ" (#7783). Chỉ gửi lên khi đã sửa: lưu các ô khác
+// không được biến bảng mặc định thành bảng "đã lưu".
+const rules = ref<THEServiceRules | null>(null)
+const rulesBaseline = ref('')
+// So theo nội dung có tác dụng (bỏ tên dịch vụ chỉ để hiển thị).
+function canonRules(r: THEServiceRules | null): string {
+  if (!r) return ''
+  return JSON.stringify({
+    auto: r.auto,
+    unclassified: r.unclassified === 'block' ? 'block' : 'default',
+    groups: (r.groups ?? []).map((g) => ({
+      name: g.name.trim(),
+      service_code: g.service_code || '',
+      materials: g.materials ?? [],
+      hs_prefixes: g.hs_prefixes ?? [],
+    })),
+  })
+}
+const rulesDirty = computed(() => !!rules.value && canonRules(rules.value) !== rulesBaseline.value)
+
 function fill(c: CarrierConfig) {
   cfg.value = c
   form.token = ''
@@ -37,6 +58,8 @@ function fill(c: CarrierConfig) {
   form.phone = c.default_phone
   form.packaging = c.packaging_weight_g || ''
   form.value = c.default_declared_value || ''
+  rules.value = c.service_rules
+  rulesBaseline.value = canonRules(c.service_rules)
 }
 
 async function load() {
@@ -67,6 +90,7 @@ async function save(extra: { enabled?: boolean } = {}) {
       packaging_weight_g: num(form.packaging),
       // default_hs_code không gửi nữa: máy chủ giữ nguyên giá trị cũ, không dùng (#6312).
       default_declared_value: num(form.value),
+      service_rules: rulesDirty.value && rules.value ? rules.value : undefined,
       ...extra,
     })
     fill(data)
@@ -75,6 +99,25 @@ async function save(extra: { enabled?: boolean } = {}) {
   } catch (e) {
     toast.error(errorMessage(e))
     return false
+  } finally {
+    saving.value = false
+  }
+}
+
+async function resetRules() {
+  const ok = await useConfirm().confirm({
+    title: 'Về bảng mặc định',
+    message: 'Bỏ bảng đã lưu, dùng lại bảng mặc định: Mica và Gỗ → Standard Plus US (SPU), Thiệp → Postcard US (PCU), hàng khác → dịch vụ mặc định.',
+    confirmText: 'Về mặc định',
+  })
+  if (!ok) return
+  saving.value = true
+  try {
+    const { data } = await carrierApi.updateConfig({ reset_service_rules: true })
+    fill(data)
+    toast.success('Đã về bảng mặc định')
+  } catch (e) {
+    toast.error(errorMessage(e))
   } finally {
     saving.value = false
   }
@@ -172,9 +215,28 @@ const serviceOptions = computed(() => {
 
         <!-- Bước 2: dịch vụ -->
         <div class="sm:w-1/2 sm:pr-1">
-          <label class="label">Dịch vụ gửi</label>
-          <UiSelect v-model="form.service" :options="serviceOptions" aria-label="Dịch vụ THE" :placeholder="check ? 'Chọn dịch vụ…' : 'Kiểm tra kết nối để tải danh sách'" />
+          <label class="label">Dịch vụ mặc định</label>
+          <UiSelect v-model="form.service" :options="serviceOptions" aria-label="Dịch vụ THE mặc định" :placeholder="check ? 'Chọn dịch vụ…' : 'Kiểm tra kết nối để tải danh sách'" />
+          <p class="mt-1 text-[11px] text-muted-foreground">Dùng cho hàng chưa xếp loại, hoặc cho mọi đơn khi tắt tự chọn theo loại hàng.</p>
         </div>
+
+        <!-- #7783: thiệp → Postcard US, mica / gỗ → Standard Plus US, chọn theo từng đơn. -->
+        <details class="rounded-md border border-border" open>
+          <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-muted-foreground">
+            Dịch vụ theo loại hàng
+            <span v-if="rulesDirty" class="ml-1 text-amber-700 dark:text-amber-300">· chưa lưu</span>
+          </summary>
+          <div class="border-t border-border p-3">
+            <TheServiceRules
+              v-if="rules && cfg"
+              v-model="rules"
+              :default-service="form.service"
+              :services="check?.services ?? []"
+              :saved="cfg.service_rules_saved"
+              @reset="resetRules"
+            />
+          </div>
+        </details>
 
         <!-- Hải quan + tuỳ chọn: đặt một lần, gập lại cho khỏi rối -->
         <details class="rounded-md border border-border" :open="advancedOpen">

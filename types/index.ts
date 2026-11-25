@@ -1084,6 +1084,10 @@ export interface QcResultOrder {
   // SKU của đơn chưa có mã HS (cả SKU lẫn SKU cha đều trống): "Tạo label THE" sẽ
   // từ chối đơn tới khi khai (#6312). Chỉ có ở đơn chưa có label THE.
   missing_hs?: string[]
+  // Dịch vụ THE "Tạo label THE" sẽ chọn theo loại hàng (PCU/SPU…) và lý do; chỉ có
+  // khi kết nối THE đang bật và đơn chưa có label THE (#7783).
+  the_service?: string
+  the_service_reason?: string
 }
 
 // Quét MÃ ĐƠN ở trạm QC: đơn kèm trạng thái QC từng sản phẩm bên trong, để nhìn

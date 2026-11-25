@@ -153,6 +153,18 @@ const progress = ref<{ done: number; total: number } | null>(null)
 const readyIds = computed(() => (preflight.value?.orders ?? []).filter((o) => o.ready).map((o) => o.order_id))
 const blockedOrders = computed(() => (preflight.value?.orders ?? []).filter((o) => !o.ready))
 const paidAlready = computed(() => (preflight.value?.orders ?? []).filter((o) => o.already_paid).length)
+// #7783: dịch vụ THE từng đơn sẽ dùng (theo loại hàng) — hiện rõ TRƯỚC khi bấm tạo.
+const readyToCreate = computed(() => (preflight.value?.orders ?? []).filter((o) => o.ready && !o.already_paid && o.parcel))
+const serviceSummary = computed(() => {
+  const by = new Map<string, { code: string; name: string; count: number }>()
+  for (const o of readyToCreate.value) {
+    const code = o.parcel!.service?.service_code || '—'
+    const cur = by.get(code) ?? { code, name: o.parcel!.service?.service_name || '', count: 0 }
+    cur.count++
+    by.set(code, cur)
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count)
+})
 
 async function shipSelected() {
   const ids = selectedIds.value
@@ -405,6 +417,8 @@ interface ScanLogEntry {
   total?: number
   order_id?: number
   the_tracking?: string
+  /** Dịch vụ THE của label vừa tạo (PCU / SPU…). */
+  the_service?: string
   has_label?: boolean
   /** Đơn vừa quét có label ngoài (link từ Excel) — nút "In label ngoài". */
   ext_label?: boolean
@@ -446,7 +460,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
         internal_code: res?.internal_code, store_order_id: res?.store_order_id,
         handoff_code: res?.handoff_code, order_id: res?.order_id,
         exported: res?.exported, unfinished: res?.unfinished_items, total: res?.total_items,
-        the_tracking: res?.the?.tracking_code, has_label: res?.the?.has_label,
+        the_tracking: res?.the?.tracking_code, the_service: res?.the?.service_code, has_label: res?.the?.has_label,
         label_only: res?.label_only, already_exported: res?.already_exported,
         // Đọc từ danh sách ĐANG HIỆN (trước reload): đơn quét xong có thể rời trang.
         ext_label: !!orders.value.find((o) => o.order_id === res?.order_id)?.external_label_url,
@@ -590,7 +604,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
                   >còn {{ entry.unfinished }}/{{ entry.total }} SP chưa QC</span>
                 </template>
                 <template v-else>
-                  — {{ entry.label_only ? (entry.already_exported ? 'đã tạo label THE (đơn đã xuất kho)' : 'đã tạo label THE (chưa xuất kho)') : 'đã gửi' }}<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}</span>
+                  — {{ entry.label_only ? (entry.already_exported ? 'đã tạo label THE (đơn đã xuất kho)' : 'đã tạo label THE (chưa xuất kho)') : 'đã gửi' }}<span v-if="entry.the_tracking" class="font-mono text-xs"> · {{ entry.the_tracking }}<template v-if="entry.the_service"> · {{ entry.the_service }}</template></span>
                   <span v-else-if="entry.handoff_code" class="font-mono text-xs"> ({{ entry.handoff_code }})</span>
                 </template>
                 <button
@@ -811,6 +825,17 @@ function runScan(value: string, scanOpts: ShipOptions) {
                     class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
                     :title="`THE đã huỷ label ${o.the_cancelled} — bấm 1. Tạo label THE, dán đè label cũ rồi mới Xuất kho`"
                   >THE đã huỷ label — tạo lại</span>
+                  <!-- #7783: dịch vụ THE "Tạo label THE" sẽ chọn cho đơn này theo loại hàng. -->
+                  <span
+                    v-if="o.the_service"
+                    class="ml-1 inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200"
+                    :title="`Tạo label THE sẽ dùng dịch vụ ${o.the_service}: ${o.the_service_reason ?? ''}`"
+                  >THE: {{ o.the_service }}</span>
+                  <span
+                    v-else-if="o.the_service_reason"
+                    class="ml-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 font-sans text-[11px] font-semibold text-rose-800 dark:bg-rose-500/20 dark:text-rose-200"
+                    :title="o.the_service_reason"
+                  >Chưa chọn được dịch vụ THE</span>
                   <!-- #6312: SKU chưa có mã HS — "Tạo label THE" sẽ giữ đơn lại tới khi khai. -->
                   <template v-if="o.missing_hs?.length">
                     <NuxtLink
@@ -886,6 +911,7 @@ function runScan(value: string, scanOpts: ShipOptions) {
           <UiIcon name="check" :size="13" class="shrink-0" />
           <span class="font-mono font-semibold">{{ sh.internal_code }}</span>
           <span class="font-mono">{{ sh.the?.tracking_code }}</span>
+          <span v-if="sh.the?.service_code" class="font-semibold">· {{ sh.the.service_code }}</span>
           <span v-if="sh.the?.last_mile_tracking" class="font-mono opacity-80">· {{ sh.the.last_mile_tracking }}</span>
           <span v-if="sh.the?.cost" class="opacity-80">· ${{ sh.the.cost.toFixed(2) }}</span>
           <span v-if="sh.the?.reused" class="opacity-80">· đã có đơn THE từ trước</span>
@@ -941,6 +967,24 @@ function runScan(value: string, scanOpts: ShipOptions) {
           Địa chỉ đơn đi Mỹ được kiểm với USPS trước; đơn trượt sẽ được giữ lại kèm lý do. Xong là in label ngay tại đây.
         </p>
         <p v-if="count > 200" class="text-xs text-amber-700 dark:text-amber-300">Mỗi lần chỉ xử lý 200 đơn đầu — gửi phần còn lại ở lượt sau.</p>
+        <!-- #7783: dịch vụ THE theo loại hàng của từng đơn (thiệp → PCU, mica / gỗ → SPU). -->
+        <div v-if="readyToCreate.length" class="rounded-md border border-border">
+          <p class="flex flex-wrap items-center gap-2 border-b border-border bg-muted px-3 py-1.5 text-xs font-semibold text-foreground">
+            Dịch vụ THE sẽ dùng:
+            <span
+              v-for="sv in serviceSummary"
+              :key="sv.code"
+              class="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[11px] text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200"
+            >{{ sv.name ? `${sv.name} (${sv.code})` : sv.code }}: {{ sv.count }} đơn</span>
+          </p>
+          <ul class="max-h-40 divide-y divide-border overflow-y-auto">
+            <li v-for="r in readyToCreate" :key="r.order_id" class="flex items-baseline gap-2 px-3 py-1 text-xs">
+              <span class="font-mono font-semibold">{{ r.internal_code || r.order_id }}</span>
+              <span class="font-semibold text-indigo-700 dark:text-indigo-300">{{ r.parcel!.service?.service_code }}</span>
+              <span class="min-w-0 flex-1 truncate text-muted-foreground" :title="r.parcel!.service?.reason">{{ r.parcel!.service?.reason }}</span>
+            </li>
+          </ul>
+        </div>
         <div v-if="blockedOrders.length" class="max-h-48 overflow-y-auto rounded-md border border-border">
           <p class="border-b border-border bg-muted px-3 py-1.5 text-xs font-semibold text-foreground">Bị giữ lại — sửa rồi gửi lại</p>
           <ul class="divide-y divide-border">
