@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 import { basketsApi } from '~/services/api'
 import type { Basket, BasketLookup, BasketStatus, QcResultItem } from '~/types'
 import { useAuthStore } from '~/stores/auth'
@@ -61,24 +62,24 @@ const FILTERS: { key: 'all' | BasketStatus; label: string }[] = [
 const STATUS: Record<BasketStatus, { label: string; chip: string; card: string }> = {
   OPEN: {
     label: 'Đang gom',
-    chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    chip: TONE.blue,
     card: 'border-amber-300 dark:border-amber-500/40',
   },
   FULL: {
     label: 'Đủ hàng',
-    chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    chip: TONE.emerald,
     card: 'border-emerald-400 ring-2 ring-emerald-400/30 dark:border-emerald-500/60',
   },
   CANCELLED: {
     label: 'Đơn đã huỷ',
-    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+    chip: TONE.red,
     card: 'border-rose-300 dark:border-rose-500/40',
   },
 }
 const ITEM_QC: Record<string, { label: string; chip: string }> = {
-  PASSED: { label: 'Đã QC', chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  REWORK: { label: 'Đang làm lại', chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
-  WAITING: { label: 'Chưa QC', chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  PASSED: { label: 'Đã QC', chip: TONE.lime },
+  REWORK: { label: 'Đang làm lại', chip: TONE.redSolid },
+  WAITING: { label: 'Chưa QC', chip: TONE.slate },
 }
 const itemQc = (it: QcResultItem) => ITEM_QC[it.qc_status] ?? ITEM_QC.WAITING
 const pct = (b: Basket) => (b.total_items ? Math.round((b.passed_items / b.total_items) * 100) : 0)

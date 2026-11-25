@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { qcApi } from '~/services/api'
 import type { QcResultOrder, QcResultItem, QcOrderStatus } from '~/types'
@@ -70,34 +71,34 @@ const ORDER_STATUS: Record<QcOrderStatus, { label: string; dot: string; chip: st
   DONE: {
     label: 'Đã QC đủ · sẵn sàng đóng gói',
     dot: 'bg-emerald-500',
-    chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    chip: TONE.lime,
   },
   PARTIAL: {
     label: 'Đạt một phần',
     dot: 'bg-amber-500',
-    chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    chip: TONE.amber,
   },
   NONE: {
     label: 'Chưa QC',
     dot: 'bg-slate-400',
-    chip: 'bg-muted text-muted-foreground',
+    chip: TONE.slate,
   },
 }
 
 const ITEM_STATUS: Record<string, { label: string; chip: string; icon: string }> = {
   PASSED: {
     label: 'Đạt',
-    chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+    chip: TONE.lime,
     icon: 'check',
   },
   REWORK: {
     label: 'Đang làm lại',
-    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+    chip: TONE.redSolid,
     icon: 'alert',
   },
   WAITING: {
     label: 'Chờ QC',
-    chip: 'bg-muted text-muted-foreground',
+    chip: TONE.slate,
     icon: 'calendar',
   },
 }

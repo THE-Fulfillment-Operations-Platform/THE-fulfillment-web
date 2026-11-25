@@ -12,19 +12,20 @@ import type {
   EntityType,
   TrackingStatus,
 } from '~/types'
+import { TONE } from './statusColors'
 
 export interface BadgeMeta {
   label: string
-  // Tailwind classes for a flat soft-minimal badge (soft tint fill + text, no ring).
+  // Class màu lấy từ TONE (utils/statusColors.ts) — không tự viết class màu ở đây.
   classes: string
 }
 
 // ---- Internal status (Pending / Đã in / Đã cắt / Đã QC) --------------------
 export const INTERNAL_STATUS: Record<InternalStatus, BadgeMeta> = {
-  PENDING: { label: 'Chờ xử lý', classes: 'bg-muted text-muted-foreground' },
-  PRINTED: { label: 'Đã in', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  CUT: { label: 'Đã cắt', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  QC_PASSED: { label: 'Đã QC', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  PENDING: { label: 'Chờ xử lý', classes: TONE.slate },
+  PRINTED: { label: 'Đã in', classes: TONE.blue },
+  CUT: { label: 'Đã cắt', classes: TONE.orange },
+  QC_PASSED: { label: 'Đã QC', classes: TONE.lime },
 }
 
 export const INTERNAL_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 'CUT', 'QC_PASSED']
@@ -36,43 +37,43 @@ export const PRODUCTION_STATUS_ORDER: InternalStatus[] = ['PENDING', 'PRINTED', 
 
 // ---- Seller status ---------------------------------------------------------
 export const SELLER_STATUS: Record<SellerStatus, BadgeMeta> = {
-  PRODUCTION: { label: 'Đang sản xuất', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  PACKED: { label: 'Đã đóng gói', classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
-  HANDED_OFF: { label: 'Đã bàn giao', classes: 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' },
-  SHIPPED: { label: 'Đã gửi đi', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  PRODUCTION: { label: 'Đang sản xuất', classes: TONE.blue },
+  PACKED: { label: 'Đã đóng gói', classes: TONE.cyan },
+  HANDED_OFF: { label: 'Đã bàn giao', classes: TONE.emerald },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
   // Chặng cuối, do đồng bộ tracking đặt. Trước đây không có nó nên đơn đã giao
   // xong vẫn đứng ở "Đã bàn giao" cạnh một badge tracking ghi "Đã giao".
-  DELIVERED: { label: 'Đã giao', classes: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' },
+  DELIVERED: { label: 'Đã giao', classes: TONE.greenSolid },
 }
 
 // ---- Review (intake) status ------------------------------------------------
 export const REVIEW_STATUS: Record<ReviewStatus, BadgeMeta> = {
-  PENDING_REVIEW: { label: 'Chờ duyệt', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  NEEDS_CORRECTION: { label: 'Cần chỉnh sửa', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
-  APPROVED: { label: 'Đã duyệt', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  REJECTED: { label: 'Từ chối', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
-  CANCELLED: { label: 'Đã huỷ', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+  PENDING_REVIEW: { label: 'Chờ duyệt', classes: TONE.yellow },
+  NEEDS_CORRECTION: { label: 'Cần chỉnh sửa', classes: TONE.pink },
+  APPROVED: { label: 'Đã duyệt', classes: TONE.emerald },
+  REJECTED: { label: 'Từ chối', classes: TONE.redSolid },
+  CANCELLED: { label: 'Đã huỷ', classes: TONE.red },
 }
 
 export const REVIEW_STATUS_OPTIONS = ['PENDING_REVIEW', 'NEEDS_CORRECTION'] as const
 
 // ---- Cancellation status ---------------------------------------------------
 export const CANCELLATION_STATUS: Record<CancellationStatus, BadgeMeta> = {
-  NONE: { label: '—', classes: 'bg-muted text-muted-foreground' },
-  SELLER_CANCELLED: { label: 'Seller huỷ', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
-  REQUESTED: { label: 'Chờ xử lý huỷ', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  APPROVED: { label: 'Đồng ý huỷ', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  REJECTED: { label: 'Từ chối huỷ', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  NONE: { label: '—', classes: TONE.slate },
+  SELLER_CANCELLED: { label: 'Seller huỷ', classes: TONE.red },
+  REQUESTED: { label: 'Chờ xử lý huỷ', classes: TONE.amber },
+  APPROVED: { label: 'Đồng ý huỷ', classes: TONE.red },
+  REJECTED: { label: 'Từ chối huỷ', classes: TONE.indigo },
 }
 
 // ---- Cancellation stage ----------------------------------------------------
 // Đơn bị huỷ ở khâu nào. Nhãn này luôn đi kèm câu trả lời "có tính tiền không":
 // từ lúc vào sản xuất là đã tốn NVL và công máy nên vẫn tính tiền khách.
 export const CANCEL_STAGE: Record<Exclude<CancelStage, ''>, BadgeMeta> = {
-  PRE_PRODUCTION: { label: 'Chưa sản xuất', classes: 'bg-muted text-muted-foreground' },
-  IN_PRODUCTION: { label: 'Đang sản xuất', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  PACKED: { label: 'Đã đóng gói', classes: 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' },
-  SHIPPED: { label: 'Đã gửi đi', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  PRE_PRODUCTION: { label: 'Chưa sản xuất', classes: TONE.slate },
+  IN_PRODUCTION: { label: 'Đang sản xuất', classes: TONE.blue },
+  PACKED: { label: 'Đã đóng gói', classes: TONE.cyan },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
 }
 
 export function cancelStageLabel(stage?: CancelStage): string {
@@ -82,48 +83,48 @@ export function cancelStageLabel(stage?: CancelStage): string {
 
 // ---- Design status ---------------------------------------------------------
 export const DESIGN_STATUS: Record<DesignStatus, BadgeMeta> = {
-  PENDING: { label: 'Chờ thiết kế', classes: 'bg-muted text-muted-foreground' },
-  IN_PROGRESS: { label: 'Đang thiết kế', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  READY: { label: 'Sẵn sàng', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  MISSING: { label: 'Thiếu file', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  PENDING: { label: 'Chờ thiết kế', classes: TONE.slate },
+  IN_PROGRESS: { label: 'Đang thiết kế', classes: TONE.blue },
+  READY: { label: 'Sẵn sàng', classes: TONE.violet },
+  MISSING: { label: 'Thiếu file', classes: TONE.redSolid },
 }
 
 // ---- Priority --------------------------------------------------------------
 export const PRIORITY: Record<Priority, BadgeMeta> = {
-  NORMAL: { label: 'Bình thường', classes: 'bg-muted text-muted-foreground' },
-  HIGH: { label: 'Cao', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
-  URGENT: { label: 'Khẩn cấp', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  NORMAL: { label: 'Bình thường', classes: TONE.slate },
+  HIGH: { label: 'Cao', classes: TONE.orange },
+  URGENT: { label: 'Khẩn cấp', classes: TONE.redSolid },
 }
 
 // ---- Note severity ---------------------------------------------------------
 export const NOTE_SEVERITY: Record<NoteSeverity, BadgeMeta> = {
-  LOW: { label: 'Thấp', classes: 'bg-muted text-muted-foreground' },
-  NORMAL: { label: 'Bình thường', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  HIGH: { label: 'Cao', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
-  CRITICAL: { label: 'Nghiêm trọng', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
+  LOW: { label: 'Thấp', classes: TONE.slate },
+  NORMAL: { label: 'Bình thường', classes: TONE.blue },
+  HIGH: { label: 'Cao', classes: TONE.orange },
+  CRITICAL: { label: 'Nghiêm trọng', classes: TONE.redSolid },
 }
 
 // ---- Note status -----------------------------------------------------------
 export const NOTE_STATUS: Record<NoteStatus, BadgeMeta> = {
-  OPEN: { label: 'Đang mở', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
-  IN_PROGRESS: { label: 'Đang xử lý', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  WAITING: { label: 'Chờ', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  RESOLVED: { label: 'Đã xử lý', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  OPEN: { label: 'Đang mở', classes: TONE.red },
+  IN_PROGRESS: { label: 'Đang xử lý', classes: TONE.blue },
+  WAITING: { label: 'Chờ', classes: TONE.amber },
+  RESOLVED: { label: 'Đã xử lý', classes: TONE.emerald },
 }
 
 // ---- Tracking status -------------------------------------------------------
 export const TRACKING_STATUS: Record<TrackingStatus, BadgeMeta> = {
-  NONE: { label: 'Chưa có', classes: 'bg-muted text-muted-foreground' },
-  PENDING: { label: 'Chờ lấy hàng', classes: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
-  PRE_TRANSIT: { label: 'Chuẩn bị vận chuyển', classes: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' },
-  IN_TRANSIT: { label: 'Đang vận chuyển', classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300' },
-  OUT_FOR_DELIVERY: { label: 'Đang giao', classes: 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' },
-  PICK_UP: { label: 'Chờ nhận tại bưu cục', classes: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' },
-  DELIVERED: { label: 'Đã giao', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  UNDELIVERED: { label: 'Giao không thành công', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300' },
-  EXCEPTION: { label: 'Sự cố', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' },
-  EXPIRED: { label: 'Hết hạn theo dõi', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
-  CANCELLED: { label: 'Đã huỷ vận chuyển', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' },
+  NONE: { label: 'Chưa có', classes: TONE.slate },
+  PENDING: { label: 'Chờ lấy hàng', classes: TONE.yellow },
+  PRE_TRANSIT: { label: 'Chuẩn bị vận chuyển', classes: TONE.sky },
+  IN_TRANSIT: { label: 'Đang vận chuyển', classes: TONE.indigo },
+  OUT_FOR_DELIVERY: { label: 'Đang giao', classes: TONE.teal },
+  PICK_UP: { label: 'Chờ nhận tại bưu cục', classes: TONE.pink },
+  DELIVERED: { label: 'Đã giao', classes: TONE.greenSolid },
+  UNDELIVERED: { label: 'Giao không thành công', classes: TONE.amber },
+  EXCEPTION: { label: 'Sự cố', classes: TONE.redSolid },
+  EXPIRED: { label: 'Hết hạn theo dõi', classes: TONE.slate },
+  CANCELLED: { label: 'Đã huỷ vận chuyển', classes: TONE.red },
 }
 
 export const TRACKING_STATUS_OPTIONS: { value: TrackingStatus; label: string }[] = (
@@ -151,7 +152,7 @@ export function badgeFrom<T extends string>(
   value: T | undefined | null,
 ): BadgeMeta {
   if (value && map[value]) return map[value]
-  return { label: value ?? '—', classes: 'bg-muted text-muted-foreground' }
+  return { label: value ?? '—', classes: TONE.slate }
 }
 
 /**

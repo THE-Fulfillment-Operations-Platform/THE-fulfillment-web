@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 // Bước 2 của thiết lập SKU cha → con: import SKU con (cột SKU cha + SKU + Tên sản
 // phẩm + Loại VL + D/R mm + Mô tả) để tạo Materials, SKUs và mapping, và xếp SKU
 // vào dưới SKU cha đã import ở bước 1. Bỏ trống cột SKU cha thì chạy y như import
@@ -118,8 +119,8 @@ const missingMaterial = computed(() => preview.value?.skus.filter((k) => k.statu
 const materialWarnings = computed(() => (committed.value ? [] : preview.value?.material_warnings ?? []))
 
 const STATUS_BADGE: Record<MasterSkuStatus, string> = {
-  OK: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  MISSING_MATERIAL: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
+  OK: TONE.emerald,
+  MISSING_MATERIAL: TONE.redSolid,
 }
 const STATUS_LABEL: Record<MasterSkuStatus, string> = {
   OK: 'Sẽ map',

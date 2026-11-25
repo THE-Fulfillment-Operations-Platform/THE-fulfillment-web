@@ -1,4 +1,5 @@
 import type { Batch, BatchLinkKind, InternalStatus } from '~/types'
+import { TONE } from './statusColors'
 import { INTERNAL_STATUS, SELLER_STATUS, isHandedOver, orderStatusBadge, type BadgeMeta, type StatusBadgeRef } from '~/utils/enums'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -188,7 +189,7 @@ export function missingBatchLinks(b: Pick<Batch, 'links'>): BatchLinkKind[] {
 
 export const PRODUCTION_FILES_READY: BadgeMeta = {
   label: 'Đã có file SX',
-  classes: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+  classes: TONE.violet,
 }
 
 /** Chip "Đã bàn giao" của batch — cùng màu với HANDED_OFF của đơn. */

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 // Import kích thước tấm NVL từ Excel: Loại VL + Dài (mm) + Rộng (mm) (+ Mô tả).
 // Kích thước tấm cùng kích thước SKU cho ra định mức sản xuất — không còn cột
 // "Định mức" nhập tay (khách chốt 18/09/2026); file mẫu cũ có cột đó thì server
@@ -177,9 +178,9 @@ function rowsLabel(rows: number[]): string {
 }
 
 const ACTION_BADGE: Record<MaterialImportAction, string> = {
-  CREATE: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
-  UPDATE: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
-  NOCHANGE: 'bg-muted text-muted-foreground',
+  CREATE: TONE.blue,
+  UPDATE: TONE.amber,
+  NOCHANGE: TONE.slate,
 }
 const ACTION_LABEL: Record<MaterialImportAction, string> = {
   CREATE: 'Tạo mới',

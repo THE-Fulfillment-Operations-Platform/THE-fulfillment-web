@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { cancellationApi } from '~/services/api'
 import type { Order, OrderItem, CancelStage } from '~/types'
@@ -74,11 +75,11 @@ function toggleBillableOnly() {
 function resolutionBadge(o: Order): { label: string; classes: string } {
   switch (o.cancellation_status) {
     case 'APPROVED':
-      return { label: 'Đã huỷ (duyệt)', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' }
+      return { label: 'Đã huỷ (duyệt)', classes: TONE.red }
     case 'SELLER_CANCELLED':
-      return { label: 'Seller tự huỷ', classes: 'bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300' }
+      return { label: 'Seller tự huỷ', classes: TONE.red }
     case 'REJECTED':
-      return { label: 'Từ chối huỷ', classes: 'bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300' }
+      return { label: 'Từ chối huỷ', classes: TONE.indigo }
     default:
       return { label: o.cancellation_status ?? '—', classes: 'bg-muted text-muted-foreground' }
   }

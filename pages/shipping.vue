@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { handoffsApi, trackingApi } from '~/services/api'
 import type { Handoff, HandoffStatus } from '~/types'
@@ -33,8 +34,8 @@ function changePageSize(size: number) {
 }
 
 const HANDOFF_STATUS: Record<HandoffStatus, { label: string; classes: string }> = {
-  HANDED_OFF: { label: 'Đã bàn giao THE', classes: 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300' },
-  SHIPPED: { label: 'Đã gửi đi', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  HANDED_OFF: { label: 'Đã bàn giao THE', classes: TONE.emerald },
+  SHIPPED: { label: 'Đã gửi đi', classes: TONE.fuchsia },
 }
 
 const open = ref(false)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 import { basketsApi, qcApi } from '~/services/api'
 import type { Basket, BasketForOrder, QcScanBatch, QcScanResult, QcOrderScan, QcResultItem } from '~/types'
 import { useAuthStore } from '~/stores/auth'
@@ -308,9 +309,9 @@ async function openItem(it: QcResultItem) {
 }
 
 const ITEM_QC: Record<string, { label: string; chip: string }> = {
-  PASSED: { label: 'Đã QC', chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  REWORK: { label: 'Đang làm lại', chip: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300' },
-  WAITING: { label: 'Chờ QC', chip: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  PASSED: { label: 'Đã QC', chip: TONE.lime },
+  REWORK: { label: 'Đang làm lại', chip: TONE.redSolid },
+  WAITING: { label: 'Chờ QC', chip: TONE.slate },
 }
 const itemQc = (it: QcResultItem) => ITEM_QC[it.qc_status] ?? ITEM_QC.WAITING
 const stageLabel = (it: QcResultItem) => INTERNAL_STATUS[it.internal_status]?.label ?? it.internal_status

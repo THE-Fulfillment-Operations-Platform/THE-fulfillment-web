@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 // Đơn THE của một đơn FFM: mã THE, mã USPS chặng cuối, cước, label để in lại,
 // lịch sử (đơn đã huỷ / tạo hỏng), và nút huỷ cho Owner/Admin. Không hiện gì nếu
 // đơn chưa từng được tạo trên THE.
@@ -44,17 +45,17 @@ const held = computed(() => live.value?.status === 'CREATED' && (live.value.erro
 const heldReason = computed(() => (held.value ? live.value!.error.slice(HELD_PREFIX.length) : ''))
 
 const STATUS_LABEL: Record<THEShipmentStatus, string> = {
-  CREATING: 'Đang tạo',
+  CREATING: TONE.blue,
   CREATED: 'Đã tạo, chưa chốt (chưa trừ tiền)',
-  LABELED: 'Đã chốt — có label',
+  LABELED: TONE.emerald,
   CANCELLED: 'Đã huỷ',
-  FAILED: 'Tạo không được',
+  FAILED: TONE.redSolid,
 }
 const STATUS_CLASS: Record<THEShipmentStatus, string> = {
   CREATING: 'bg-sky-50 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
-  CREATED: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+  CREATED: TONE.amber,
   LABELED: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-  CANCELLED: 'bg-muted text-muted-foreground',
+  CANCELLED: TONE.slate,
   FAILED: 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
 }
 

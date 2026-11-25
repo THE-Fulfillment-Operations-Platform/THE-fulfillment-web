@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TONE } from '~/utils/statusColors'
 // Bước 1 của thiết lập SKU cha → con: import các SKU cha (vd "Hộp nhựa"). Bước 2
 // (SkuImportDialog) mới xếp SKU con vào dưới qua cột "SKU cha" — và từ chối SKU
 // cha chưa có, nên cha phải vào trước.
@@ -127,9 +128,9 @@ const previewRows = computed<PreviewRow[]>(() => {
 })
 
 const ACTION_BADGE: Record<ParentSkuImportAction, string> = {
-  CREATE: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
-  UPDATE: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
-  NOCHANGE: 'bg-muted text-muted-foreground',
+  CREATE: TONE.blue,
+  UPDATE: TONE.amber,
+  NOCHANGE: TONE.slate,
 }
 const ACTION_LABEL: Record<ParentSkuImportAction, string> = {
   CREATE: 'Tạo mới',
