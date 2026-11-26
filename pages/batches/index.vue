@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { apiInstantFrom, apiInstantBefore } from '~/utils/dateRange'
+import { batchFilterParams } from '~/utils/batchFilters'
+import { useBatchFilterOptions } from '~/composables/useBatchFilterOptions'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
-import { batchesApi, materialsApi, sellersApi } from '~/services/api'
+import { batchesApi } from '~/services/api'
 import type { AutoCreateBatchesResult } from '~/services/api'
-import type { Batch, Material, Seller } from '~/types'
-import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY, PRIORITY_OPTIONS } from '~/utils/enums'
+import type { Batch } from '~/types'
+import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY } from '~/utils/enums'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
 import {
@@ -30,7 +31,6 @@ const { rowLinkAttrs } = useRowLink()
 
 const toast = useToastStore()
 const auth = useAuthStore()
-const materials = ref<Material[]>([])
 
 // Gom batch + gắn file sản xuất: quyền "Thao tác" của màn Batch — khớp guard BE
 // trên /api/batches/auto và /api/batches/links/*.
@@ -43,7 +43,7 @@ const filters = reactive({
   status: [] as string[],
   priority: '',
   batch_id: '', // server-side: mã batch chứa chuỗi này
-  sku: '', // client-side refine
+  sku: '', // server-side: batch chứa dòng có SKU chứa chuỗi này
   code: '', // server-side: mã nội bộ đơn / mã tem item → batch chứa đơn đó
   seller_id: [] as string[], // server-side: batch chứa hàng của (một trong) các seller này
   store_order: '', // server-side: batch chứa đơn có mã đơn shop khớp
@@ -57,27 +57,13 @@ usePersistedFilters('batches', filters)
 
 const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
   batchesApi.list({
-    material_id: filters.material_id ? Number(filters.material_id) : undefined,
+    ...batchFilterParams(filters),
     ...statusQuery(filters.status),
-    priority: filters.priority || undefined,
-    code: filters.code.trim() || undefined,
-    seller_id: filters.seller_id.length ? filters.seller_id.join(',') : undefined,
-    store_order: filters.store_order.trim() || undefined,
-    batch: filters.batch_id.trim().replace(/^#/, '') || undefined,
-    date_from: apiInstantFrom(filters.date_from),
-    date_to: apiInstantBefore(filters.date_to),
     page: filters.page,
     page_size: filters.page_size,
   }),
 )
 
-// value là CHUỖI (như ô Seller): filters.material_id mặc định '' và
-// usePersistedFilters chỉ khôi phục khi cùng kiểu — để số thì vào chi tiết rồi
-// quay lại (hay F5) là mất lọc Material (anh Kiên 20/11).
-const materialOptions = computed(() => [
-  { value: '', label: 'Tất cả' },
-  ...materials.value.map((m) => ({ value: String(m.id), label: m.name })),
-])
 // "Đã có file SX" không phải status lưu trong DB — là PENDING đã đủ link in +
 // cắt (xem batchStatusBadge). Lọc vẫn chạy ở backend (?files=) để phân trang và
 // tổng số đúng; "Chờ xử lý" vì thế chỉ còn các batch chưa đủ file, khớp nhãn.
@@ -121,31 +107,7 @@ function statusQuery(list: string[]): { status?: string; files?: 'ready' | 'miss
   const token = (v: string) => (v === 'PENDING' ? 'FILES_MISSING' : v === 'QC_PASSED' ? 'HANDOVER_PENDING' : v)
   return { status: list.map(token).join(',') }
 }
-const priorityOptions = [
-  { value: '', label: 'Tất cả' },
-  ...PRIORITY_OPTIONS.map((p) => ({ value: p, label: PRIORITY[p].label })),
-]
-
-const sellers = ref<Seller[]>([])
-const sellerOptions = computed(() =>
-  sellers.value.map((s) => ({ value: String(s.id), label: s.name || s.code, sublabel: s.name && s.code && s.name !== s.code ? s.code : undefined })),
-)
-onMounted(async () => {
-  try {
-    const { data: rows } = await sellersApi.list()
-    sellers.value = rows ?? []
-  } catch {
-    /* Bộ lọc seller là phụ trợ: hỏng thì danh sách batch vẫn phải hiện. */
-  }
-})
-onMounted(async () => {
-  try {
-    const { data: m } = await materialsApi.list()
-    materials.value = m ?? []
-  } catch {
-    /* materials filter optional */
-  }
-})
+const { materialOptions, sellerOptions, priorityOptions } = useBatchFilterOptions()
 
 // Mọi SKU của batch (đã bỏ trùng). List endpoint lồng SKU trong order_item
 // (không có field phẳng trên batch item).
@@ -176,10 +138,6 @@ function skuSummary(b: Batch): string {
 
 const rows = computed(() => {
   let list = data.value ?? []
-  if (filters.sku) {
-    const q = filters.sku.toUpperCase()
-    list = list.filter((b) => (b.items ?? []).some((i) => (i.sku_code ?? '').toUpperCase().includes(q)))
-  }
   if (filters.overdue) list = list.filter(isBatchOverdue)
   return list
 })
@@ -299,64 +257,14 @@ async function autoCreateBatches() {
     </PageHeader>
 
     <div class="card mb-4 p-4">
-      <div class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
-        <div>
-          <label class="label">Mã batch</label>
-          <input v-model="filters.batch_id" class="input" placeholder="#101001" @keyup.enter="applyFilters" />
-        </div>
-        <!-- Tìm ngược từ đơn: nhập mã nội bộ đơn / mã tem là ra batch đang sản xuất nó. -->
-        <div>
-          <label class="label">Mã nội bộ đơn</label>
-          <input v-model="filters.code" class="input font-mono" placeholder="100047 / 100047_1/1" @keyup.enter="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Mã đơn shop</label>
-          <input v-model="filters.store_order" class="input" placeholder="Etsy-7821…" @keyup.enter="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Seller</label>
-          <!-- Chọn nhiều: tick xong, đóng bảng (bấm ra ngoài / Xong) mới lọc một lần. -->
-          <UiMultiSelect
-            v-model="filters.seller_id"
-            :options="sellerOptions"
-            all-label="Tất cả seller"
-            searchable
-            search-placeholder="Tìm seller…"
-            aria-label="Seller"
-            @change="applyFilters"
-          />
-        </div>
-        <div>
-          <label class="label">Chất liệu</label>
-          <UiSelect v-model="filters.material_id" :options="materialOptions" aria-label="Chất liệu" @change="applyFilters" />
-        </div>
-        <div>
-          <label class="label">SKU</label>
-          <input v-model="filters.sku" class="input" placeholder="WOOD-01" @keyup.enter="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Trạng thái</label>
-          <UiMultiSelect v-model="filters.status" :options="statusOptions" aria-label="Trạng thái" @change="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Ưu tiên</label>
-          <UiSelect v-model="filters.priority" :options="priorityOptions" aria-label="Ưu tiên" @change="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Từ ngày</label>
-          <!-- Hai đầu khoá lẫn nhau: không chọn được khoảng ngược. -->
-          <UiDatePicker v-model="filters.date_from" with-time :max="filters.date_to" aria-label="Từ ngày" @change="applyFilters" />
-        </div>
-        <div>
-          <label class="label">Đến ngày</label>
-          <UiDatePicker v-model="filters.date_to" with-time :min="filters.date_from" aria-label="Đến ngày" @change="applyFilters" />
-        </div>
-        <div class="flex items-end">
-          <button class="btn-secondary w-full" @click="applyFilters">
-            <UiIcon name="search" :size="16" /> Lọc
-          </button>
-        </div>
-      </div>
+      <BatchesFilterGrid
+        :filters="filters"
+        :material-options="materialOptions"
+        :seller-options="sellerOptions"
+        :status-options="statusOptions"
+        :priority-options="priorityOptions"
+        @apply="applyFilters"
+      />
       <div class="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
         <label class="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
           <input v-model="filters.overdue" type="checkbox" class="h-4 w-4 rounded border-border" />
