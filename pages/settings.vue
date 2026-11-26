@@ -70,7 +70,8 @@ async function confirmReset() {
     </div>
 
     <div v-else class="max-w-2xl space-y-4">
-      <TheConnectionCard />
+      <!-- Kết nối THE (token ví nhà máy): chỉ Kỹ thuật viên; API cũng trả 403 cho vai trò khác. -->
+      <TheConnectionCard v-if="auth.isTechnician" />
 
       <!-- Danger zone -->
       <div class="card overflow-hidden border-rose-200/70 dark:border-rose-500/30">
