@@ -158,6 +158,39 @@ export interface BatchListParams extends ListParams {
   // Tách "Đã QC": done = đã QC và mọi đơn còn sống đã rời xưởng ("Đã bàn giao"),
   // pending = còn lại. Đi kèm status=QC_PASSED.
   handover?: 'done' | 'pending'
+  // Chặng suy ra, loại trừ nhau, phẩy ngăn cách, OR với nhau (utils/batchStages.ts).
+  // Giá trị lạ → API trả 400.
+  stage?: string
+  // oldest = cũ nhất trước (cột còn việc của Bảng sản xuất); mặc định mới nhất trước.
+  sort?: 'newest' | 'oldest'
+}
+
+/** GET /api/batches/stage-counts — số batch mỗi chặng dưới bộ lọc (bỏ qua status/stage/open). */
+export interface BatchStageCounts {
+  /** Mọi chặng đã biết (0 nếu không có) + chặng lạ nếu DB có. */
+  stages: Record<string, number>
+  /** Trạng thái lưu → chặng → số (cột mặc định của bảng). */
+  by_status: Record<string, Record<string, number>>
+  rows: { status: string; stage: string; count: number }[]
+  /** Thứ tự vòng đời; chặng lạ nối cuối. */
+  order: string[]
+}
+
+/** Một lựa chọn của ô lọc, lấy từ chính các batch (kèm số batch). */
+export interface BatchFacet {
+  id: number
+  code: string
+  name: string
+  /** NVL / seller đã xoá mềm nhưng vẫn còn batch. */
+  deleted: boolean
+  count: number
+}
+
+/** GET /api/batches/filter-options */
+export interface BatchFilterOptions {
+  materials: BatchFacet[]
+  sellers: BatchFacet[]
+  priorities: { value: string; count: number }[]
 }
 
 export interface CreateBatchInput {
@@ -170,6 +203,11 @@ export interface CreateBatchInput {
 
 export const batchesApi = {
   list: (params?: BatchListParams) => apiGet<Batch[]>('/api/batches', params),
+  // Số batch mỗi chặng dưới cùng bộ lọc (ô Trạng thái + dòng tách ở đầu cột).
+  stageCounts: (params?: Omit<BatchListParams, 'status' | 'stage' | 'open' | 'page' | 'page_size' | 'sort'>) =>
+    apiGet<BatchStageCounts>('/api/batches/stage-counts', params),
+  // Chất liệu / seller / ưu tiên đang có trong batch, kèm số batch.
+  filterOptions: () => apiGet<BatchFilterOptions>('/api/batches/filter-options'),
   get: (id: number | string) => apiGet<Batch>(`/api/batches/${id}`),
   // Tiến độ batch: tạo / đã in / đã cắt / QC xong lúc nào, ai bấm.
   timeline: (id: number | string) => apiGet<Timeline>(`/api/batches/${id}/timeline`),

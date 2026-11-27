@@ -19,7 +19,8 @@
     "test:diecut": "node scripts/test-diecut.mjs",
     "test:date-range": "node scripts/test-date-range.mjs",
     "test:batch-code": "node scripts/test-batch-code.mjs",
-    "test:batch-filters": "node scripts/test-batch-filters.mjs"
+    "test:batch-filters": "node scripts/test-batch-filters.mjs",
+    "test:batch-stages": "node scripts/test-batch-stages.mjs"
   },
   "devDependencies": {
     "@nuxtjs/tailwindcss": "^6.12.2",
