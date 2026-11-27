@@ -3,7 +3,10 @@
 import {
   BATCH_LIFECYCLE,
   BATCH_LIFECYCLE_ORDER,
+  BATCH_LIST_LEGACY,
+  batchStageBadge,
   boardColumns,
+  stageFilterOptions,
   cardStageChip,
   columnBreakdown,
   columnParams,
@@ -93,6 +96,24 @@ eq('không có số', columnBreakdown(undefined, 'CUT'), [])
 
 // 7) Xem thêm: nối trang, bỏ dòng trùng do trang trượt.
 eq('mergePage', mergePage([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 3 }]).map((x) => x.id), [1, 2, 3])
+
+// 8) Màn Batch dùng chung bộ chặng: bản lưu cũ đổi đúng nghĩa của màn đó.
+eq('màn Batch: PENDING cũ = Chờ xử lý (chưa đủ file)', stagesFromQuery(['PENDING'], BATCH_LIST_LEGACY), ['FILES_MISSING'])
+eq('màn Batch: FILES_READY / QC_PASSED / HANDED_OVER / PRINTED cũ',
+  stagesFromQuery(['FILES_READY', 'QC_PASSED', 'HANDED_OVER', 'PRINTED'], BATCH_LIST_LEGACY),
+  ['FILES_READY', 'PRINTED', 'QC_PASSED', 'HANDED_OFF', 'SHIPPED', 'DELIVERED'])
+eq('màn Batch: rỗng = Tất cả', stagesFromQuery([], BATCH_LIST_LEGACY), [])
+// Ô lọc của hai màn: đủ 11 mục cùng nhãn, số ở bên phải khi có bảng đếm.
+const opts = stageFilterOptions({ FILES_MISSING: 19, HANDED_OFF: 1718 })
+eq('ô lọc đủ 11 mục theo vòng đời', opts.map((o) => o.value), BATCH_LIFECYCLE_ORDER)
+eq('ô lọc: nhãn = nhãn chặng', opts.map((o) => o.label), BATCH_LIFECYCLE_ORDER.map((s) => BATCH_LIFECYCLE[s].label))
+eq('ô lọc: số (chặng thiếu = 0)', [opts[0].hint, opts[6].hint, opts[9].hint], ['19', '1.718', '0'])
+eq('ô lọc chưa có bảng đếm: không số', stageFilterOptions(null).every((o) => o.hint === undefined), true)
+// Nhãn của một batch trong danh sách = nhãn chặng; API cũ rơi về nhãn cũ.
+eq('nhãn batch theo stage', batchStageBadge({ id: 1, code: '#1', material_id: 1, status: 'CUT', stage: 'CLOSED' }).label, 'Đã đóng')
+eq('nhãn batch: Đơn đã huỷ hết', batchStageBadge({ id: 1, code: '#1', material_id: 1, status: 'QC_PASSED', stage: 'NO_ITEMS' }).classes, TONE.cancelled)
+eq('nhãn batch API cũ: Đã bàn giao', batchStageBadge({ id: 1, code: '#1', material_id: 1, status: 'QC_PASSED', handed_over: true }).label, 'Đã bàn giao')
+eq('nhãn batch API cũ: Đã cắt', batchStageBadge({ id: 1, code: '#1', material_id: 1, status: 'CUT' }).label, 'Đã cắt')
 
 console.log(`batchStages: ${passed} passed, ${failures} failed`)
 if (failures) process.exit(1)

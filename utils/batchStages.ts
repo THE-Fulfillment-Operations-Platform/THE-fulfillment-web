@@ -12,7 +12,7 @@
 // luôn cùng một màu ở mọi màn.
 import type { Batch, InternalStatus } from '~/types'
 import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, SELLER_STATUS, type BadgeMeta } from './enums'
-import { PRODUCTION_FILES_READY } from './batch'
+import { PRODUCTION_FILES_READY, batchStatusBadge } from './batch'
 import { TONE } from './statusColors'
 
 export type BatchLifecycleStage =
@@ -75,14 +75,45 @@ const LEGACY: Record<string, BatchLifecycleStage[]> = {
   HANDOVER_PENDING: ['QC_PASSED', 'PACKED'],
 }
 
-/** Danh sách từ URL → chặng hợp lệ, bỏ trùng, theo thứ tự vòng đời. */
-export function stagesFromQuery(values: string[]): BatchLifecycleStage[] {
+/**
+ * Ô Trạng thái của màn Batch trước 27/11 lưu (sessionStorage) giá trị KHÁC nghĩa với
+ * URL cũ của bảng: ở đó mục "Chờ xử lý" (PENDING) đã là "chưa đủ file" và "Đã QC"
+ * (QC_PASSED) đã là "chưa bàn giao hết" — nên PENDING chỉ đổi sang FILES_MISSING.
+ */
+export const BATCH_LIST_LEGACY: Record<string, BatchLifecycleStage[]> = {
+  ...LEGACY,
+  PENDING: ['FILES_MISSING'],
+}
+
+/** Danh sách từ URL / bản lưu → chặng hợp lệ, bỏ trùng, theo thứ tự vòng đời. */
+export function stagesFromQuery(values: string[], legacy: Record<string, BatchLifecycleStage[]> = LEGACY): BatchLifecycleStage[] {
   const set = new Set<BatchLifecycleStage>()
   for (const v of values) {
     if (isLifecycleStage(v)) set.add(v)
-    else for (const s of LEGACY[v] ?? []) set.add(s)
+    else for (const s of legacy[v] ?? []) set.add(s)
   }
   return BATCH_LIFECYCLE_ORDER.filter((s) => set.has(s))
+}
+
+/**
+ * Lựa chọn của ô Trạng thái (Bảng sản xuất và màn Batch dùng chung): đủ mọi chặng
+ * theo vòng đời, dòng phụ giải thích, số batch ở bên phải khi đã có bảng đếm.
+ */
+export function stageFilterOptions(counts?: Record<string, number> | null) {
+  return BATCH_LIFECYCLE_ORDER.map((s) => ({
+    value: s,
+    label: BATCH_LIFECYCLE[s].label,
+    sublabel: BATCH_LIFECYCLE[s].note,
+    hint: counts ? (counts[s] ?? 0).toLocaleString('vi-VN') : undefined,
+  }))
+}
+
+/**
+ * Nhãn trạng thái của MỘT batch trong danh sách = nhãn chặng của nó (cùng bộ với ô
+ * lọc). API cũ chưa trả `stage` thì rơi về nhãn suy ra cũ (batchStatusBadge).
+ */
+export function batchStageBadge(b: Batch): BadgeMeta {
+  return b.stage ? stageMeta(b.stage) : batchStatusBadge(b)
 }
 
 // ---- Cột của bảng --------------------------------------------------------------

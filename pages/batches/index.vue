@@ -3,9 +3,10 @@ import { batchFilterParams } from '~/utils/batchFilters'
 import { useBatchFilterOptions } from '~/composables/useBatchFilterOptions'
 import { usePersistedFilters } from '~/composables/usePersistedFilters'
 import { batchesApi } from '~/services/api'
-import type { AutoCreateBatchesResult } from '~/services/api'
+import type { AutoCreateBatchesResult, BatchStageCounts } from '~/services/api'
 import type { Batch } from '~/types'
-import { INTERNAL_STATUS, INTERNAL_STATUS_ORDER, PRIORITY } from '~/utils/enums'
+import { PRIORITY } from '~/utils/enums'
+import { BATCH_LIST_LEGACY, batchStageBadge, stageFilterOptions, stagesFromQuery } from '~/utils/batchStages'
 import { useApiResource } from '~/composables/useApiResource'
 import { formatDate, formatDateTime } from '~/utils/format'
 import {
@@ -14,10 +15,7 @@ import {
   batchProductTotal,
   batchMaterialUnits,
   batchMaterialLabel,
-  batchStatusBadge,
   missingBatchLinks,
-  PRODUCTION_FILES_READY,
-  BATCH_HANDED_OVER,
 } from '~/utils/batch'
 import { exportCsv } from '~/utils/csv'
 import { errorMessage } from '~/utils/api-error'
@@ -54,59 +52,40 @@ const filters = reactive({
   page_size: 20,
 })
 usePersistedFilters('batches', filters)
+// Bản lưu trước 27/11 dùng mã cũ (PENDING = "Chờ xử lý" chưa đủ file, QC_PASSED =
+// "Đã QC" chưa bàn giao hết, HANDED_OVER, FILES_READY…): đổi sang chặng cùng nghĩa.
+filters.status = stagesFromQuery(filters.status, BATCH_LIST_LEGACY)
 
-const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() =>
-  batchesApi.list({
+// Ô Trạng thái dùng CHUNG bộ chặng với Bảng sản xuất (utils/batchStages.ts, Nghĩa
+// 27/11): 11 chặng loại trừ nhau, cùng nhãn + màu, lọc ở server bằng ?stage= (OR
+// với nhau) nên phân trang và tổng số đúng. Mảng rỗng = Tất cả (mọi batch, kể cả
+// batch Đã đóng — màn này là sổ batch đầy đủ, khác bảng sản xuất).
+const stageCounts = ref<BatchStageCounts | null>(null)
+let countsSeq = 0
+async function loadStageCounts() {
+  const mine = ++countsSeq
+  try {
+    const { data: c } = await batchesApi.stageCounts(batchFilterParams(filters))
+    if (mine === countsSeq) stageCounts.value = c
+  } catch {
+    // Đếm là phụ trợ (API cũ chưa có): ô lọc chỉ thiếu số, danh sách vẫn chạy.
+    if (mine === countsSeq) stageCounts.value = null
+  }
+}
+
+const { data, meta, loading, error, reload } = useApiResource<Batch[]>(() => {
+  loadStageCounts()
+  return batchesApi.list({
     ...batchFilterParams(filters),
-    ...statusQuery(filters.status),
+    stage: filters.status.length ? filters.status.join(',') : undefined,
     page: filters.page,
     page_size: filters.page_size,
-  }),
-)
+  })
+})
 
-// "Đã có file SX" không phải status lưu trong DB — là PENDING đã đủ link in +
-// cắt (xem batchStatusBadge). Lọc vẫn chạy ở backend (?files=) để phân trang và
-// tổng số đúng; "Chờ xử lý" vì thế chỉ còn các batch chưa đủ file, khớp nhãn.
-const FILES_READY = 'FILES_READY'
-// Tương tự: "Đã bàn giao" là QC_PASSED mà mọi đơn còn sống đã rời xưởng (?handover=).
-// "Đã QC" vì thế chỉ còn batch chưa bàn giao hết (bàn giao một phần vẫn ở đây).
-const HANDED_OVER = 'HANDED_OVER'
-// Không có dòng "Tất cả": UiMultiSelect tự có (bỏ chọn hết = Tất cả).
-const statusOptions = [
-  ...INTERNAL_STATUS_ORDER.flatMap((s) =>
-    s === 'PENDING'
-      ? [
-          { value: s, label: INTERNAL_STATUS[s].label },
-          { value: FILES_READY, label: PRODUCTION_FILES_READY.label },
-        ]
-      : s === 'QC_PASSED'
-        ? [
-            { value: s, label: INTERNAL_STATUS[s].label },
-            { value: HANDED_OVER, label: BATCH_HANDED_OVER.label },
-          ]
-        : [{ value: s, label: INTERNAL_STATUS[s].label }],
-  ),
-]
-// Giá trị ô Status → tham số API.
-//   - Chọn MỘT mục: gửi đúng tham số kiểu cũ như trước (status + files/handover) —
-//     y hệt bản trước, chạy được cả với API chưa cập nhật.
-//   - Chọn NHIỀU: ?status=a,b,c — mỗi mục một token, API OR với nhau (xem
-//     repositories/status_filter.go bên API). Mục gộp đổi sang token cùng nghĩa:
-//     "Chờ xử lý" = FILES_MISSING, "Đã QC" = HANDOVER_PENDING (vì PENDING/QC_PASSED
-//     trần là MỌI batch của trạng thái đó).
-function statusQuery(list: string[]): { status?: string; files?: 'ready' | 'missing'; handover?: 'done' | 'pending' } {
-  if (!list.length) return {}
-  if (list.length === 1) {
-    const v = list[0]
-    if (v === HANDED_OVER) return { status: 'QC_PASSED', handover: 'done' }
-    if (v === 'QC_PASSED') return { status: 'QC_PASSED', handover: 'pending' }
-    if (v === FILES_READY) return { status: 'PENDING', files: 'ready' }
-    if (v === 'PENDING') return { status: 'PENDING', files: 'missing' }
-    return { status: v }
-  }
-  const token = (v: string) => (v === 'PENDING' ? 'FILES_MISSING' : v === 'QC_PASSED' ? 'HANDOVER_PENDING' : v)
-  return { status: list.map(token).join(',') }
-}
+// Không có dòng "Tất cả": UiMultiSelect tự có (bỏ chọn hết = Tất cả). Mỗi mục kèm
+// số batch khớp các bộ lọc khác.
+const statusOptions = computed(() => stageFilterOptions(stageCounts.value?.stages))
 const { materialOptions, sellerOptions, priorityOptions } = useBatchFilterOptions()
 
 // Mọi SKU của batch (đã bỏ trùng). List endpoint lồng SKU trong order_item
@@ -177,7 +156,7 @@ function exportBatches() {
     { label: 'Đóng lúc', value: (b) => (b.closed_at ? formatDate(b.closed_at) : '') },
     { label: 'Seller', value: (b) => sellerFull(b) },
     { label: 'SKU', value: (b) => skuSummary(b) },
-    { label: 'Trạng thái', value: (b) => batchStatusBadge(b).label },
+    { label: 'Trạng thái', value: (b) => batchStageBadge(b).label },
     { label: 'Ưu tiên', value: (b) => PRIORITY[b.priority || 'NORMAL']?.label ?? b.priority ?? '' },
     { label: 'Hạn', value: (b) => (b.due_date ? formatDate(b.due_date) : '') },
     { label: 'Trễ (ngày)', value: (b) => (isBatchOverdue(b) ? overdueDays(b) : '') },
@@ -319,8 +298,9 @@ async function autoCreateBatches() {
                 <td class="table-td font-medium text-foreground">
                   <div class="flex items-center gap-1.5">
                     <span>{{ b.code }}</span>
+                    <!-- API cũ (chưa trả stage) thì nhãn trạng thái chưa nói "Đã đóng": giữ chip cũ. -->
                     <span
-                      v-if="b.closed_at"
+                      v-if="b.closed_at && !b.stage"
                       class="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
                       :title="b.close_reason || 'Batch đã đóng'"
                     >
@@ -351,8 +331,13 @@ async function autoCreateBatches() {
                 </td>
                 <td class="table-td hidden max-w-[9rem] truncate text-muted-foreground lg:table-cell" :title="skuSummary(b)">{{ skuSummary(b) }}</td>
                 <td class="table-td">
-                  <span class="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium" :class="batchStatusBadge(b).classes">
-                    {{ batchStatusBadge(b).label }}
+                  <!-- Nhãn = chặng của batch, cùng bộ nhãn + màu với ô lọc và Bảng sản xuất. -->
+                  <span
+                    class="inline-flex items-center whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium"
+                    :class="batchStageBadge(b).classes"
+                    :title="b.closed_at ? b.close_reason || 'Batch đã đóng' : undefined"
+                  >
+                    {{ batchStageBadge(b).label }}
                   </span>
                   <!-- Có một link rồi mà thiếu link kia: vẫn là Chờ xử lý, nhưng nói
                        rõ còn thiếu gì để designer biết mà nộp nốt. -->

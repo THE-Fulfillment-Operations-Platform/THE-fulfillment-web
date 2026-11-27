@@ -14,6 +14,7 @@ import {
   columnBreakdown,
   columnParams,
   mergePage,
+  stageFilterOptions,
   stageMeta,
   stagesFromQuery,
   type BoardColumnSpec,
@@ -186,15 +187,7 @@ const activeCount = computed(() => Object.keys(batchFiltersToQuery(applied.value
 const hasFilter = computed(() => activeCount.value > 0)
 
 // Ô Trạng thái: đủ mọi chặng, mỗi mục kèm số batch khớp các bộ lọc khác.
-const statusOptions = computed(() => {
-  const n = counts.value?.stages
-  return BATCH_LIFECYCLE_ORDER.map((s) => ({
-    value: s,
-    label: stageMeta(s).label,
-    sublabel: stageMeta(s).note,
-    hint: n ? (n[s] ?? 0).toLocaleString('vi-VN') : undefined,
-  }))
-})
+const statusOptions = computed(() => stageFilterOptions(counts.value?.stages))
 // Chặng lạ mà API đếm được nhưng web chưa biết (API mới hơn web): nói ra, không giấu.
 const unknownStages = computed(() =>
   Object.entries(counts.value?.stages ?? {}).filter(([s, n]) => n > 0 && !(BATCH_LIFECYCLE_ORDER as string[]).includes(s)),
